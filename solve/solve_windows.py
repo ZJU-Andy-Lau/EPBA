@@ -262,9 +262,7 @@ class Windows():
         Hs_inv = torch.inverse(Hs).to(torch.float32)
         ones = torch.ones(self.B, self.h * self.w, 1, device=device)
         coords_local = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=device) # B,h,w,2
-        debug_print(coords_local.shape)
-        debug_print(ones.shape)
-        coords_local_homo = torch.cat([coords_local.flatten(1,2),ones]).permute(0,2,1) # B,3,h*w
+        coords_local_homo = torch.cat([coords_local.flatten(1,2),ones],dim=-1).permute(0,2,1) # B,3,h*w
         coords_ori_homo = torch.bmm(Hs_inv,coords_local_homo) # B,3,3 @ B,3,h*w -> B,3,h*w
         eps = 1e-7
         z_ori = coords_ori_homo[:, 2:3, :]
