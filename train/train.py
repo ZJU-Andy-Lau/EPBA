@@ -117,7 +117,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch):
 
     B,H,W = imgs1.shape[0],imgs1.shape[-2],imgs1.shape[-1]
 
-    deb_print(f"data shape: img1:{imgs1.shape} \t res1:{residual1.shape} \t Hs_a:{Hs_a.shape} \t Hs_b:{Hs_b.shape} \t M_a_b:{M_a_b.shape}")
+    # deb_print(f"data shape: img1:{imgs1.shape} \t res1:{residual1.shape} \t Hs_a:{Hs_a.shape} \t Hs_b:{Hs_b.shape} \t M_a_b:{M_a_b.shape}")
 
     feats_1,feats_2 = encoder(imgs1,imgs2)
     
@@ -229,11 +229,8 @@ def main(args):
             gru_scheduler.step()
 
             for key in loss_details.keys():
-                pprint(f"key:{key} \t value:{loss_details[key]}")
                 dist.all_reduce(loss_details[key],dist.ReduceOp.AVG)
-                pprint(f"key:{key} \t value:{loss_details[key]}")
             dist.barrier()
-            pprint(loss_details)
             for key in loss_details.keys():
                 records[key] += loss_details[key]
             records['count'] += 1
