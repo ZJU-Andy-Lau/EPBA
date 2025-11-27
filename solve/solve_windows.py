@@ -281,7 +281,7 @@ class Windows():
 
     def solve(self,flag = 'ab'):
         """
-        返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]
+        返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
         hidden_state = torch.zeros((self.B,self.gru.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
         flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
@@ -319,5 +319,6 @@ class Windows():
                 self.Ms_b_a = self.Ms_b_a + delta_affines_ba
                 hidden_state = new_hidden_states
                 flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
+        preds = torch.stack(preds,dim=1)
         
         return preds            
