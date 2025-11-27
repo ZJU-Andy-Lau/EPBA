@@ -82,9 +82,9 @@ class AffineLoss(nn.Module):
         # --- 2. 计算 Img A -> Large A 的坐标 (起点) ---
         # coords_a = Hs_a_inv @ grid_a
         try:
-            Hs_a_inv = torch.linalg.inv(Hs_a)
+            Hs_a_inv = torch.linalg.inv(Hs_a).to(torch.float32)
         except RuntimeError:
-            Hs_a_inv = torch.inverse(Hs_a)
+            Hs_a_inv = torch.inverse(Hs_a).to(torch.float32)
         
         # 这里是大图坐标，数值可能很大
         coords_a = self.apply_homography(Hs_a_inv, grid_a) # (B, 3, N)

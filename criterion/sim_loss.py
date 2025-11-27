@@ -55,7 +55,7 @@ class SimLoss(nn.Module):
 
         # 3. 计算 Hs_a 的逆矩阵 (Img_A -> Large_A)
         # 注意: torch.inverse 可能不稳定，如果 H 奇异需处理，这里假设 H 都是良好的
-        Ha_inv = torch.inverse(Hs_a)
+        Ha_inv = torch.inverse(Hs_a).to(torch.float32)
 
         # 4. 组合变换矩阵 (注意矩阵乘法顺序: 右乘列向量，故 T = Last @ ... @ First)
         # P_feat_b = S_inv @ H_b @ M_pad @ Ha_inv @ S @ P_feat_a

@@ -144,8 +144,7 @@ class Windows():
         coords_col_flat = coords_col.reshape(1, -1).expand(B, -1)
         imgs_a_coords_homo = torch.stack([coords_row_flat, coords_col_flat, ones.squeeze(1)], dim=1) # imgs_a_coords_homo: (B, 3, N) -> Stack as [row, col, 1]
 
-        Hs_1_inv = torch.inverse(Hs_1) # (B, 3, 3)
-        print(Hs_1_inv.dtype,imgs_a_coords_homo.dtype)
+        Hs_1_inv = torch.inverse(Hs_1).to(torch.float32) # (B, 3, 3)
         coords_ori_homo = torch.bmm(Hs_1_inv, imgs_a_coords_homo) #(B, 3, 3) @ (B, 3, N) -> (B, 3, N)
         eps = 1e-7
         z_ori = coords_ori_homo[:, 2:3, :]
@@ -207,7 +206,7 @@ class Windows():
         coords_1_homo = torch.cat([coords_1_permuted, ones], dim=1)
         
         
-        Hs_1_inv = torch.inverse(Hs_1)
+        Hs_1_inv = torch.inverse(Hs_1).to(torch.float32)
         coords_ori_homo = torch.bmm(Hs_1_inv, coords_1_homo)
         
         # 透视除法
@@ -260,7 +259,7 @@ class Windows():
         return corr_simi,corr_offset
     
     def get_flow(self,Hs,Ms,norm_factor,device):
-        Hs_inv = torch.inverse(Hs)
+        Hs_inv = torch.inverse(Hs).to(torch.float32)
         ones = torch.ones(self.B, self.h * self.w, 1, device=device)
         coords_local = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=device) # B,h,w,2
         coords_local_homo = torch.cat([coords_local.flatten(1,2),ones]).permute(0,2,1) # B,3,h*w
