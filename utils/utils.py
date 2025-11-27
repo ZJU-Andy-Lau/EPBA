@@ -12,6 +12,7 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.init as init
+import torch.distributed as dist
 import random
 import argparse
 from .rpc import RPCModelParameterTorch
@@ -27,6 +28,11 @@ import math
 
 def get_current_time():
     return datetime.now().strftime("%Y%m%d%H%M%S")
+
+def debug_print(msg,once = True):
+    if not once or dist.get_rank() == 0:
+        print(f"[rank {dist.get_rank()}]:{msg}")
+
 def crop_rect_from_image(image, rect_points, size):
     """
     从图像中截取矩形区域。

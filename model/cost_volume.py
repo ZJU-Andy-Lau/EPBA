@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from utils.utils import debug_print
 
 class CostVolume:
     def __init__(self, fmap_query, fmap_ref, num_levels=4, radius=4):
@@ -83,7 +84,6 @@ class CostVolume:
         
         for i in range(self.num_levels):
             corr = self.corr_pyramid[i] # [B, H, W, 1, H_ref, W_ref]
-            print(f"0 {corr.shape}")
             _, _, _, _, H_ref_lvl, W_ref_lvl = corr.shape
             
             # 1. 坐标映射: 归一化 [-1, 1] -> 像素坐标 [0, W-1]
@@ -93,11 +93,17 @@ class CostVolume:
             
             # 2. 加上局部偏移: [B, H, W, 1, 2] + [1, 1, 1, N, 2] -> [B, H, W, N, 2]
             coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2) # [B, H, W, N, 2]
+
+            debug_print("===========img32===========")
+            debug_print(coords_new[0,2,2,[0,10,20,30,40,50,60,70,80]],coords_new[0,16,16,[0,10,20,30,40,50,60,70,80]])
             
             # 3. 映射回归一化坐标 [-1, 1] 用于 grid_sample
             coords_norm = coords_new.clone() #[B, H, W, N, 2]
             coords_norm[..., 0] = 2.0 * coords_norm[..., 0] / (W_ref_lvl - 1.0) - 1.0
             coords_norm[..., 1] = 2.0 * coords_norm[..., 1] / (H_ref_lvl - 1.0) - 1.0
+
+            debug_print("===========norm===========")
+            debug_print(coords_norm[0,2,2,[0,10,20,30,40,50,60,70,80]],coords_norm[0,16,16,[0,10,20,30,40,50,60,70,80]])
             
             # --- 计算 Level 0 像素坐标 ---
             # 将归一化坐标映射回 Level 0 像素空间
@@ -105,7 +111,8 @@ class CostVolume:
             coords_lvl0[..., 1] = (coords_norm[..., 0] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
             coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0
             
-            print(coords_lvl0[0,2,2],coords_lvl0[0,16,16])
+            debug_print("===========img512===========")
+            debug_print(coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]],coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]])
 
             # 调整维度: [B, H, W, N, 2] -> [B, N, 2, H, W]
             # N 对应 Channels 维度的一部分
