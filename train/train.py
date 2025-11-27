@@ -317,11 +317,6 @@ def main(args):
             
             loss.backward()
 
-            if gru.module.head_linear[-1].weight.grad is None:
-                print(f"no grad in gru")
-            else:
-                print(f"grad:{gru.module.head_linear[-1].weight.grad}")
-
             adapter_optimizer.step()
             gru_optimizer.step()
 
