@@ -27,6 +27,9 @@ from shapely.geometry import Polygon
 import math
 
 def get_current_time():
+    """
+    return: %Y%m%d%H%M%S
+    """
     return datetime.now().strftime("%Y%m%d%H%M%S")
 
 def debug_print(msg,once = True):

@@ -5,6 +5,7 @@ from .sim_loss import SimLoss
 from .conf_loss import ConfLoss
 from .affine_loss import AffineLoss
 from .consist_loss import ConsistLoss
+from .ctx_loss import CtxLoss
 from .utils import invert_affine_matrix
 
 class Loss(nn.Module):
@@ -22,10 +23,11 @@ class Loss(nn.Module):
                                         grid_stride = downsample_factor,
                                         decay_rate = decay_rate,
                                         device = device)
+        self.ctx_loss = CtxLoss()
     
     def forward(self,input):
-        match_feats_1, ctx_feats_1, confs_1 = input['feats_1']
-        match_feats_2, ctx_feats_2, confs_2 = input['feats_2']
+        match_feats_1, _, confs_1 = input['feats_1']
+        match_feats_2, _, confs_2 = input['feats_2']
 
         loss_sim = self.sim_loss(feats_a = match_feats_1,
                                  feats_b = match_feats_2,
@@ -52,13 +54,18 @@ class Loss(nn.Module):
         loss_consist = self.consist_loss(delta_affine_a = input['preds_1'],
                                          delta_affine_b = input['preds_2'])
         
-        loss = loss_sim + loss_conf + loss_affine + loss_consist
+        loss_ctx_1 = self.ctx_loss(input['imgs_pred_1'],input['imgs_1'])
+        loss_ctx_2 = self.ctx_loss(input['imgs_pred_2'],input['imgs_2'])
+        loss_ctx = .5 * loss_ctx_1 + .5 * loss_ctx_2
+        
+        loss = loss_sim + loss_conf + loss_affine + loss_consist + loss_ctx
         loss_details = {
             'loss':loss.clone().detach(),
             'loss_sim':loss_sim.clone().detach(),
             'loss_conf':loss_conf.clone().detach(),
             'loss_affine':loss_affine.clone().detach(),
-            'loss_consist':loss_consist.clone().detach()
+            'loss_consist':loss_consist.clone().detach(),
+            'loss_ctx':loss_ctx.clone().detach()
         }
 
 

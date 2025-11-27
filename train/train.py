@@ -32,9 +32,10 @@ from torchvision import transforms
 from load_data import TrainDataset, ImageSampler
 from model.encoder import Encoder
 from model.gru import GRUBlock
+from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
-from utils.utils import str2bool,feats_pca,vis_conf
+from utils.utils import str2bool,feats_pca,vis_conf,get_current_time
 from solve.solve_windows import Windows
 
 def print_on_main(msg, rank):
@@ -47,6 +48,12 @@ def deb_print(msg):
 
 def distibute_model(model:nn.Module,local_rank):
     model = DistributedDataParallel(model,device_ids=[local_rank],output_device=local_rank,broadcast_buffers=False)
+    return model
+
+def load_model_state_dict(model:nn.Module,state_dict_path:str):
+    state_dict = torch.load(state_dict_path,map_location='cpu')
+    state_dict = {k.replace("module.",""):v for k,v in state_dict.items()}
+    model.load_state_dict(state_dict)
     return model
 
 def load_data(args):
@@ -88,16 +95,27 @@ def load_models(args):
     
     encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128)
     gru = GRUBlock(corr_levels=4,corr_radius=4,context_dim=128,hidden_dim=128)
+    ctx_decoder = ContextDecoder(ctx_dim=128)
     
-    adapter_optimizer = optim.AdamW(params = encoder.adapter.parameters(),lr = args.lr_encoder_max)
+    adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
     gru_optimizer = optim.AdamW(params = gru.parameters(),lr = args.lr_gru_max)
     
     if not args.encoder_path is None:
         encoder.load_adapter(os.path.join(args.encoder_path,'adapter.pth'))
         pprint("Encoder Loaded")
     
+    if not args.gru_path is None:
+        load_model_state_dict(gru,args.gru_path)
+        pprint("GRU Loaded")
+    
+    if not args.decoder_path is None:
+        load_model_state_dict(ctx_decoder,args.decoder_path)
+        pprint("Decoder Loaded")
+    
     encoder = encoder.to(args.device)
     gru = gru.to(args.device)
+    ctx_decoder = ctx_decoder.to(args.device)
+    
     for state in adapter_optimizer.state.values():
         for k, v in state.items():
             if isinstance(v, torch.Tensor):
@@ -109,32 +127,40 @@ def load_models(args):
     
     encoder = distibute_model(encoder,args.local_rank)
     gru = distibute_model(gru,args.local_rank)
+    ctx_decoder = distibute_model(ctx_decoder,args.locak_rank)
     
-    return encoder,gru,adapter_optimizer,gru_optimizer
+    return encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer
 
-def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch,get_debuf_info = False):
-    imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = data
-    imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(device = args.device,dtype = torch.float32) for i in [imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b]]
+def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,loss_funcs:Loss,epoch,get_debuf_info = False):
+    imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b = data
+    imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(device = args.device,dtype = torch.float32) for i in [imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b]]
 
-    B,H,W = imgs1.shape[0],imgs1.shape[-2],imgs1.shape[-1]
+    B,H,W = imgs1_train.shape[0],imgs1_train.shape[-2],imgs1_train.shape[-1]
 
     # deb_print(f"data shape: img1:{imgs1.shape} \t res1:{residual1.shape} \t Hs_a:{Hs_a.shape} \t Hs_b:{Hs_b.shape} \t M_a_b:{M_a_b.shape}")
 
-    feats_1,feats_2 = encoder(imgs1,imgs2)
+    feats_1,feats_2 = encoder(imgs1_train,imgs2_train)
     match_feats_1,ctx_feats_1,confs_1 = feats_1
     match_feats_2,ctx_feats_2,confs_2 = feats_2
+
+    imgs_pred_1 = ctx_decoder(imgs1_train)
+    imgs_pred_2 = ctx_decoder(imgs2_train)
     
     windows = Windows(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
     preds_ab = windows.solve(flag = 'ab')
     preds_ba = windows.solve(flag = 'ba')
 
     loss_input = {
+        'imgs_1':imgs1_label,
+        'imgs_2':imgs2_label,
         'feats_1':feats_1,
         'feats_2':feats_2,
         'preds_1':preds_ab,
         'preds_2':preds_ba,
         'residual_1':residual1,
         'residual_2':residual2,
+        'imgs_pred_1':imgs_pred_1,
+        'imgs_pred_2':imgs_pred_2,
         'Hs_a':Hs_a,
         'Hs_b':Hs_b,
         'M_a_b':M_a_b
@@ -145,12 +171,20 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch,get_de
     if get_debuf_info:
         #====================准备debug info===========================
         #train_imgs
-        train_img_1 = imgs1[0].permute(1,2,0).detach().cpu().numpy()
-        train_img_2 = imgs2[0].permute(1,2,0).detach().cpu().numpy()
+        train_img_1 = imgs1_train[0].permute(1,2,0).detach().cpu().numpy()
+        train_img_2 = imgs2_train[0].permute(1,2,0).detach().cpu().numpy()
         train_img_1 = 255. * (train_img_1 - train_img_1.min()) / (train_img_1.max() - train_img_1.min())
         train_img_2 = 255. * (train_img_2 - train_img_2.min()) / (train_img_2.max() - train_img_2.min())
         train_img_1 = train_img_1.astype(np.uint8)
         train_img_2 = train_img_2.astype(np.uint8)
+
+        #pred_imgs
+        img_pred_1 = imgs_pred_1[0].permute(1,2,0).detach().cpu().numpy()
+        img_pred_2 = imgs_pred_2[0].permute(1,2,0).detach().cpu().numpy()
+        img_pred_1 = 255. * (img_pred_1 - img_pred_1.min()) / (img_pred_1.max() - img_pred_1.min())
+        img_pred_2 = 255. * (img_pred_2 - img_pred_2.min()) / (img_pred_2.max() - img_pred_2.min())
+        img_pred_1 = img_pred_1.astype(np.uint8)
+        img_pred_2 = img_pred_2.astype(np.uint8)
 
         #match_feats
         match_feat_1 = match_feats_1[0].permute(1,2,0).detach().cpu().numpy()
@@ -177,6 +211,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch,get_de
             'imgs':{
                 'train_img_1':train_img_1,
                 'train_img_2':train_img_2,
+                'img_pred_1':img_pred_1,
+                'img_pred_2':img_pred_2,
                 'match_feat_img_1':match_feat_img_1,
                 'match_feat_img_2':match_feat_img_2,
                 'ctx_feat_img_1':ctx_feat_img_1,
@@ -227,7 +263,7 @@ def main(args):
     #         tag = f'train_imgs/{i}'
     #         logger.add_image(tag,img,0,dataformats='HWC')
 
-    encoder,gru,adapter_optimizer,gru_optimizer = load_models(args)
+    encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer = load_models(args)
 
     adapter_scheduler = MultiStageOneCycleLR(optimizer=adapter_optimizer,
                                              total_steps=args.max_epoch * len(dataloader),
@@ -265,7 +301,7 @@ def main(args):
             adapter_optimizer.zero_grad()
             gru_optimizer.zero_grad()
 
-            loss,loss_details,debug_info = get_loss(args,encoder,gru,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == len(dataloader) - 1))
+            loss,loss_details,debug_info = get_loss(args,encoder,gru,ctx_decoder,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == len(dataloader) - 1))
 
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
@@ -321,7 +357,7 @@ def main(args):
             print(info)
 
             for key in debug_info['imgs']:
-                logger.add_image(key,debug_info['imgs'][key],epoch,dataformats='HWC')
+                logger.add_image(f"imgs/{key}",debug_info['imgs'][key],epoch,dataformats='HWC')
         
             
 
@@ -333,15 +369,15 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_path',type=str,default='./datasets')
     parser.add_argument('--dataset_num',type=int,default=None)
     parser.add_argument('--dataset_select',type=str,default=None)
-    parser.add_argument('--encoder_path',type=str,default=None)
     parser.add_argument('--dino_weight_path',type=str,default=None)
-    parser.add_argument('--encoder_output_path',type=str,default='./weights/encoder_finetune.pth')
+    parser.add_argument('--encoder_path',type=str,default=None)
+    parser.add_argument('--gru_path',type=str,default=None)
+    parser.add_argument('--decoder_path',type=str,default=None)
+    parser.add_argument('--model_save_path',type=str,default=f'./weights/{get_current_time()}')
     parser.add_argument('--checkpoints_path',type=str,default=None)
     parser.add_argument('--vis_img_path',type=str,default=None)
     parser.add_argument('--batch_size',type=int,default=8)
     parser.add_argument('--gru_max_iter',type=int,default=10)
-    parser.add_argument('--gru_path',type=str,default=None)
-    parser.add_argument('--gru_output_path',type=str,default='./weights/gru.pth')
     parser.add_argument('--resume_training',type=str2bool,default=False)
     parser.add_argument('--max_epoch',type=int,default=1000)
     parser.add_argument('--lr_encoder_min',type=float,default=1e-7)

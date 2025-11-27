@@ -289,18 +289,17 @@ class TrainDataset(Dataset):
             self.red_mids.append(np.nanmedian(res))
 
 
-        if mode == 'train':
-            self.transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.RandomApply([transforms.ColorJitter(.4,.4,.4,.1)],p=.7),
-                transforms.RandomInvert(p=.2),
-                transforms.Normalize(norm_coefs['mean'], norm_coefs['std']) # (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-                ])
-        else:
-            self.transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize(norm_coefs['mean'], norm_coefs['std']) # (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-                ])
+        self.distort_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.RandomApply([transforms.ColorJitter(.4,.4,.4,.1)],p=.7),
+            transforms.RandomInvert(p=.2),
+            transforms.Normalize(norm_coefs['mean'], norm_coefs['std']) # (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+            ])
+        
+        self.norm_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(norm_coefs['mean'], norm_coefs['std']) # (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+            ])
         
 
     def get_train_images(self):
@@ -342,8 +341,10 @@ class TrainDataset(Dataset):
                           output_size=self.input_size,
                           )
 
-        imgs1 = torch.stack([self.transform(img) for img in imgs1],dim=0)
-        imgs2 = torch.stack([self.transform(img) for img in imgs2],dim=0)
+        imgs1_train = torch.stack([self.distort_transform(img) for img in imgs1],dim=0)
+        imgs2_train = torch.stack([self.distort_transform(img) for img in imgs2],dim=0)
+        imgs1_label = torch.stack([self.norm_transform(img) for img in imgs1],dim=0)
+        imgs2_label = torch.stack([self.norm_transform(img) for img in imgs2],dim=0)
 
         residual1 = np.stack([residual_average(residual,self.DOWNSAMPLE) for residual in residual1],axis=0)
         residual2 = np.stack([residual_average(residual,self.DOWNSAMPLE) for residual in residual2],axis=0)
@@ -358,7 +359,7 @@ class TrainDataset(Dataset):
 
         # print(t1 - t0, t2 - t1)
         
-        return imgs1,imgs2,residual1,residual2,H_as, H_bs, M_a_b
+        return imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,H_as, H_bs, M_a_b
 
 
 class ImageSampler(Sampler):
