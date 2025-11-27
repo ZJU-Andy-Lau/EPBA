@@ -25,8 +25,8 @@ class ConsistLoss(nn.Module):
         """生成稀疏的像素采样网格 (3, N)"""
         # 使用较大的 stride 生成稀疏点，减少计算量
         # 即使是 3x3 的网格也能很好地约束仿射变换
-        y_range = torch.arange(0, self.H, self.grid_stride, dtype=torch.float32)
-        x_range = torch.arange(0, self.W, self.grid_stride, dtype=torch.float32)
+        y_range = torch.arange(0, self.H, self.grid_stride, dtype=torch.float32,device=self.device)
+        x_range = torch.arange(0, self.W, self.grid_stride, dtype=torch.float32,device=self.device)
         grid_y, grid_x = torch.meshgrid(y_range, x_range, indexing='ij')
 
         N = grid_y.numel()
