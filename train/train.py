@@ -265,7 +265,7 @@ def main(args):
             adapter_optimizer.zero_grad()
             gru_optimizer.zero_grad()
 
-            loss,loss_details,debug_info = get_loss(args,encoder,gru,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == 0))
+            loss,loss_details,debug_info = get_loss(args,encoder,gru,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == len(dataloader) - 1))
 
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
