@@ -333,8 +333,8 @@ class TrainDataset(Dataset):
         residual2 = np.stack([residual_average(residual,self.DOWNSAMPLE) for residual in residual2],axis=0)
         residual1[np.isnan(residual1)] = -1
         residual2[np.isnan(residual2)] = -1
-        residual1 = torch.from_numpy(residual1)
-        residual2 = torch.from_numpy(residual2)
+        residual1 = torch.from_numpy(residual1)[None] # 1,h,w
+        residual2 = torch.from_numpy(residual2)[None]
 
         H_as, H_bs, M_a_b = torch.from_numpy(H_as), torch.from_numpy(H_bs), torch.from_numpy(M_a_b)
 
