@@ -221,7 +221,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
                 'conf_img_2':conf_img_2
             },
             'values':{
-
+                "preds_ab":preds_ab,
             }
         }
 
@@ -361,6 +361,9 @@ def main(args):
 
             for key in debug_info['imgs']:
                 logger.add_image(f"imgs/{key}",debug_info['imgs'][key],epoch,dataformats='HWC')
+            
+            for key in debug_info['values']:
+                print(f"{key} : {debug_info['values'][key]}")
         
             
 

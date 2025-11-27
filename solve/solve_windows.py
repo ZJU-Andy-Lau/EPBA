@@ -291,7 +291,7 @@ class Windows():
             # 计算a->b的仿射
             if flag == 'ab':
                 corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b)
-                delta_affines_ab, new_hidden_states = self.gru(corr_simi_ab,
+                delta_affines_ab, hidden_state = self.gru(corr_simi_ab,
                                                                corr_offset_ab,
                                                             #    flow,
                                                                self.ctx_feats_a,
@@ -301,14 +301,13 @@ class Windows():
                 delta_affines_ab[...,2] = self.coord_norm_inv(delta_affines_ab[...,2] , self.norm_factors_a)
                 preds.append(delta_affines_ab)
                 self.Ms_a_b = self.Ms_a_b + delta_affines_ab
-                hidden_state = new_hidden_states
                 # flow = self.get_flow(self.H_as,self.Ms_a_b,self.norm_factors_a,device=self.device)
 
 
             # 计算b->a的仿射
             if flag == 'ba':
                 corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a)
-                delta_affines_ba, new_hidden_states = self.gru(corr_simi_ba,
+                delta_affines_ba, hidden_state = self.gru(corr_simi_ba,
                                                                corr_offset_ba,
                                                             #    flow,
                                                                self.ctx_feats_b,
@@ -318,7 +317,6 @@ class Windows():
                 delta_affines_ba[...,2] = self.coord_norm_inv(delta_affines_ba[...,2] , self.norm_factors_b)
                 preds.append(delta_affines_ba)
                 self.Ms_b_a = self.Ms_b_a + delta_affines_ba
-                hidden_state = new_hidden_states
                 # flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
         preds = torch.stack(preds,dim=1)
         
