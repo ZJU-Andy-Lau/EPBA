@@ -90,20 +90,14 @@ class CostVolume:
             coords_lvl = coords.clone()
             coords_lvl[..., 0] = (coords_lvl[..., 0] + 1.0) * (W_ref_lvl - 1.0) / 2.0
             coords_lvl[..., 1] = (coords_lvl[..., 1] + 1.0) * (H_ref_lvl - 1.0) / 2.0
-
-            print(f"1 {coords_lvl.shape}")
             
             # 2. 加上局部偏移: [B, H, W, 1, 2] + [1, 1, 1, N, 2] -> [B, H, W, N, 2]
-            coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2)
-
-            print(f"2 {coords_new.shape} {delta.shape}")
+            coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2) # [B, H, W, N, 2]
             
             # 3. 映射回归一化坐标 [-1, 1] 用于 grid_sample
-            coords_norm = coords_new.clone()
+            coords_norm = coords_new.clone() #[B, H, W, N, 2]
             coords_norm[..., 0] = 2.0 * coords_norm[..., 0] / (W_ref_lvl - 1.0) - 1.0
             coords_norm[..., 1] = 2.0 * coords_norm[..., 1] / (H_ref_lvl - 1.0) - 1.0
-
-            print(f"3 {coords_norm.shape}")
             
             # --- 计算 Level 0 像素坐标 ---
             # 将归一化坐标映射回 Level 0 像素空间
@@ -111,6 +105,8 @@ class CostVolume:
             coords_lvl0[..., 1] = (coords_norm[..., 0] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
             coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0
             
+            print(coords_lvl0[0,2,2],coords_lvl0[0,16,16])
+
             # 调整维度: [B, H, W, N, 2] -> [B, N, 2, H, W]
             # N 对应 Channels 维度的一部分
             out_coords_list.append(coords_lvl0.permute(0, 3, 4, 1, 2))
@@ -121,16 +117,11 @@ class CostVolume:
             # Grid:  [B*H*W, N, 1, 2]
             
             # 准备 Input
-            corr_reshaped = corr.view(-1, 1, H_ref_lvl, W_ref_lvl)
+            corr_reshaped = corr.view(-1, 1, H_ref_lvl, W_ref_lvl) # [B*H*W, 1, H_ref, W_ref]
 
-            print(f"4 {corr_reshaped.shape}")
-            
             # 准备 Grid: N 个点排成一行 (N, 1)
             num_points = delta.shape[0]
-
-            print(f"5 {delta.shape} {num_points}")
-
-            grid_reshaped = coords_norm.view(-1, num_points, 1, 2)
+            grid_reshaped = coords_norm.reshape(-1, num_points, 1, 2) # [B*H*W, N, 1, 2]
             
             # 采样
             sampled = F.grid_sample(corr_reshaped, grid_reshaped, align_corners=True, mode='bilinear', padding_mode='zeros')
