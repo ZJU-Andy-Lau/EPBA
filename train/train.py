@@ -149,6 +149,9 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch,get_de
         train_img_2 = imgs2[0].permute(1,2,0).detach().cpu().numpy()
         train_img_1 = 255. * (train_img_1 - train_img_1.min()) / (train_img_1.max() - train_img_1.min())
         train_img_2 = 255. * (train_img_2 - train_img_2.min()) / (train_img_2.max() - train_img_2.min())
+        train_img_1 = train_img_1.astype(np.uint8)
+        train_img_2 = train_img_2.astype(np.uint8)
+        print(train_img_1.shape)
 
         #match_feats
         match_feat_1 = match_feats_1[0].permute(1,2,0).detach().cpu().numpy()
@@ -173,8 +176,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch,get_de
 
         debug_info ={
             'imgs':{
-                'train_img_1':train_img_1.astype(np.uint8),
-                'train_img_2':train_img_2.astype(np.uint8),
+                'train_img_1':train_img_1,
+                'train_img_2':train_img_2,
                 'match_feat_img_1':match_feat_img_1,
                 'match_feat_img_2':match_feat_img_2,
                 'ctx_feat_img_1':ctx_feat_img_1,
