@@ -31,11 +31,11 @@ class GRUBlock(nn.Module):
         # [新增] Offset channels = Correlation channels * 2 (每个查表点对应 dy, dx)
         self.offset_dim = self.corr_dim * 2
         
-        self.flow_dim = 2  # u, v
+        # self.flow_dim = 2  # u, v
         
         # [修改] 总输入通道数: Corr + Offsets + Context + Flow
         # 例如: 324 + 648 + 128 + 2 = 1102
-        input_dim = self.corr_dim + self.offset_dim + self.context_dim + self.flow_dim
+        input_dim = self.corr_dim + self.offset_dim + self.context_dim #+ self.flow_dim
         
         # 2. 运动编码器 (Motion Encoder)
         # 将空间误差特征图压缩为全局误差向量
@@ -98,14 +98,13 @@ class GRUBlock(nn.Module):
         nn.init.normal_(self.head_linear[-1].weight, mean=0.0, std=1e-3)
         nn.init.constant_(self.head_linear[-1].bias, 0.0)
 
-    def forward(self, corr_features, corr_offsets, flow, context_features, confidence_map, hidden_state):
+    def forward(self, corr_features, corr_offsets, context_features, confidence_map, hidden_state):
         """
         前向传播
         
         Args:
             corr_features: [B, C_corr, H, W] - 相关性查表特征 (Values)
             corr_offsets:  [B, C_offset, H, W] - 相关性查表偏移 (Geometry)
-            flow: [B, 2, H, W] - 当前归一化流场
             context_features: [B, 128, H, W] - 上下文特征
             confidence_map: [B, 1, H, W] - 置信度图 (0~1)
             hidden_state: [B, 128] - 上一时刻的 GRU 状态
@@ -123,9 +122,9 @@ class GRUBlock(nn.Module):
         masked_ctx = context_features * confidence_map
         
         # 2. 特征拼接
-        # Input: [B, C_corr + C_offset + C_ctx + C_flow, H, W]
-        # 将 masked_corr, corr_offsets, masked_ctx, flow 在通道维度拼接
-        x = torch.cat([masked_corr, corr_offsets, masked_ctx, flow], dim=1)
+        # Input: [B, C_corr + C_offset + C_ctx, H, W]
+        # 将 masked_corr, corr_offsets, masked_ctx 在通道维度拼接
+        x = torch.cat([masked_corr, corr_offsets, masked_ctx], dim=1)
         
         # 3. 运动编码 (Motion Encoding)
         # CNN 下采样: [B, input_dim, H, W] -> [B, 128, H/8, W/8]

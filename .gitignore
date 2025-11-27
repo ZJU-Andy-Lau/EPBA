@@ -4,3 +4,4 @@ weights/
 log/
 tmp/
 *.sh
+test.ipynb

@@ -258,25 +258,25 @@ class Windows():
 
         return corr_simi,corr_offset
     
-    def get_flow(self,Hs,Ms,norm_factor,device):
-        Hs_inv = torch.inverse(Hs).to(torch.float32)
-        ones = torch.ones(self.B, self.h * self.w, 1, device=device)
-        coords_local = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=device) # B,h,w,2
-        coords_local_homo = torch.cat([coords_local.flatten(1,2),ones],dim=-1).permute(0,2,1) # B,3,h*w
-        coords_ori_homo = torch.bmm(Hs_inv,coords_local_homo) # B,3,3 @ B,3,h*w -> B,3,h*w
-        eps = 1e-7
-        z_ori = coords_ori_homo[:, 2:3, :]
-        coords_ori = coords_ori_homo[:, :2, :] / (z_ori + eps) # B,2,h*w
+    # def get_flow(self,Hs,Ms,norm_factor,device):
+    #     Hs_inv = torch.inverse(Hs).to(torch.float32)
+    #     ones = torch.ones(self.B, self.h * self.w, 1, device=device)
+    #     coords_local = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=device) # B,h,w,2
+    #     coords_local_homo = torch.cat([coords_local.flatten(1,2),ones],dim=-1).permute(0,2,1) # B,3,h*w
+    #     coords_ori_homo = torch.bmm(Hs_inv,coords_local_homo) # B,3,3 @ B,3,h*w -> B,3,h*w
+    #     eps = 1e-7
+    #     z_ori = coords_ori_homo[:, 2:3, :]
+    #     coords_ori = coords_ori_homo[:, :2, :] / (z_ori + eps) # B,2,h*w
         
-        ones = torch.ones(self.B, 1, self.h * self.w, device=device)
-        coords_ori_homo = torch.cat([coords_ori,ones],dim=1)    
-        coords_ori_af = torch.bmm(Ms,coords_ori_homo) # B,2,3 @ B,3,h*w -> B,2,h*w
-        coords_ori_af = coords_ori_af.reshape(self.B,2,self.h,self.w) # B,2,h,w
-        coords_ori = coords_ori.reshape(self.B,2,self.h,self.w) # B,2,h,w
-        flow = coords_ori_af - coords_ori # B,2,h,w
-        flow = self.coord_norm(flow,norm_factor) # B,2,h,w
+    #     ones = torch.ones(self.B, 1, self.h * self.w, device=device)
+    #     coords_ori_homo = torch.cat([coords_ori,ones],dim=1)    
+    #     coords_ori_af = torch.bmm(Ms,coords_ori_homo) # B,2,3 @ B,3,h*w -> B,2,h*w
+    #     coords_ori_af = coords_ori_af.reshape(self.B,2,self.h,self.w) # B,2,h,w
+    #     coords_ori = coords_ori.reshape(self.B,2,self.h,self.w) # B,2,h,w
+    #     flow = coords_ori_af - coords_ori # B,2,h,w
+    #     flow = self.coord_norm(flow,norm_factor) # B,2,h,w
 
-        return flow
+    #     return flow
 
         
 
@@ -285,7 +285,7 @@ class Windows():
         返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
         hidden_state = torch.zeros((self.B,self.gru_access.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
-        flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
+        # flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
         preds = []
         for iter in range(self.gru_max_iter):
             # 计算a->b的仿射
@@ -293,7 +293,7 @@ class Windows():
                 corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b)
                 delta_affines_ab, new_hidden_states = self.gru(corr_simi_ab,
                                                                corr_offset_ab,
-                                                               flow,
+                                                            #    flow,
                                                                self.ctx_feats_a,
                                                                self.confs_a,
                                                                hidden_state)
@@ -302,7 +302,7 @@ class Windows():
                 preds.append(delta_affines_ab)
                 self.Ms_a_b = self.Ms_a_b + delta_affines_ab
                 hidden_state = new_hidden_states
-                flow = self.get_flow(self.H_as,self.Ms_a_b,self.norm_factors_a,device=self.device)
+                # flow = self.get_flow(self.H_as,self.Ms_a_b,self.norm_factors_a,device=self.device)
 
 
             # 计算b->a的仿射
@@ -310,7 +310,7 @@ class Windows():
                 corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a)
                 delta_affines_ba, new_hidden_states = self.gru(corr_simi_ba,
                                                                corr_offset_ba,
-                                                               flow,
+                                                            #    flow,
                                                                self.ctx_feats_b,
                                                                self.confs_b,
                                                                hidden_state)
@@ -319,7 +319,7 @@ class Windows():
                 preds.append(delta_affines_ba)
                 self.Ms_b_a = self.Ms_b_a + delta_affines_ba
                 hidden_state = new_hidden_states
-                flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
+                # flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
         preds = torch.stack(preds,dim=1)
         
         return preds            
