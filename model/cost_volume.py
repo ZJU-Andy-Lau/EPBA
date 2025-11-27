@@ -61,7 +61,7 @@ class CostVolume:
         在金字塔中查找邻域相关性。
         
         Args:
-            coords: [B, H, W, 2] - Query像素在Ref坐标系下的归一化坐标 [-1, 1]
+            coords: [B, H, W, 2] - Query像素在Ref坐标系下的归一化坐标 [-1, 1] (row,col)
             
         Returns:
             out: [B, Channels, H, W] - 查表特征
@@ -108,8 +108,8 @@ class CostVolume:
             # --- 计算 Level 0 像素坐标 ---
             # 将归一化坐标映射回 Level 0 像素空间
             coords_lvl0 = torch.zeros_like(coords_norm) # line,samp
-            coords_lvl0[..., 1] = (coords_norm[..., 0] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
-            coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0
+            coords_lvl0[..., 1] = (coords_norm[..., 0] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
+            coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0
             
             # debug_print(f"===========lvl {i} img512===========")
             # debug_print(f"{coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
@@ -129,9 +129,10 @@ class CostVolume:
             # 准备 Grid: N 个点排成一行 (N, 1)
             num_points = delta.shape[0]
             grid_reshaped = coords_norm.reshape(-1, num_points, 1, 2) # [B*H*W, N, 1, 2]
+            grid_xy = grid_reshaped[...,[1,0]] # (row,col) -> (x,y)
             
             # 采样
-            sampled = F.grid_sample(corr_reshaped, grid_reshaped, align_corners=True, mode='bilinear', padding_mode='zeros')
+            sampled = F.grid_sample(corr_reshaped, grid_xy, align_corners=True, mode='bilinear', padding_mode='zeros')
             
             # Output: [B*H*W, 1, N, 1] -> [B, H, W, N]
             sampled = sampled.view(B, H, W, -1)
