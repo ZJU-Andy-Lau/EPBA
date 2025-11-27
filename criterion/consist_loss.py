@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ConsistLoss(nn.Module):
-    def __init__(self, img_size, grid_stride=32, decay_rate=0.8):
+    def __init__(self, img_size, grid_stride=32, decay_rate=0.8, device='cuda'):
         """
         初始化 ConsistLoss (循环一致性损失)
 
@@ -16,6 +16,7 @@ class ConsistLoss(nn.Module):
         self.H, self.W = img_size
         self.grid_stride = grid_stride
         self.decay_rate = decay_rate
+        self.device = device
         
         # 注册不需要梯度的缓冲区：基础采样网格
         self.register_buffer('base_grid', self._create_grid())
@@ -33,7 +34,7 @@ class ConsistLoss(nn.Module):
         grid = torch.stack([
             grid_x.reshape(-1),
             grid_y.reshape(-1),
-            torch.ones(N, dtype=torch.float32)
+            torch.ones(N, dtype=torch.float32, device=self.device)
         ], dim=0)
 
         return grid.unsqueeze(0) # (1, 3, N)
@@ -41,7 +42,7 @@ class ConsistLoss(nn.Module):
     def _to_homogeneous_matrix(self, affine_2x3):
         """将 (B, 2, 3) 仿射矩阵填充为 (B, 3, 3)"""
         B = affine_2x3.shape[0]
-        device = affine_2x3.device
+        device = self.device
         
         # 构造最后一行 [0, 0, 1]
         last_row = torch.tensor([0, 0, 1], dtype=affine_2x3.dtype, device=device).view(1, 1, 3).repeat(B, 1, 1)

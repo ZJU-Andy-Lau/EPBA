@@ -20,7 +20,8 @@ class Loss(nn.Module):
                                       device = device)
         self.consist_loss = ConsistLoss(img_size = img_size,
                                         grid_stride = downsample_factor,
-                                        decay_rate = decay_rate)
+                                        decay_rate = decay_rate,
+                                        device = device)
     
     def forward(self,input):
         match_feats_1, ctx_feats_1, confs_1 = input['feats_1']
