@@ -45,25 +45,18 @@ def downsample(arr,ds):
 
 def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k = 1):
     """
-    生成 k 对单应性裁切矩阵 (Homography)。
-    
-    逻辑:
-    1. 随机生成一个全局的仿射变换 M_a_b (从 A 的像素坐标到 B 的像素坐标)。
-    2. 生成 k 个随机窗口。为了引入单应性但不造成过大扭曲，
-       我们在旋转正方形的基础上对 4 个角点施加独立的微小随机偏移。
-    3. H_a 用于将 A 中的不规则四边形映射到输出的正方形。
-    4. H_b 用于将 B 中对应的(经过 M_a_b 变换的)区域映射到输出的正方形。
+    生成 k 对具有较大重叠但变换参数独立的单应性裁切矩阵。
     
     参数:
         image_size (tuple): 输入图像的尺寸 (H, W)
         size_range (tuple): 裁切窗口大小范围 (min_size, max_size)
-        output_size (tuple): 输出图的大小 (W, H), 默认为 (512, 512)
+        output_size (tuple): 输出图的大小 (W, H)
         k (int): 需要生成的窗口对数量
         
     返回:
-        H_as (list): 长度为 k 的列表，包含 H_a 矩阵 (3x3 Homography, A -> Output)
-        H_bs (list): 长度为 k 的列表，包含 H_b 矩阵 (3x3 Homography, B -> Output)
-        M_a_b (np.ndarray): 全局的 A 到 B 的仿射变换矩阵 (2x3, 像素坐标系)
+        H_as (np.ndarray): (k, 3, 3) A -> Output
+        H_bs (np.ndarray): (k, 3, 3) B -> Output
+        M_a_b (np.ndarray): (2, 3) A -> B 全局仿射
     """
     
     H_img, W_img = image_size
@@ -73,10 +66,10 @@ def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k =
     # ---------------------------------------------------------
     # 1. 生成全局仿射变换 M_a_b (A -> B)
     # ---------------------------------------------------------
-    # 保持仿射变换逻辑不变，用于模拟两图间的物理位姿差异
     delta = np.random.uniform(-5e-5, 5e-5, size=(2, 2))
     M_linear = np.eye(2) + delta
     
+    # 全局平移范围限制，避免两图完全不重叠
     t_limit = min_s / 4.0
     t_vec = np.random.uniform(-t_limit, t_limit, size=(2,))
     
@@ -86,18 +79,15 @@ def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k =
     H_bs = []
     
     # ---------------------------------------------------------
-    # 2. 循环生成 k 对具体的裁切矩阵
+    # 2. 循环生成 k 对解耦的裁切矩阵
     # ---------------------------------------------------------
     for _ in range(k):
-        # 随机裁切基准大小 S
+        # --- A. 基准形状生成 ---
         crop_s = np.random.randint(min_s, max_s + 1)
-        
-        # 随机旋转角度 theta
         theta = np.random.uniform(0, 2 * np.pi)
         
-        # 构建基准正方形的局部角点 (未旋转，中心为0)
         half_s = crop_s / 2.0
-        # 顺序：左上，右上，右下，左下
+        # 顺时针顺序：左上，右上，右下，左下
         corners_base = np.array([
             [-half_s, -half_s],
             [ half_s, -half_s],
@@ -105,48 +95,62 @@ def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k =
             [-half_s,  half_s]
         ]).T # (2, 4)
         
-        # 旋转矩阵 R
         cos_t, sin_t = np.cos(theta), np.sin(theta)
         R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])
+        corners_rot = R @ corners_base # (2, 4)
         
-        # 旋转后的基准角点
-        corners_rot = R @ corners_base
+        # --- B. 独立扰动 (Independent Jitter) ---
+        # 允许角点有边长 20% 的独立抖动
+        perspective_rho = crop_s * 0.1
         
-        # --- 引入单应性扰动 (Perspective Jitter) ---
-        # 这是一个关键改动点。
-        # 为了保证"不能有太大的扭曲"，我们将偏移量限制在边长的很小比例内 (例如 20%)
-        perspective_rho = crop_s * 0.2 
-        # 为4个角点分别生成独立的随机偏移
-        corner_offsets = np.random.uniform(-perspective_rho, perspective_rho, size=(2, 4))
+        # A 的独立形状 (局部坐标)
+        noise_A = np.random.uniform(-perspective_rho, perspective_rho, size=(2, 4))
+        corners_A_local = corners_rot + noise_A
         
-        # 得到 A 在局部坐标系下的不规则四边形角点
-        corners_A_local_perturbed = corners_rot + corner_offsets
+        # B 的独立形状 (局部坐标)
+        # 关键点：这里使用独立的随机噪声，不再依赖 A
+        noise_B = np.random.uniform(-perspective_rho, perspective_rho, size=(2, 4))
+        corners_B_local = corners_rot + noise_B
         
-        # -----------------------------------------------------
-        # 计算安全边界 (Margin Calculation)
-        # -----------------------------------------------------
-        # 1. 计算 A 的所需边距 (包含旋转和透视扰动)
-        max_A_x = np.max(np.abs(corners_A_local_perturbed[0, :]))
-        max_A_y = np.max(np.abs(corners_A_local_perturbed[1, :]))
+        # 为了计算 B 的边界，我们需要将 B 的局部形状变换到 B 的像素坐标系的比例尺下
+        # (即应用 M_linear，但不加平移，平移在最后算)
+        corners_B_local_transformed = M_linear @ corners_B_local
+        
+        # --- C. 计算安全边界 (Robust Margin Calculation) ---
+        # 允许中心点有额外的随机偏移 (例如边长的 10%)
+        # 这保证了 A 和 B 不是完全同心，而是有错位
+        shift_limit = crop_s * 0.1
+        
+        # 1. A 的安全边界 (仅需包含形状 A)
+        max_A_x = np.max(np.abs(corners_A_local[0, :]))
+        max_A_y = np.max(np.abs(corners_A_local[1, :]))
         margin_A_x = int(np.ceil(max_A_x))
         margin_A_y = int(np.ceil(max_A_y))
         
-        # 2. 计算 B 的所需边距
-        # B 的角点 = M_a_b * A 的角点
-        # P_B_local = M_linear * P_A_local
-        corners_B_local_offset = M_linear @ corners_A_local_perturbed
-        max_B_x = np.max(np.abs(corners_B_local_offset[0, :]))
-        max_B_y = np.max(np.abs(corners_B_local_offset[1, :]))
+        # 2. B 的安全边界 (包含形状 B + 中心偏移余量)
+        # 我们必须预留 shift_limit 的空间，这样稍后随机偏移时才不会出界
+        max_B_x = np.max(np.abs(corners_B_local_transformed[0, :])) + shift_limit
+        max_B_y = np.max(np.abs(corners_B_local_transformed[1, :])) + shift_limit
         margin_B_x = int(np.ceil(max_B_x))
         margin_B_y = int(np.ceil(max_B_y))
         
-        # 3. 计算中心点有效区域 (Intersection)
+        # 3. 计算 A 的中心点 (cx, cy) 的有效采样区域
+        # 这里的逻辑是：找出 A 的中心点范围，使得：
+        #   (1) A 在图 A 内
+        #   (2) 对应的 B (经过 M_ab 变换且加上最大 shift 后) 在图 B 内
+        
+        # A 的自身限制
         valid_A_x_min = margin_A_x
         valid_A_x_max = W_img - margin_A_x
         valid_A_y_min = margin_A_y
         valid_A_y_max = H_img - margin_A_y
         
+        # B 的限制投射回 A 的坐标系 (近似)
+        # B_center = A_center + t_vec + shift
+        # 所以 A_center = B_center - t_vec - shift
+        # 这是一个保守估计
         t_x, t_y = t_vec
+        
         valid_B_proj_x_min = margin_B_x - t_x
         valid_B_proj_x_max = W_img - margin_B_x - t_x
         valid_B_proj_y_min = margin_B_y - t_y
@@ -157,28 +161,38 @@ def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k =
         final_y_min = int(np.ceil(max(valid_A_y_min, valid_B_proj_y_min)))
         final_y_max = int(np.floor(min(valid_A_y_max, valid_B_proj_y_max)))
         
+        # 检查是否有解 (通常 min_s 只要不是大得离谱，都有解)
         if final_x_max <= final_x_min or final_y_max <= final_y_min:
-             raise ValueError(f"图像尺寸太小或 M_a_b 偏移过大，无法找到合适的裁切窗口。")
-
-        # -----------------------------------------------------
-        # 采样中心与矩阵构建
-        # -----------------------------------------------------
-        cx = np.random.randint(final_x_min, final_x_max)
-        cy = np.random.randint(final_y_min, final_y_max)
+             # 回退机制：如果实在找不到，就取图像中心，虽然理论上前面参数设置合理不会进这里
+             cx = W_img // 2
+             cy = H_img // 2
+        else:
+             cx = np.random.randint(final_x_min, final_x_max)
+             cy = np.random.randint(final_y_min, final_y_max)
+             
         center_A = np.array([cx, cy])
         
-        # 计算 A 的全局四角点
-        pts_A_global = corners_A_local_perturbed + center_A[:, None] # (2, 4)
+        # --- D. 生成最终坐标 ---
         
-        # 计算 B 的全局四角点 (直接应用 M_a_b)
-        pts_A_homo = np.vstack([pts_A_global, np.ones((1, 4))])
-        pts_B_global = M_a_b @ pts_A_homo # (2, 4)
+        # 1. 计算 A 的全局角点
+        pts_A_global = corners_A_local + center_A[:, None] # (2, 4)
         
-        # 源点: 4个角点
-        src_pts_A = pts_A_global.T.astype(np.float32) # (4, 2)
-        src_pts_B = pts_B_global.T.astype(np.float32) # (4, 2)
+        # 2. 计算 B 的全局角点
+        # 先计算理论上的对应中心 (完美对齐的情况)
+        center_B_theoretical = M_a_b @ np.array([cx, cy, 1.0])
         
-        # 目标点: 输出图的4个角点 (标准正方形)
+        # 生成随机中心偏移 (在预留的 shift_limit 范围内)
+        shift_x = np.random.uniform(-shift_limit, shift_limit)
+        shift_y = np.random.uniform(-shift_limit, shift_limit)
+        center_B_actual = center_B_theoretical + np.array([shift_x, shift_y])
+        
+        # 加上 B 独立的局部形状 (已变换过线性部分)
+        pts_B_global = corners_B_local_transformed + center_B_actual[:, None]
+        
+        # --- E. 构建 Homography ---
+        src_pts_A = pts_A_global.T.astype(np.float32)
+        src_pts_B = pts_B_global.T.astype(np.float32)
+        
         dst_pts = np.array([
             [0, 0],
             [dst_w, 0],
@@ -186,16 +200,15 @@ def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k =
             [0, dst_h]
         ], dtype=np.float32)
         
-        # 计算单应性矩阵 (4对点 -> 3x3 矩阵)
         H_a = cv2.getPerspectiveTransform(src_pts_A, dst_pts)
         H_b = cv2.getPerspectiveTransform(src_pts_B, dst_pts)
         
         H_as.append(H_a)
         H_bs.append(H_b)
+        
+    H_as = np.stack(H_as, axis=0)
+    H_bs = np.stack(H_bs, axis=0)
     
-    H_as = np.stack(H_as,axis=0)
-    H_bs = np.stack(H_bs,axis=0)
-            
     return H_as, H_bs, M_a_b
 
 
