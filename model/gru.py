@@ -34,22 +34,22 @@ class GRUBlock(nn.Module):
         # self.flow_dim = 2  # u, v
         
         # [修改] 总输入通道数: Corr + Offsets + Context + Flow
-        # 例如: 324 + 648 + 128 + 2 = 1102
+        # 例如: 324 + 648 + 128 = 1100
         input_dim = self.corr_dim + self.offset_dim + self.context_dim #+ self.flow_dim
         
         # 2. 运动编码器 (Motion Encoder)
         # 将空间误差特征图压缩为全局误差向量
         self.encoder = nn.Sequential(
             # Layer 1: [B, input_dim, H, W] -> [B, 256, H/2, W/2]
-            nn.Conv2d(input_dim, 256, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(input_dim, 512, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             
             # Layer 2: [B, 256, H/2, W/2] -> [B, 192, H/4, W/4]
-            nn.Conv2d(256, 192, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(512, 256, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             
             # Layer 3: [B, 192, H/4, W/4] -> [B, 128, H/8, W/8]
-            nn.Conv2d(192, hidden_dim, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(256, hidden_dim, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
         )
         
@@ -58,16 +58,8 @@ class GRUBlock(nn.Module):
         
         # 4. 解耦仿射头 (Decoupled Affine Heads)
         # 将隐藏状态映射为参数增量
-        self.head_trans = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 2),
-        ) # tx, ty
-        self.head_linear = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 4)
-        ) # a, b, c, d
+        self.head_trans = nn.Linear(hidden_dim, 2) # tx, ty
+        self.head_linear = nn.Linear(hidden_dim , 4) # a, b, c, d
         
         # 5. 注册缩放因子 (Buffers)
         # 平移部分: 允许较大更新 (0.1 对应归一化坐标下的 5% 图像宽度)
@@ -92,11 +84,11 @@ class GRUBlock(nn.Module):
                     nn.init.constant_(m.bias, 0)
         
         # 初始化输出头
-        nn.init.normal_(self.head_trans[-1].weight, mean=0.0, std=1e-3)
-        nn.init.constant_(self.head_trans[-1].bias, 0.0)
+        nn.init.normal_(self.head_trans.weight, mean=0.0, std=1e-3)
+        nn.init.constant_(self.head_trans.bias, 0.0)
         
-        nn.init.normal_(self.head_linear[-1].weight, mean=0.0, std=1e-3)
-        nn.init.constant_(self.head_linear[-1].bias, 0.0)
+        nn.init.normal_(self.head_linear.weight, mean=0.0, std=1e-3)
+        nn.init.constant_(self.head_linear.bias, 0.0)
 
     def forward(self, corr_features, corr_offsets, context_features, confidence_map, hidden_state):
         """

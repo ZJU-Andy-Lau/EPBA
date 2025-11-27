@@ -176,6 +176,7 @@ class Windows():
         points: torch.Tensor,
         Hs_1: torch.Tensor,
         Hs_2: torch.Tensor,
+        Ms:torch.Tensor,
         rpc_1:RPCModelParameterTorch = None,
         rpc_2:RPCModelParameterTorch = None,
         device: str = 'cpu'
@@ -214,6 +215,9 @@ class Windows():
         z_ori = coords_ori_homo[:, 2:3, :]
         coords_ori_rc = coords_ori_homo[:, :2, :] / (z_ori + eps) # (B, 2, N)
 
+        coords_ori_rehomo = torch.cat([coords_ori_rc, ones], dim=1) # (B, 3, N)
+        coords_ori_af = torch.bmm(Ms, coords_ori_rehomo) # (B,2,3) @ (B,3,N) -> (B,2,N)
+
         #==========================================
         # RPC 投影与反投影 （TODO）
         #==========================================
@@ -221,7 +225,7 @@ class Windows():
             pass
             raise ValueError("Not Impleted")
         else:
-            coords_2_ori = coords_ori_rc
+            coords_2_ori = coords_ori_af
 
         
         # 重新构建齐次坐标 (B, 3, N)
@@ -247,7 +251,7 @@ class Windows():
 
         # 将b中的采样点通过 Hb-1 -> RPC_b -> RPC_a -> Ha 投影回到a中的坐标
         corr_coords_in_2 = corr_coords.permute(0,3,4,1,2).flatten(1,3) # (B,H*W*N,2)
-        corr_coords_in_1 = self.transform_points_coords(corr_coords_in_2,Hs_2,Hs_1,rpc_1,rpc_2,device=self.device) # (B,h*w*N,2)
+        corr_coords_in_1 = self.transform_points_coords(corr_coords_in_2,Hs_2,Hs_1,Ms,rpc_1,rpc_2,device=self.device) # (B,h*w*N,2)
         corr_coords_in_1 = corr_coords_in_1.reshape(self.B,self.h,self.w,-1,2) # (B,h,w,N,2)
 
         #得到每组采样点的基准点（也就是a中的网格点），然后相减，得到每个采样点相对于其基准点的offset
