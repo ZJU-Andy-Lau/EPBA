@@ -18,6 +18,7 @@ class Windows():
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
                  gru_max_iter:int = 10):
         self.gru = gru
+        self.gru_access = gru.module if hasattr(gru,'module') else gru
         self.match_feats_a, self.ctx_feats_a, self.confs_a = feats_a
         self.match_feats_b, self.ctx_feats_b, self.confs_b = feats_b
         self.cost_volume_ab = None
@@ -283,7 +284,7 @@ class Windows():
         """
         返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
-        hidden_state = torch.zeros((self.B,self.gru.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
+        hidden_state = torch.zeros((self.B,self.gru_access.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
         flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
         preds = []
         for iter in self.gru_max_iter:
