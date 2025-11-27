@@ -9,6 +9,8 @@ from model.gru import GRUBlock
 from model.cost_volume import CostVolume
 from utils.rpc import RPCModelParameterTorch
 from utils.utils import debug_print
+from utils.visualize import vis_corr_heatmap, vis_flow_quiver, vis_reprojection, vis_grid_evolution
+from criterion.utils import invert_affine_matrix
 
 class Windows():
     def __init__(self,B,H,W,
@@ -243,15 +245,20 @@ class Windows():
         return coords_2
 
     def prepare_data(self,cost_volume:CostVolume,Hs_1,Hs_2,Ms,norm_factor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None):
+        debug_artifacts = {}
+
         imgs_1_coords_2 = self.transform_coords_mat(self.B,self.h,self.w,Hs_1,Hs_2,Ms,rpc_1,rpc_2,device=self.device) # 得到a的坐标网格投影到b后的坐标
         imgs_1_coords_2[...,0] = ((imgs_1_coords_2[...,0] / (self.H - 1)) * 2.) - 1.
         imgs_1_coords_2[...,1] = ((imgs_1_coords_2[...,1] / (self.W - 1)) * 2.) - 1.
 
         corr_simi, corr_coords = cost_volume.lookup(imgs_1_coords_2) #通过a投影到b中的归一化坐标在代价体中查询相似性，并且记录采样点在b中坐标，corr_simi(B,N,h,w),corr_coords(B,N,2,h,w)
 
+        # heatmap_vis = vis_corr_heatmap(corr_simi, title="Iter Heatmap")
+        # debug_artifacts['heatmap'] = heatmap_vis
+
         # 将b中的采样点通过 Hb-1 -> RPC_b -> RPC_a -> Ha 投影回到a中的坐标
         corr_coords_in_2 = corr_coords.permute(0,3,4,1,2).flatten(1,3) # (B,H*W*N,2)
-        corr_coords_in_1 = self.transform_points_coords(corr_coords_in_2,Hs_2,Hs_1,Ms,rpc_1,rpc_2,device=self.device) # (B,h*w*N,2)
+        corr_coords_in_1 = self.transform_points_coords(corr_coords_in_2,Hs_2,Hs_1,invert_affine_matrix(Ms),rpc_1,rpc_2,device=self.device) # (B,h*w*N,2)
         corr_coords_in_1 = corr_coords_in_1.reshape(self.B,self.h,self.w,-1,2) # (B,h,w,N,2)
 
         #得到每组采样点的基准点（也就是a中的网格点），然后相减，得到每个采样点相对于其基准点的offset
