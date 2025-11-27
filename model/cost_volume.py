@@ -83,20 +83,27 @@ class CostVolume:
         
         for i in range(self.num_levels):
             corr = self.corr_pyramid[i] # [B, H, W, 1, H_ref, W_ref]
+            print(f"0 {corr.shape}")
             _, _, _, _, H_ref_lvl, W_ref_lvl = corr.shape
             
             # 1. 坐标映射: 归一化 [-1, 1] -> 像素坐标 [0, W-1]
             coords_lvl = coords.clone()
             coords_lvl[..., 0] = (coords_lvl[..., 0] + 1.0) * (W_ref_lvl - 1.0) / 2.0
             coords_lvl[..., 1] = (coords_lvl[..., 1] + 1.0) * (H_ref_lvl - 1.0) / 2.0
+
+            print(f"1 {coords_lvl.shape}")
             
             # 2. 加上局部偏移: [B, H, W, 1, 2] + [1, 1, 1, N, 2] -> [B, H, W, N, 2]
             coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2)
+
+            print(f"2 {coords_new.shape} {delta.shape}")
             
             # 3. 映射回归一化坐标 [-1, 1] 用于 grid_sample
             coords_norm = coords_new.clone()
             coords_norm[..., 0] = 2.0 * coords_norm[..., 0] / (W_ref_lvl - 1.0) - 1.0
             coords_norm[..., 1] = 2.0 * coords_norm[..., 1] / (H_ref_lvl - 1.0) - 1.0
+
+            print(f"3 {coords_norm.shape}")
             
             # --- 计算 Level 0 像素坐标 ---
             # 将归一化坐标映射回 Level 0 像素空间
@@ -115,9 +122,14 @@ class CostVolume:
             
             # 准备 Input
             corr_reshaped = corr.view(-1, 1, H_ref_lvl, W_ref_lvl)
+
+            print(f"4 {corr_reshaped.shape}")
             
             # 准备 Grid: N 个点排成一行 (N, 1)
             num_points = delta.shape[0]
+
+            print(f"5 {delta.shape} {num_points}")
+
             grid_reshaped = coords_norm.view(-1, num_points, 1, 2)
             
             # 采样
