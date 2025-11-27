@@ -10,7 +10,7 @@ class SimLoss(nn.Module):
             downsample_factor (int): 特征图相对于原图的下采样倍数 (默认 16)
             temperature (float): InfoNCE 的温度参数
         """
-        super(SimLoss, self).__init__()
+        super().__init__()
         self.scale = downsample_factor
         self.temp = temperature
         self.epsilon = 1e-8

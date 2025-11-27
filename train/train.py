@@ -150,19 +150,19 @@ def main(args):
     log_name = args.log_prefix
 
     #构建logger
-    if rank == 0:
-        logger = SummaryWriter(log_dir=os.path.join('./log',f'{log_name}_tensorboard'))
-    else:
-        logger = None
+    # if rank == 0:
+    #     logger = SummaryWriter(log_dir=os.path.join('./log',f'{log_name}_tensorboard'))
+    # else:
+    #     logger = None
 
     dataset,dataloader,sampler = load_data(args)
     
     args.dataset_num = dataset.dataset_num
-    train_images = dataset.get_train_images()
-    if rank == 0:
-        for i,img in enumerate(train_images):
-            tag = f'train_imgs/{i}'
-            logger.add_image(tag,img,0,dataformats='HWC')
+    # train_images = dataset.get_train_images()
+    # if rank == 0:
+    #     for i,img in enumerate(train_images):
+    #         tag = f'train_imgs/{i}'
+    #         logger.add_image(tag,img,0,dataformats='HWC')
 
     encoder,gru,adapter_optimizer,gru_optimizer = load_models(args)
 
