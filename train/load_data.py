@@ -217,7 +217,7 @@ def process_image(
     residual2 = np.zeros((K, output_size, output_size), dtype=np.float32)
     print(H,W,min_crop_side,int(H * 0.75))
 
-    H_as, H_bs, M_a_b = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.75)),(output_size,output_size),K)
+    H_as, H_bs, M_a_b = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.5)),(output_size,output_size),K)
 
     img2_full_aff = cv2.warpAffine(img2_full, M_a_b, (W, H), flags=cv2.INTER_LINEAR)
     residual2_full_aff = cv2.warpAffine(residual2_full, M_a_b, (W, H), flags=cv2.INTER_NEAREST, borderValue=np.nan)

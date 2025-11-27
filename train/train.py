@@ -41,6 +41,10 @@ def print_on_main(msg, rank):
     if rank == 0:
         print(msg)
 
+def deb_print(msg):
+    rank = dist.get_rank()
+    print(f"[Rank {rank}]:{msg}")
+
 def distibute_model(model:nn.Module,local_rank):
     model = DistributedDataParallel(model,device_ids=[local_rank],output_device=local_rank,broadcast_buffers=False)
     return model
@@ -112,6 +116,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch):
     imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.to(args.device) for i in [imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b]]
 
     B,H,W = imgs1.shape[0],imgs1.shape[-2],imgs1.shape[-1]
+
+    deb_print(f"data shape: img1:{imgs1.shape} \t res1:{residual1.shape} \t Hs_a:{Hs_a.shape} \t Hs_b:{Hs_b.shape} \t M_a_b:{M_a_b.shape}")
 
     feats_1,feats_2 = encoder(imgs1,imgs2)
     
