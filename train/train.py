@@ -230,9 +230,10 @@ def main(args):
 
             for key in loss_details.keys():
                 pprint(f"key:{key} \t value:{loss_details[key]}")
-                loss_details[key] = dist.all_reduce(loss_details[key],dist.ReduceOp.AVG)
+                dist.all_reduce(loss_details[key],dist.ReduceOp.AVG)
                 pprint(f"key:{key} \t value:{loss_details[key]}")
             dist.barrier()
+            pprint(loss_details)
             for key in loss_details.keys():
                 records[key] += loss_details[key]
             records['count'] += 1
