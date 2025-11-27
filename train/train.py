@@ -113,7 +113,7 @@ def load_models(args):
 
 def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch):
     imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = data
-    imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(args.device) for i in [imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b]]
+    imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(device = args.device,dtype = torch.float32) for i in [imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b]]
 
     B,H,W = imgs1.shape[0],imgs1.shape[-2],imgs1.shape[-1]
 
