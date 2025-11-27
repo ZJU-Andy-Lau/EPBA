@@ -287,7 +287,7 @@ class Windows():
         hidden_state = torch.zeros((self.B,self.gru_access.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
         flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
         preds = []
-        for iter in self.gru_max_iter:
+        for iter in range(self.gru_max_iter):
             # 计算a->b的仿射
             if flag == 'ab':
                 corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b)
