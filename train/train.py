@@ -127,7 +127,7 @@ def load_models(args):
     
     encoder = distibute_model(encoder,args.local_rank)
     gru = distibute_model(gru,args.local_rank)
-    ctx_decoder = distibute_model(ctx_decoder,args.locak_rank)
+    ctx_decoder = distibute_model(ctx_decoder,args.local_rank)
     
     return encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer
 
