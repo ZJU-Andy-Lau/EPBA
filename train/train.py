@@ -34,7 +34,7 @@ from model.encoder import Encoder
 from model.gru import GRUBlock
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
-from utils.utils import str2bool
+from utils.utils import str2bool,feats_pca,vis_conf
 from solve.solve_windows import Windows
 
 def print_on_main(msg, rank):
@@ -112,7 +112,7 @@ def load_models(args):
     
     return encoder,gru,adapter_optimizer,gru_optimizer
 
-def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch):
+def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch,get_debuf_info = False):
     imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = data
     imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(device = args.device,dtype = torch.float32) for i in [imgs1,imgs2,residual1,residual2,Hs_a,Hs_b,M_a_b]]
 
@@ -121,6 +121,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch):
     # deb_print(f"data shape: img1:{imgs1.shape} \t res1:{residual1.shape} \t Hs_a:{Hs_a.shape} \t Hs_b:{Hs_b.shape} \t M_a_b:{M_a_b.shape}")
 
     feats_1,feats_2 = encoder(imgs1,imgs2)
+    match_feats_1,ctx_feats_1,confs_1 = feats_1
+    match_feats_2,ctx_feats_2,confs_2 = feats_2
     
     windows = Windows(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
     preds_ab = windows.solve(flag = 'ab')
@@ -140,7 +142,59 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,data,loss_funcs:Loss,epoch):
 
     loss,loss_details = loss_funcs(loss_input)
 
-    return loss,loss_details     
+    if get_debuf_info:
+        #====================准备debug info===========================
+        #train_imgs
+        train_img_1 = imgs1[0].permute(1,2,0).detach().cpu().numpy()
+        train_img_2 = imgs2[0].permute(1,2,0).detach().cpu().numpy()
+        train_img_1 = 255. * (train_img_1 - train_img_1.min()) / (train_img_1.max() - train_img_1.min())
+        train_img_2 = 255. * (train_img_2 - train_img_2.min()) / (train_img_2.max() - train_img_2.min())
+
+        #match_feats
+        match_feat_1 = match_feats_1[0].permute(1,2,0).detach().cpu().numpy()
+        match_feat_2 = match_feats_2[0].permute(1,2,0).detach().cpu().numpy()
+        match_feat_pca = feats_pca(np.stack([match_feat_1,match_feat_2],axis=0))
+        match_feat_img_1 = match_feat_pca[0]
+        match_feat_img_2 = match_feat_pca[1]
+
+        #ctx_feats
+        ctx_feat_1 = ctx_feats_1[0].permute(1,2,0).detach().cpu().numpy()
+        ctx_feat_2 = ctx_feats_2[0].permute(1,2,0).detach().cpu().numpy()
+        ctx_feat_pca = feats_pca(np.stack([ctx_feat_1,ctx_feat_2],axis=0))
+        ctx_feat_img_1 = ctx_feat_pca[0]
+        ctx_feat_img_2 = ctx_feat_pca[1]
+
+        #conf
+        conf_1 = confs_1[0][0].detach().cpu().numpy()
+        conf_2 = confs_2[0][0].detach().cpu().numpy()
+        _,conf_img_1 = vis_conf(conf_1,train_img_1,16)
+        _,conf_img_2 = vis_conf(conf_2,train_img_2,16)
+
+
+        debug_info ={
+            'imgs':{
+                'train_img_1':train_img_1.astype(np.uint8),
+                'train_img_2':train_img_2.astype(np.uint8),
+                'match_feat_img_1':match_feat_img_1,
+                'match_feat_img_2':match_feat_img_2,
+                'ctx_feat_img_1':ctx_feat_img_1,
+                'ctx_feat_img_2':ctx_feat_img_2,
+                'conf_img_1':conf_img_1,
+                'conf_img_2':conf_img_2
+            },
+            'values':{
+
+            }
+        }
+
+        #=============================================================
+    else:
+        debug_info = {
+            "imgs":{},
+            "values":{}
+        }
+
+    return loss,loss_details,debug_info     
 
 
 def main(args):
@@ -157,10 +211,10 @@ def main(args):
     log_name = args.log_prefix
 
     #构建logger
-    # if rank == 0:
-    #     logger = SummaryWriter(log_dir=os.path.join('./log',f'{log_name}_tensorboard'))
-    # else:
-    #     logger = None
+    if rank == 0:
+        logger = SummaryWriter(log_dir=os.path.join('./log',f'{log_name}_tensorboard'))
+    else:
+        logger = None
 
     dataset,dataloader,sampler = load_data(args)
     
@@ -205,11 +259,14 @@ def main(args):
         encoder.train()
         gru.train()
 
+        if epoch % 5 == 0:
+            debug_info = None
+
         for batch_idx,data in enumerate(dataloader):
             adapter_optimizer.zero_grad()
             gru_optimizer.zero_grad()
 
-            loss,loss_details = get_loss(args,encoder,gru,data,loss_funcs,epoch)
+            loss,loss_details,debug_info = get_loss(args,encoder,gru,data,loss_funcs,epoch,get_debuf_info = debug_info is None)
 
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
@@ -263,6 +320,9 @@ def main(args):
                     f"l_cons:{records['loss_consist'].item():.2f} \t"
                 )
             print(info)
+
+            for key in debug_info['imgs']:
+                logger.add_image(key,debug_info['imgs'][key],epoch,dataformats='HWC')
         
             
 

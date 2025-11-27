@@ -91,11 +91,11 @@ class GRUBlock(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
         
-        # 初始化输出头为 0 (关键步骤!)
-        nn.init.constant_(self.head_trans[-1].weight, 0.0)
+        # 初始化输出头
+        nn.init.normal_(self.head_trans[-1].weight, mean=0.0, std=1e-3)
         nn.init.constant_(self.head_trans[-1].bias, 0.0)
         
-        nn.init.constant_(self.head_linear[-1].weight, 0.0)
+        nn.init.normal_(self.head_linear[-1].weight, mean=0.0, std=1e-3)
         nn.init.constant_(self.head_linear[-1].bias, 0.0)
 
     def forward(self, corr_features, corr_offsets, flow, context_features, confidence_map, hidden_state):

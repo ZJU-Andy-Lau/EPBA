@@ -33,6 +33,20 @@ def debug_print(msg,once = True):
     if not once or dist.get_rank() == 0:
         print(f"[rank {dist.get_rank()}]:{msg}")
 
+def feats_pca(feats:np.ndarray):
+    if feats.ndim == 3:
+        feats = feats[None]
+    B,H,W,C = feats.shape
+    feats = feats.reshape(-1,C)
+    pca = PCA(n_components=3)
+    feats = pca.fit_transform(feats)
+    feats = 255. * (feats - feats.min()) / (feats.max() - feats.min())
+    feats = feats.reshape(B,H,W,3).astype(np.uint8)
+    if B == 1:
+        feats = feats.squeeze(0)
+    return feats
+
+
 def crop_rect_from_image(image, rect_points, size):
     """
     从图像中截取矩形区域。
