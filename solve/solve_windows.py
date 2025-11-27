@@ -145,6 +145,7 @@ class Windows():
         imgs_a_coords_homo = torch.stack([coords_row_flat, coords_col_flat, ones.squeeze(1)], dim=1) # imgs_a_coords_homo: (B, 3, N) -> Stack as [row, col, 1]
 
         Hs_1_inv = torch.inverse(Hs_1) # (B, 3, 3)
+        print(Hs_1_inv.dtype,imgs_a_coords_homo.dtype)
         coords_ori_homo = torch.bmm(Hs_1_inv, imgs_a_coords_homo) #(B, 3, 3) @ (B, 3, N) -> (B, 3, N)
         eps = 1e-7
         z_ori = coords_ori_homo[:, 2:3, :]
