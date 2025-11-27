@@ -143,8 +143,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
     match_feats_1,ctx_feats_1,confs_1 = feats_1
     match_feats_2,ctx_feats_2,confs_2 = feats_2
 
-    imgs_pred_1 = ctx_decoder(ctx_feat_1)
-    imgs_pred_2 = ctx_decoder(ctx_feat_2)
+    imgs_pred_1 = ctx_decoder(ctx_feats_1)
+    imgs_pred_2 = ctx_decoder(ctx_feats_2)
     
     windows = Windows(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
     preds_ab = windows.solve(flag = 'ab')
