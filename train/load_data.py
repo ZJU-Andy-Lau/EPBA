@@ -215,6 +215,7 @@ def process_image(
     imgs2 = np.zeros((K, output_size, output_size, 3), dtype=np.uint8)
     residual1 = np.zeros((K, output_size, output_size), dtype=np.float32)
     residual2 = np.zeros((K, output_size, output_size), dtype=np.float32)
+    print(H,W,min_crop_side,int(H * 0.75))
 
     H_as, H_bs, M_a_b = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.75)),(output_size,output_size),K)
 
