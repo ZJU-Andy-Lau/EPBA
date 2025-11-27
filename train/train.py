@@ -339,6 +339,7 @@ def main(args):
                     f"l_conf:{loss_details['loss_conf'].item():.2f} \t"
                     f"l_af:{loss_details['loss_affine'].item():.2f} \t"
                     f"l_cons:{loss_details['loss_consist'].item():.2f} \t"
+                    f"l_ctx:{loss_details['loss_ctx'].item():.2f} \t"
                     f"lr_encoder:{adapter_scheduler.get_last_lr()[0]:.2e} \t"
                     f"lr_gru:{gru_scheduler.get_last_lr()[0]:.2e} \t"
                 )
@@ -354,6 +355,7 @@ def main(args):
                     f"l_conf:{records['loss_conf'].item():.2f} \t"
                     f"l_af:{records['loss_affine'].item():.2f} \t"
                     f"l_cons:{records['loss_consist'].item():.2f} \t"
+                    f"l_ctx:{records['loss_ctx'].item():.2f} \t"
                 )
             print(info)
 
