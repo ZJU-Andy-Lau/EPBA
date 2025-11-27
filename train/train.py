@@ -261,14 +261,11 @@ def main(args):
         encoder.train()
         gru.train()
 
-        if epoch % 5 == 0:
-            debug_info = None
-
         for batch_idx,data in enumerate(dataloader):
             adapter_optimizer.zero_grad()
             gru_optimizer.zero_grad()
 
-            loss,loss_details,debug_info = get_loss(args,encoder,gru,data,loss_funcs,epoch,get_debuf_info = debug_info is None)
+            loss,loss_details,debug_info = get_loss(args,encoder,gru,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == 0))
 
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
