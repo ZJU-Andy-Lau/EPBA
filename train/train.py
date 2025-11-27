@@ -317,8 +317,10 @@ def main(args):
             
             loss.backward()
 
-            if hasattr(debug_info['values'],'pred_ab'):
-                check_grad(debug_info['values']['pred_ab'],'pred_ab')
+            if gru.module.head_linear[-1].weight.grad is None:
+                print(f"no grad in gru")
+            else:
+                print(f"grad:{gru.module.head_linear[-1].weight.grad}")
 
             adapter_optimizer.step()
             gru_optimizer.step()
