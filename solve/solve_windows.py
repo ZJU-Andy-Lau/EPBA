@@ -329,8 +329,8 @@ class Windows():
                 preds.append(delta_affines_ba)
                 self.Ms_b_a = self.Ms_b_a + delta_affines_ba
                 # flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
-        debug_print(f"norm_factor_a:{self.norm_factors_a}")
-        debug_print(f"norm_factor_b:{self.norm_factors_b}")
+        print(f"norm_factor_a:{self.norm_factors_a}")
+        print(f"norm_factor_b:{self.norm_factors_b}")
         preds = torch.stack(preds,dim=1)
         
         return preds            
