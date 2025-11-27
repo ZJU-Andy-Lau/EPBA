@@ -246,8 +246,8 @@ def main(args):
                     f"l_conf:{loss_details['loss_conf'].item():.2f} \t"
                     f"l_af:{loss_details['loss_affine'].item():.2f} \t"
                     f"l_cons:{loss_details['loss_consist'].item():.2f} \t"
-                    f"lr_encoder:{adapter_scheduler.get_last_lr():.2e} \t"
-                    f"lr_gru:{gru_scheduler.get_last_lr():.2e} \t"
+                    f"lr_encoder:{adapter_scheduler.get_last_lr()[0]:.2e} \t"
+                    f"lr_gru:{gru_scheduler.get_last_lr()[0]:.2e} \t"
                 )
                 print(info)
 
