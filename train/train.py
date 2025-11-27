@@ -77,7 +77,8 @@ def load_data(args):
                                 'std':(0.229, 0.224, 0.225)
                            },
                            mode='train')
-    sampler = ImageSampler(dataset,shuffle=True)
+    # sampler = ImageSampler(dataset,shuffle=True)
+    sampler = DistributedSampler(dataset, shuffle=True)
     dataloader = DataLoader(dataset,sampler=sampler,batch_size=1,num_workers=4,drop_last=False,pin_memory=False,shuffle=False)
 
     return dataset,dataloader,sampler
@@ -192,6 +193,7 @@ def main(args):
     for epoch in range(args.max_epoch):
         pprint(f'\nEpoch:{epoch}')
         sampler.set_epoch(epoch)
+        dataset.set_epoch(epoch)
         records = {
             "loss":0,
             "loss_sim":0,

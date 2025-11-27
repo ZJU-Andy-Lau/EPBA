@@ -293,11 +293,14 @@ class TrainDataset(Dataset):
     def get_train_images(self):
         return [np.stack([self.database[key]['images']['image_0'][:]] * 3,axis=-1) for key in self.database_keys]
     
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+    
     def __len__(self):
         return self.dataset_num
     
     def __getitem__(self, index):
-        seed = (index * self.world_size + self.rank) * 100 + int(time.time())
+        seed = int(index + self.epoch * 10000)
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
