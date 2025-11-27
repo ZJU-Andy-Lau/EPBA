@@ -49,6 +49,12 @@ def feats_pca(feats:np.ndarray):
         feats = feats.squeeze(0)
     return feats
 
+def check_grad(input:torch.Tensor,name = ''):
+    if input.grad is None:
+        print(f"tensor {name} has no grad")
+    else:
+        zero_grads = torch.sum(input.grad == 0).item()
+        print(f"tensor {name} has {zero_grads} zero grad elements")
 
 def crop_rect_from_image(image, rect_points, size):
     """

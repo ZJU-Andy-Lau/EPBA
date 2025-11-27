@@ -35,7 +35,7 @@ from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
-from utils.utils import str2bool,feats_pca,vis_conf,get_current_time
+from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
 from solve.solve_windows import Windows
 
 def print_on_main(msg, rank):
@@ -316,6 +316,9 @@ def main(args):
                 continue 
             
             loss.backward()
+
+            if hasattr(debug_info['values'],'pred_ab'):
+                check_grad(debug_info['values']['pred_ab'],'pred_ab')
 
             adapter_optimizer.step()
             gru_optimizer.step()
