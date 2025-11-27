@@ -888,8 +888,8 @@ def vis_feat_twin(feat1,feat2):
 def vis_conf(conf:np.ndarray,img:np.ndarray,ds,div = .5,output_path = None):
     points = (get_coord_mat(conf.shape[0],conf.shape[1]) * ds + ds * .5).reshape(-1,2)
     scores = conf.reshape(-1)
-    canvas_cont = deepcopy(img)
-    canvas_div = deepcopy(img)
+    canvas_cont = img.copy()
+    canvas_div = img.copy()
 
     def score_to_color_cont(score):
         red = int((1 - score) * 255)
@@ -907,7 +907,7 @@ def vis_conf(conf:np.ndarray,img:np.ndarray,ds,div = .5,output_path = None):
         color_cont = score_to_color_cont(score)
         color_div = score_to_color_div(score,div)
 
-        debug_print(f"{canvas_cont.shape}\t{canvas_cont.dtype}\t{p}")
+        # debug_print(f"{canvas_cont.shape}\t{canvas_cont.dtype}\t{p}")
 
         cv2.circle(canvas_cont,(p[1],p[0]),radius=1,color=color_cont,thickness=-1)
         cv2.circle(canvas_div,(p[1],p[0]),radius=1,color=color_div,thickness=-1)
