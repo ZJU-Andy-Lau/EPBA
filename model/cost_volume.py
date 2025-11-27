@@ -88,21 +88,21 @@ class CostVolume:
             
             # 1. 坐标映射: 归一化 [-1, 1] -> 像素坐标 [0, W-1]
             coords_lvl = coords.clone()
-            coords_lvl[..., 0] = (coords_lvl[..., 0] + 1.0) * (W_ref_lvl - 1.0) / 2.0
-            coords_lvl[..., 1] = (coords_lvl[..., 1] + 1.0) * (H_ref_lvl - 1.0) / 2.0
+            coords_lvl[..., 0] = (coords_lvl[..., 0] + 1.0) * (H_ref_0 - 1.0) / 2.0
+            coords_lvl[..., 1] = (coords_lvl[..., 1] + 1.0) * (W_ref_0 - 1.0) / 2.0
             
             # 2. 加上局部偏移: [B, H, W, 1, 2] + [1, 1, 1, N, 2] -> [B, H, W, N, 2]
             coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2) # [B, H, W, N, 2]
 
-            debug_print("===========img32===========")
+            debug_print(f"===========lvl {i} img32===========")
             debug_print(f"{coords_new[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_new[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
             
             # 3. 映射回归一化坐标 [-1, 1] 用于 grid_sample
             coords_norm = coords_new.clone() #[B, H, W, N, 2]
-            coords_norm[..., 0] = 2.0 * coords_norm[..., 0] / (W_ref_lvl - 1.0) - 1.0
-            coords_norm[..., 1] = 2.0 * coords_norm[..., 1] / (H_ref_lvl - 1.0) - 1.0
+            coords_norm[..., 0] = 2.0 * coords_norm[..., 0] / (H_ref_0 - 1.0) - 1.0
+            coords_norm[..., 1] = 2.0 * coords_norm[..., 1] / (W_ref_0 - 1.0) - 1.0
 
-            debug_print("===========norm===========")
+            debug_print(f"===========lvl {i} norm===========")
             debug_print(f"{coords_norm[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_norm[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
             
             # --- 计算 Level 0 像素坐标 ---
@@ -111,7 +111,7 @@ class CostVolume:
             coords_lvl0[..., 1] = (coords_norm[..., 0] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
             coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0
             
-            debug_print("===========img512===========")
+            debug_print(f"===========lvl {i} img512===========")
             debug_print(f"{coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
 
             # 调整维度: [B, H, W, N, 2] -> [B, N, 2, H, W]
