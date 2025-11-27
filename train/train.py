@@ -237,7 +237,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
 
 def main(args):
     os.makedirs('./log',exist_ok=True)
-    os.makedirs(args.encoder_output_path,exist_ok=True)
+    os.makedirs(args.model_save_path,exist_ok=True)
     os.makedirs(args.checkpoints_path,exist_ok=True)
     pprint = partial(print_on_main, rank=dist.get_rank())
     num_gpus = dist.get_world_size()
