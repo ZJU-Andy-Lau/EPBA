@@ -907,6 +907,8 @@ def vis_conf(conf:np.ndarray,img:np.ndarray,ds,div = .5,output_path = None):
         color_cont = score_to_color_cont(score)
         color_div = score_to_color_div(score,div)
 
+        debug_print(f"{canvas_cont.shape}\t{canvas_cont.dtype}\t{p}")
+
         cv2.circle(canvas_cont,(p[1],p[0]),radius=1,color=color_cont,thickness=-1)
         cv2.circle(canvas_div,(p[1],p[0]),radius=1,color=color_div,thickness=-1)
     
