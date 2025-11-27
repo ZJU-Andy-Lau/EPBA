@@ -209,8 +209,6 @@ def main(args):
 
             loss,loss_details = get_loss(args,encoder,gru,data,loss_funcs,epoch)
 
-            pprint(loss_details)
-
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
             dist.all_reduce(loss_status_tensor, op=dist.ReduceOp.SUM)
@@ -231,7 +229,9 @@ def main(args):
             gru_scheduler.step()
 
             for key in loss_details.keys():
+                pprint(f"key:{key} \t value:{loss_details[key]}")
                 loss_details[key] = dist.all_reduce(loss_details[key],dist.ReduceOp.AVG)
+                pprint(f"key:{key} \t value:{loss_details[key]}")
             dist.barrier()
             for key in loss_details.keys():
                 records[key] += loss_details[key]
