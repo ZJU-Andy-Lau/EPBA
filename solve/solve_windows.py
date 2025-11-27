@@ -298,7 +298,7 @@ class Windows():
                                                                self.confs_a,
                                                                hidden_state)
                 
-                delta_affines_ab[...,2] = delta_affines_ab[...,2] * self.norm_factors_a
+                delta_affines_ab[...,2] = self.coord_norm_inv(delta_affines_ab[...,2] , self.norm_factors_a)
                 preds.append(delta_affines_ab)
                 self.Ms_a_b = self.Ms_a_b + delta_affines_ab
                 hidden_state = new_hidden_states
@@ -315,7 +315,7 @@ class Windows():
                                                                self.confs_b,
                                                                hidden_state)
                 
-                delta_affines_ba[...,2] = delta_affines_ba[...,2] * self.norm_factors_b
+                delta_affines_ba[...,2] = self.coord_norm_inv(delta_affines_ba[...,2] , self.norm_factors_b)
                 preds.append(delta_affines_ba)
                 self.Ms_b_a = self.Ms_b_a + delta_affines_ba
                 hidden_state = new_hidden_states
