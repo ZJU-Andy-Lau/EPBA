@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.init as init
 import random
 import argparse
-from rpc import RPCModelParameterTorch
+from .rpc import RPCModelParameterTorch
 from typing import Tuple
 from sklearn.decomposition import PCA
 from enum import Enum
