@@ -95,7 +95,7 @@ class CostVolume:
             coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2) # [B, H, W, N, 2]
 
             debug_print("===========img32===========")
-            debug_print(coords_new[0,2,2,[0,10,20,30,40,50,60,70,80]],coords_new[0,16,16,[0,10,20,30,40,50,60,70,80]])
+            debug_print(f"{coords_new[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_new[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
             
             # 3. 映射回归一化坐标 [-1, 1] 用于 grid_sample
             coords_norm = coords_new.clone() #[B, H, W, N, 2]
@@ -103,7 +103,7 @@ class CostVolume:
             coords_norm[..., 1] = 2.0 * coords_norm[..., 1] / (H_ref_lvl - 1.0) - 1.0
 
             debug_print("===========norm===========")
-            debug_print(coords_norm[0,2,2,[0,10,20,30,40,50,60,70,80]],coords_norm[0,16,16,[0,10,20,30,40,50,60,70,80]])
+            debug_print(f"{coords_norm[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_norm[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
             
             # --- 计算 Level 0 像素坐标 ---
             # 将归一化坐标映射回 Level 0 像素空间
@@ -112,7 +112,7 @@ class CostVolume:
             coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0
             
             debug_print("===========img512===========")
-            debug_print(coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]],coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]])
+            debug_print(f"{coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
 
             # 调整维度: [B, H, W, N, 2] -> [B, N, 2, H, W]
             # N 对应 Channels 维度的一部分
