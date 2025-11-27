@@ -292,6 +292,7 @@ def main(args):
             "loss_conf":0,
             "loss_affine":0,
             "loss_consist":0,
+            "loss_ctx":0,
             "count":0
         }
         encoder.train()
