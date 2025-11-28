@@ -100,8 +100,8 @@ def load_models(args):
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
     gru_optimizer = optim.AdamW(params = gru.parameters(),lr = args.lr_gru_max)
     
-    if not args.encoder_path is None:
-        encoder.load_adapter(os.path.join(args.encoder_path,'adapter.pth'))
+    if not args.adapter_path is None:
+        encoder.load_adapter(os.path.join(args.adapter_path))
         pprint("Encoder Loaded")
     
     if not args.gru_path is None:
@@ -394,7 +394,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_num',type=int,default=None)
     parser.add_argument('--dataset_select',type=str,default=None)
     parser.add_argument('--dino_weight_path',type=str,default=None)
-    parser.add_argument('--encoder_path',type=str,default=None)
+    parser.add_argument('--adapter_path',type=str,default=None)
     parser.add_argument('--gru_path',type=str,default=None)
     parser.add_argument('--decoder_path',type=str,default=None)
     parser.add_argument('--model_save_path',type=str,default=f'./weights/{get_current_time()}')
