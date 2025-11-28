@@ -297,7 +297,7 @@ def main(args):
                     f"batch:{batch_idx+1} / {len(dataloader)} \t"
                     f"loss:{loss_details['loss'].item():.2f} \t"
                     f"l_sim:{loss_details['loss_sim'].item():.2f} \t"
-                    f"l_cons:{loss_details['loss_consist'].item():.2f} \t"
+                    f"l_conf:{loss_details['loss_conf'].item():.2f} \t"
                     f"l_ctx:{loss_details['loss_ctx'].item():.2f} \t"
                     f"lr_encoder:{adapter_scheduler.get_last_lr()[0]:.2e} \t"
                 )
