@@ -4,15 +4,16 @@ import torch.nn.functional as F
 from .utils import merge_affine
 
 class AffineLoss(nn.Module):
-    def __init__(self, img_size, grid_stride=16, decay_rate=0.8, reg_weight=1e-3,device = 'cuda'):
+    def __init__(self, img_size, grid_stride=64, decay_rate=0.8, reg_weight=1e-3, device='cuda'):
         """
-        初始化 AffineLoss (基于同名点匹配)
-
         Args:
             img_size (tuple): 裁切影像的尺寸 (H, W)
-            grid_stride (int): 网格采样步长，越小点越密计算量越大，默认为 16
+            grid_stride (int): 网格采样步长。
+                               建议设置较大(如 32 或 64)以生成稀疏网格(如 8x8)，
+                               既能大幅减少计算量，又能充分捕捉全局几何变换（平移/旋转/缩放）。
             decay_rate (float): 时间步权重的衰减系数，默认为 0.8
             reg_weight (float): 正则化项的权重，默认为 1e-3
+            device (str): 计算设备
         """
         super(AffineLoss, self).__init__()
         self.H, self.W = img_size
@@ -20,22 +21,20 @@ class AffineLoss(nn.Module):
         self.decay_rate = decay_rate
         self.reg_weight = reg_weight
         self.device = device
-        self.epsilon = 1e-6
+        self.epsilon = 1e-7
 
-        # 1. 预计算标准化的像素网格 (1, 3, N)
-        # 格式为齐次坐标 [x, y, 1]^T
-        self.register_buffer('base_grid', self._create_grid())
+        # 1. 预计算本地像素坐标网格 (1, 3, N)
+        # 覆盖 [0, H] 和 [0, W] 范围，格式为齐次坐标 [x, y, 1]^T
+        self.register_buffer('local_grid', self._create_local_grid())
 
-    def _create_grid(self):
-        """生成稀疏的像素采样网格"""
-        # 使用 meshgrid 生成坐标
-        y_range = torch.arange(0, self.H, self.grid_stride, dtype=torch.float32, device = self.device)
-        x_range = torch.arange(0, self.W, self.grid_stride, dtype=torch.float32, device = self.device)
+    def _create_local_grid(self):
+        """生成本地像素坐标系的稀疏网格"""
+        y_range = torch.arange(0, self.H, self.grid_stride, dtype=torch.float32, device=self.device)
+        x_range = torch.arange(0, self.W, self.grid_stride, dtype=torch.float32, device=self.device)
         grid_y, grid_x = torch.meshgrid(y_range, x_range, indexing='ij')
 
-        # 展平
         N = grid_y.numel()
-        # 堆叠为 (3, N) -> x, y, 1
+        # 堆叠为齐次坐标 [x, y, 1]^T
         grid = torch.stack([
             grid_x.reshape(-1),
             grid_y.reshape(-1),
@@ -44,159 +43,120 @@ class AffineLoss(nn.Module):
 
         return grid.unsqueeze(0) # (1, 3, N)
 
-    def apply_homography(self, H, points):
+    def get_reference_grid_in_large_coords(self, Hs_a):
         """
-        应用单应变换 H (3x3) 到点集 points (3xN)
-        并执行透视除法
-        """
-        # (B, 3, 3) @ (B, 3, N) -> (B, 3, N)
-        proj_points = torch.bmm(H, points)
+        将本地像素网格投影回大图坐标系，构建物理参考网格。
         
-        # 透视除法: x' = x/z, y' = y/z
-        z = proj_points[:, 2:3, :] + self.epsilon # 避免除零
-        return proj_points / z
-
-    def apply_affine(self, M, points):
-        """
-        应用仿射变换 M (2x3) 到点集 points (3xN)
-        无需透视除法，输出为 (B, 2, N)
-        """
-        # (B, 2, 3) @ (B, 3, N) -> (B, 2, N)
-        return torch.bmm(M, points)
-
-    def get_ground_truth_and_mask(self, Hs_a, Hs_b, M_a_b):
-        """
-        计算 Ground Truth 目标点和有效区域 Mask
+        Args:
+            Hs_a: (B, 3, 3) Large A -> Img A 的单应矩阵
+        Returns:
+            ref_grid: (B, 3, N) 大图坐标系下的齐次坐标 [x_large, y_large, 1]^T
         """
         B = Hs_a.shape[0]
-        N = self.base_grid.shape[2]
-        device = Hs_a.device
-
-        # --- 1. 准备数据 ---
-        # 扩展网格到 Batch
-        grid_a = self.base_grid.expand(B, -1, -1) # (B, 3, N)
-
-        # 确保 M_a_b 是 (B, 2, 3)
-        if M_a_b.dim() == 2:
-            M_a_b = M_a_b.unsqueeze(0).repeat(B, 1, 1)
-
-        # --- 2. 计算 Img A -> Large A 的坐标 (起点) ---
-        # coords_a = Hs_a_inv @ grid_a
+        
+        # 1. 计算逆矩阵: Img A -> Large A
+        # Hs_a 将大图坐标映射到小图像素坐标，其逆矩阵将像素坐标还原为大图坐标
         try:
-            Hs_a_inv = torch.linalg.inv(Hs_a).to(torch.float32)
+            Hs_a_inv = torch.linalg.inv(Hs_a)
         except RuntimeError:
-            Hs_a_inv = torch.inverse(Hs_a).to(torch.float32)
+            # 处理奇异矩阵或旧版PyTorch兼容性
+            Hs_a_inv = torch.inverse(Hs_a)
+            
+        # 2. 扩展本地网格以匹配 Batch
+        local_grid_batch = self.local_grid.expand(B, -1, -1) # (B, 3, N)
         
-        # 这里是大图坐标，数值可能很大
-        coords_a = self.apply_homography(Hs_a_inv, grid_a) # (B, 3, N)
-
-        # --- 3. 计算 Large A -> Large B 的坐标 (GT 目标点) ---
-        # coords_b = M_a_b @ coords_a
-        # 输出是 (B, 2, N)，这是我们在 Loss 中要回归的目标物理位置
-        target_coords_b_2d = self.apply_affine(M_a_b, coords_a) # (B, 2, N)
-
-        # 为了后续投影回 Img B 计算 Mask，我们需要将其变回齐次坐标 (B, 3, N)
-        target_coords_b_3d = torch.cat([
-            target_coords_b_2d, 
-            torch.ones(B, 1, N, device=device, dtype=target_coords_b_2d.dtype)
-        ], dim=1)
-
-        # --- 4. 计算 Mask (投影回 Img B 检查边界) ---
-        # proj_b = Hs_b @ coords_b
-        points_in_img_b = self.apply_homography(Hs_b, target_coords_b_3d) # (B, 3, N)
+        # 3. 投影: P_large_homo = H_inv @ P_local
+        large_points_homo = torch.bmm(Hs_a_inv, local_grid_batch) # (B, 3, N)
         
-        # 检查是否在 [0, W] 和 [0, H] 范围内
-        x_b = points_in_img_b[:, 0, :]
-        y_b = points_in_img_b[:, 1, :]
+        # 4. 透视除法 (Perspective Division)
+        # 这一步至关重要，因为单应变换是非线性的，必须除以 z 才能得到真实的物理坐标
+        z = large_points_homo[:, 2:3, :] + self.epsilon
+        x_large = large_points_homo[:, 0:1, :] / z
+        y_large = large_points_homo[:, 1:2, :] / z
         
-        # 定义稍宽松的边界或严格边界
-        mask = (x_b >= 0) & (x_b <= self.W - 1) & \
-               (y_b >= 0) & (y_b <= self.H - 1)
+        # 5. 重新构建为仿射计算所需的齐次坐标 [x, y, 1]
+        # 用于后续与仿射矩阵 M 相乘
+        ones = torch.ones_like(x_large)
+        ref_grid = torch.cat([x_large, y_large, ones], dim=1) # (B, 3, N)
         
-        mask = mask.float().unsqueeze(1) # (B, 1, N)
+        return ref_grid
 
-        return coords_a, target_coords_b_2d, mask
-
-    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, return_details=False): # [修改] 增加 return_details 参数
+    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, return_details=False):
         """
         Args:
             delta_affines: (B, steps, 2, 3) 预测的仿射变换增量
             Hs_a: (B, 3, 3) Img A -> Large A 的单应矩阵
-            Hs_b: (B, 3, 3) Img B -> Large B 的单应矩阵
+            Hs_b: (B, 3, 3) Img B -> Large B 的单应矩阵 (本方案中仅保留接口兼容性，不实际参与计算)
             M_a_b: (B, 2, 3) 或 (2, 3) Large A -> Large B 的真值仿射变换
-            return_details: Bool, 是否返回可视化所需的中间数据
+            return_details: (bool) 是否返回可视化所需的详细信息
         """
         B, steps, _, _ = delta_affines.shape
-        device = delta_affines.device
-
-        # 1. 预计算 Ground Truth 和 Mask
-        # coords_a: (B, 3, N) - 起点 (Large coords)
-        # target_coords: (B, 2, N) - 终点 (Large coords)
-        # mask: (B, 1, N) - 有效点掩膜
-        coords_a, target_coords, mask = self.get_ground_truth_and_mask(Hs_a, Hs_b, M_a_b)
         
-        # 统计有效点数量，用于 Loss 归一化 (避免除以0)
-        mask_sum = mask.sum(dim=2) # (B, 1)
-        valid_batch_mask = (mask_sum > 0).float() # 标记哪些 batch 有有效点
-
-        # 2. 初始化累积仿射变换 (单位阵)
-        current_affine = torch.eye(2, 3, device=device, dtype=delta_affines.dtype).unsqueeze(0).repeat(B, 1, 1)
-        identity_linear = torch.eye(2, device=device, dtype=delta_affines.dtype).unsqueeze(0).repeat(B, 1, 1)
-
-        step_losses = []
-
-        # 3. 序列预测循环
-        for t in range(steps):
-            delta = delta_affines[:, t, :, :]
-            current_affine = merge_affine(current_affine,delta)
-
-            # --- A. 距离 Loss ---
-            # 预测点位置: pred = current_affine @ coords_a
-            pred_coords = self.apply_affine(current_affine, coords_a) # (B, 2, N)
-
-            # 欧氏距离: ||pred - target||_2
-            dist = torch.norm(pred_coords - target_coords, p=2, dim=1, keepdim=True) # (B, 1, N)
-
-            # 应用 Mask
-            masked_dist = dist * mask # (B, 1, N)
+        # --- 1. 构建参考网格 (Reference Grid) ---
+        # 将 Img A 的网格还原到大图物理空间
+        # ref_grid: (B, 3, N)
+        ref_grid = self.get_reference_grid_in_large_coords(Hs_a)
+        
+        # --- 2. 计算 Ground Truth 目标点 ---
+        # 确保 M_a_b 的 Batch 维度匹配
+        if M_a_b.dim() == 2:
+            M_gt = M_a_b.unsqueeze(0).expand(B, -1, -1)
+        else:
+            M_gt = M_a_b
             
-            # 计算平均距离 (仅在有效区域内)
-            # sum over N, divide by mask_sum
-            loss_dist_batch = masked_dist.sum(dim=2) / (mask_sum + self.epsilon) # (B, 1)
-            loss_dist = (loss_dist_batch * valid_batch_mask).mean() # Batch 维度平均
+        # 使用真值矩阵变换参考网格，得到目标点
+        # target_points: (B, 2, N)
+        with torch.no_grad():
+            target_points = torch.bmm(M_gt, ref_grid)
 
-            # --- B. 正则化 Loss ---
-            # 约束 M 的线性部分接近单位阵
+        # --- 3. 迭代计算预测损失 ---
+        # 初始化当前累积变换为单位阵
+        current_affine = torch.eye(2, 3, device=self.device, dtype=delta_affines.dtype).unsqueeze(0).repeat(B, 1, 1)
+        identity_linear = torch.eye(2, device=self.device, dtype=delta_affines.dtype).unsqueeze(0).repeat(B, 1, 1)
+        
+        step_losses = []
+        
+        for t in range(steps):
+            delta = delta_affines[:, t]
+            # 更新累积仿射矩阵 (M_new = M_old + delta_new 或 M_new = delta_new @ M_old，取决于 merge_affine 实现)
+            # 这里沿用原工程的 merge_affine 工具函数
+            current_affine = merge_affine(current_affine, delta)
+            
+            # A. 几何距离损失 (Physical Grid Distance)
+            # 使用预测矩阵变换参考网格
+            # pred_points: (B, 2, N)
+            pred_points = torch.bmm(current_affine, ref_grid)
+            
+            # 计算 L1 距离
+            # 在大图坐标系下，坐标数值可能很大 (e.g. 10000+)，L1 Loss 相比 MSE (L2^2) 梯度更稳定，不易爆炸
+            loss_dist = torch.mean(torch.abs(pred_points - target_points))
+            
+            # B. 正则化损失 (Regularization)
+            # 约束仿射变换的线性部分 (旋转/缩放/剪切) 接近单位阵，防止过拟合或病态扭曲
             pred_linear = current_affine[:, :, :2]
-            diff = pred_linear - identity_linear
-            loss_reg = torch.norm(diff, p='fro', dim=(1, 2)).mean()
-
-            # --- C. 单步总 Loss ---
+            # 使用 Frobenious 范数
+            loss_reg = torch.norm(pred_linear - identity_linear, p='fro', dim=(1, 2)).mean()
+            
+            # C. 单步总 Loss
             total_step_loss = loss_dist + self.reg_weight * loss_reg
             step_losses.append(total_step_loss)
-
-        # 4. 时间加权聚合
+            
+        # --- 4. 时间加权聚合 ---
+        # 赋予后期迭代更高的权重
         step_losses_tensor = torch.stack(step_losses) # (steps,)
-        
-        # 生成逆向衰减权重 [decay^(T-1), ..., 1]
-        exponents = torch.arange(steps - 1, -1, -1, device=device, dtype=torch.float32)
+        exponents = torch.arange(steps - 1, -1, -1, device=self.device, dtype=torch.float32)
         weights = torch.pow(self.decay_rate, exponents)
         
         weighted_loss = (step_losses_tensor * weights).sum() / weights.sum()
-
+        
+        # --- 5. 返回结果与可视化信息 ---
         if return_details:
-            # M_a_b 可能是 (2,3) 或 (B,2,3)，统一确保它在返回时可被处理
-            if M_a_b.dim() == 2:
-                M_a_b_batch = M_a_b.unsqueeze(0).repeat(B, 1, 1)
-            else:
-                M_a_b_batch = M_a_b
-
             details = {
-                'pred_affine': current_affine.detach(), # (B, 2, 3)
-                'gt_affine': M_a_b_batch.detach(),      # (B, 2, 3)
-                'coords_a': coords_a.detach(),          # (B, 3, N) - 大图坐标系下的源点
-                'Hs_b': Hs_b.detach()                   # (B, 3, 3) - 用于投影回 Img B
+                'pred_affine': current_affine.detach(),
+                'gt_affine': M_gt.detach(),
+                'coords_a': ref_grid.detach(), # 返回大图坐标系下的参考点
+                'Hs_b': Hs_b.detach()          # 保留 Hs_b 以便在可视化函数中投影回 Img B
             }
             return weighted_loss, details
-
+            
         return weighted_loss
