@@ -363,8 +363,14 @@ def main(args):
                     f"l_af:{records['loss_affine'].item():.2f} \t"
                     f"l_cons:{records['loss_consist'].item():.2f} \t"
                     f"l_ctx:{records['loss_ctx'].item():.2f} \t"
+                    f"min_loss:{min_loss:.2f} \t"
                 )
             print(info)
+
+            for key in records:
+                if key == 'count':
+                    continue
+                logger.add_scalar(f"loss/{key}",records[key].item(),epoch)
 
             for key in debug_info['imgs']:
                 logger.add_image(f"imgs/{key}",debug_info['imgs'][key],epoch,dataformats='HWC')
@@ -372,7 +378,12 @@ def main(args):
             for key in debug_info['values']:
                 print(f"{key} : {debug_info['values'][key]}")
         
-            
+            if loss < min_loss:
+                min_loss = loss
+                encoder.module.save_adapter(os.path.join(args.model_save_path,'adapter.pth'))
+                torch.save(gru.state_dict(),os.path.join(args.model_save_path,'gru.pth'))
+                torch.save(ctx_decoder.state_dict(),os.path.join(args.model_save_path,'ctx_decoder.pth'))
+                print("Best Updated")
 
     
 

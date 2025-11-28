@@ -283,10 +283,10 @@ class TrainDataset(Dataset):
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
         
-        for key in self.database_keys:
-            img_num = len(self.database[key]['residuals'])
-            res = np.concatenate([self.database[key]['residuals'][f"residual_{i}"][:].reshape(-1) for i in range(img_num)])
-            self.red_mids.append(np.nanmedian(res))
+        # for key in self.database_keys:
+        #     img_num = len(self.database[key]['residuals'])
+        #     res = np.concatenate([self.database[key]['residuals'][f"residual_{i}"][:].reshape(-1) for i in range(img_num)])
+        #     self.red_mids.append(np.nanmedian(res))
 
 
         self.distort_transform = transforms.Compose([
