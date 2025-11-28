@@ -76,7 +76,7 @@ class Loss(nn.Module):
             'loss_sim':loss_sim.clone().detach(),
             'loss_conf':loss_conf.clone().detach(),
             'loss_affine':loss_affine.clone().detach(),
-            'loss_affine_last':loss_affine_last.clone.detach(),
+            'loss_affine_last':loss_affine_last.clone().detach(),
             'loss_consist':loss_consist.clone().detach(),
             'loss_ctx':loss_ctx.clone().detach()
         }
