@@ -358,6 +358,7 @@ def main(args):
             dist.barrier()
             for key in loss_details.keys():
                 records[key] += loss_details[key]
+            step_count += 1
 
             if rank == 0:
                 curtime = time.perf_counter()
