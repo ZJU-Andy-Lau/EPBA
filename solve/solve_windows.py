@@ -278,7 +278,7 @@ class Windows():
         corr_simi, corr_coords = cost_volume.lookup(imgs_1_coords_2) #通过a投影到b中的归一化坐标在代价体中查询相似性，并且记录采样点在b中坐标，corr_simi(B,N,h,w),corr_coords(B,N,2,h,w)
 
         corr_coords_in_2 = corr_coords.permute(0,3,4,1,2).flatten(1,3) # (B,h*w*N,2) b小图坐标系下采样点坐标
-        corr_coords_in_big_1 = self.proj_img1_to_big2(corr_coords_in_2,Hs_2).reshape(self.B,self.h,self.w,-1,2) # (B,h,w,N,2)
+        corr_coords_in_big_1 = self.proj_img1_to_big2(corr_coords_in_2,Hs_2,device=self.device).reshape(self.B,self.h,self.w,-1,2) # (B,h,w,N,2)
 
 
         #得到每组采样点的基准点（也就是a中的网格点），然后相减，得到每个采样点相对于其基准点的offset
