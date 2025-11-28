@@ -316,6 +316,11 @@ def main(args):
                 )
             print(info)
 
+            for key in records:
+                if key == 'count':
+                    continue
+                logger.add_scalar(f"loss/{key}",records[key].item(),epoch)
+
             for key in debug_info['imgs']:
                 logger.add_image(f"imgs/{key}",debug_info['imgs'][key],epoch,dataformats='HWC')
             
@@ -347,7 +352,6 @@ if __name__ == '__main__':
     parser.add_argument('--model_save_path',type=str,default=f'./weights/{get_current_time()}')
     parser.add_argument('--checkpoints_path',type=str,default=None)
     parser.add_argument('--batch_size',type=int,default=8)
-    parser.add_argument('--gru_max_iter',type=int,default=10)
     parser.add_argument('--resume_training',type=str2bool,default=False)
     parser.add_argument('--max_epoch',type=int,default=1000)
     parser.add_argument('--lr_encoder_min',type=float,default=1e-7)
