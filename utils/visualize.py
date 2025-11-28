@@ -1,13 +1,15 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import matplotlib.gridspec as gridspec
 import cv2
 import io
 
 def fig_to_numpy(fig):
     """将 matplotlib figure 转换为 numpy array (H, W, 3) RGB"""
     io_buf = io.BytesIO()
-    fig.savefig(io_buf, format='png', dpi=100)
+    fig.savefig(io_buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0.1)
     io_buf.seek(0)
     img_arr = np.frombuffer(io_buf.getvalue(), dtype=np.uint8)
     io_buf.close()
@@ -47,9 +49,6 @@ def vis_pyramid_correlation(
     
     # offset: [B, L*P*2, H, W] -> 重塑为 [B, L, P, 2, H, W]
     # 注意：原始 offset 排列可能是 interleaved (x1, y1, x2, y2...)
-    # 在 solve_windows.py/prepare_data 中: 
-    # corr_offset (B, h, w, N, 2) -> permute(0,3,4,1,2) -> flatten(1,2) -> (B, N*2, h, w)
-    # 因此这里的 channel 维度是 [p1_row, p1_col, p2_row, p2_col, ...]
     offset_reshaped = corr_offset.view(B, num_levels, points_per_level, 2, H, W)
     
     imgs_dict = {}
@@ -65,10 +64,6 @@ def vis_pyramid_correlation(
         current_simi = simi_levels[lvl][b_idx]     # [P, H, W]
         current_offset = offset_reshaped[b_idx, lvl] # [P, 2, H, W]
         
-        # 获取本层下采样后的 stride (近似)，仅用于设置坐标轴范围参考，不做计算依赖
-        # Level 0: stride=1(相对于feature map), Level 1: stride=2 ...
-        lvl_stride_approx = 2 ** lvl 
-        
         for ax_idx, (r_ratio, c_ratio) in enumerate(anchor_points):
             # 确定基准像素坐标
             py = int(r_ratio * H)
@@ -79,8 +74,6 @@ def vis_pyramid_correlation(
             simi_vals = current_simi[:, py, px].detach().cpu().numpy()
             
             # offsets: [P, 2] -> (row_offset, col_offset)
-            # 乘以 norm_scale 还原为像素单位 (相对于 Feature Map 坐标系或原图坐标系，取决于 norm_factor 定义)
-            # 通常 norm_factor 是原图尺寸，所以还原的是原图尺度的位移
             offsets_norm = current_offset[:, :, py, px].detach().cpu().numpy()
             offsets_pixel = offsets_norm * norm_scale
             
@@ -95,7 +88,6 @@ def vis_pyramid_correlation(
             ax.scatter(0, 0, c='black', marker='+', s=100, label='Center')
             
             # 绘制采样点 (颜色映射相似度)
-            # 使用 vmin/vmax 固定颜色范围便于比较，假设 simi 是 logits 或概率
             sc = ax.scatter(dx, dy, c=simi_vals, cmap='jet', s=20, alpha=0.8)
             
             ax.set_title(f"Lvl {lvl} @ ({px},{py})\nrange: {offsets_pixel.min():.1f}~{offsets_pixel.max():.1f}")
@@ -125,134 +117,164 @@ def vis_affine_prediction(
     source_points: torch.Tensor,# [3, N] (Large Coords, Homo)
     Hs_b: torch.Tensor,         # [3, 3] (Proj Matrix to Img B)
     canvas_size: tuple = (512, 512),
-    grid_density: int = 8       # Grid line density
+    grid_side_len: int = 8      # 假设是 8x8 的网格
 ):
     """
-    可视化仿射变换预测结果。
-    包含两个子图：
-    1. 网格对齐 (Grid Alignment): 将 Source Points 的边界框变换并投影到 Image B，对比 GT(绿) 和 Pred(红)。
-    2. 残差矢量场 (Residual Vector): 绘制重投影后的误差矢量箭头。
+    可视化仿射变换预测结果 (Multi-scale Structured Visualization)。
+    
+    视图设计：
+    1. Global View: 展示 8x8 完整矢量场，锁定在 512x512 图像范围，标记 5 个 ROI 区域。
+    2. Local View: 展示 5 个关键区域（四角+中心），每个区域包含 2x2 的子网格。
+       绘制连接 4 点的四边形，直观展示局部的旋转、缩放和位移误差。
     """
     H, W = canvas_size
     
     # --- 数据准备 ---
-    # 确保输入是 CPU Numpy
     pred_matrix = pred_matrix.detach().cpu()
     gt_matrix = gt_matrix.detach().cpu()
     source_points = source_points.detach().cpu() # [3, N]
     Hs_b = Hs_b.detach().cpu()
 
-    # 1. 计算变换后的 Large Coords
-    # M @ P -> [2, N]
-    # 结果是物理坐标 (Large coords)
-    pred_pts_large_2d = pred_matrix @ source_points
-    gt_pts_large_2d = gt_matrix @ source_points
-    
-    # 2. 扩展为齐次坐标以便投影
-    ones = torch.ones(1, source_points.shape[1])
-    pred_pts_large_3d = torch.cat([pred_pts_large_2d, ones], dim=0) # [3, N]
-    gt_pts_large_3d = torch.cat([gt_pts_large_2d, ones], dim=0)     # [3, N]
-
-    # 3. 投影回 Image B 像素空间
-    # p_img = H @ p_large (并做透视除法)
-    def project_to_img(pts_large_3d, H_mat):
-        pts_proj = H_mat @ pts_large_3d
+    # 1. 投影到 Img B 像素坐标系
+    def project_to_img(pts_large_3d, H_mat, affine_mat):
+        # Step 1: Apply Affine (Large A -> Large B)
+        # pts_large_3d: [3, N], affine_mat: [2, 3]
+        pts_large_b_2d = affine_mat @ pts_large_3d # [2, N]
+        
+        # 变回齐次坐标 [x, y, 1]
+        ones = torch.ones(1, pts_large_b_2d.shape[1])
+        pts_large_b_3d = torch.cat([pts_large_b_2d, ones], dim=0) # [3, N]
+        
+        # Step 2: Apply Homography (Large B -> Img B)
+        pts_proj = H_mat @ pts_large_b_3d # [3, N]
+        
+        # 透视除法
         z = pts_proj[2:3, :] + 1e-7
-        return pts_proj[:2, :] / z # [2, N]
+        return pts_proj[:2, :] / z # [2, N] (x, y)
 
-    pred_pts_pix = project_to_img(pred_pts_large_3d, Hs_b).numpy() # [2, N] (y, x)
-    gt_pts_pix = project_to_img(gt_pts_large_3d, Hs_b).numpy()     # [2, N] (y, x)
+    # 计算所有点的 GT 和 Pred 像素坐标
+    gt_pts_pix = project_to_img(source_points, Hs_b, gt_matrix).numpy()     # [2, N]
+    pred_pts_pix = project_to_img(source_points, Hs_b, pred_matrix).numpy() # [2, N]
 
-    # --- 绘图 ---
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    # 2. 重塑为二维网格结构 [2, 8, 8]
+    # 假设 source_points 是 meshgrid 生成的 (row-major 或 col-major)
+    # AffineLoss 中通常是 meshgrid(y, x, indexing='ij') -> stack(x, y)
+    # 这种情况下，展平时先遍历列(W)，再遍历行(H)。即 reshape(H, W)
+    try:
+        gt_grid = gt_pts_pix.reshape(2, grid_side_len, grid_side_len)     # [2, H_grid, W_grid]
+        pred_grid = pred_pts_pix.reshape(2, grid_side_len, grid_side_len)
+    except ValueError:
+        # 如果点数不对，无法重塑，回退到仅显示散点
+        print(f"Error: Grid size mismatch. Expected {grid_side_len**2} points, got {gt_pts_pix.shape[1]}")
+        return None, None
+
+    # --- 绘图初始化 ---
+    fig = plt.figure(figsize=(16, 10), facecolor='white')
+    # 上部分给全局图，下部分给 5 个局部图
+    gs = gridspec.GridSpec(2, 5, height_ratios=[2.2, 1], hspace=0.35, wspace=0.3)
+
+    # ==========================
+    # 1. Global View (Top)
+    # ==========================
+    ax_global = fig.add_subplot(gs[0, :])
+    ax_global.set_title(f"Global Deformation Field ({grid_side_len}x{grid_side_len} Grid) - Green: GT, Red: Pred", fontsize=14, fontweight='bold')
     
-    # View 1: Residual Vector Field
-    ax1 = axes[0]
-    ax1.set_title("Residual Vector Field (Red=Pred, Green=GT)")
-    ax1.set_xlim(0, W)
-    ax1.set_ylim(H, 0) # Y axis downwards
+    # 绘制全图网格点
+    ax_global.scatter(gt_pts_pix[0], gt_pts_pix[1], c='green', s=15, alpha=0.6, label='GT Grid')
+    ax_global.scatter(pred_pts_pix[0], pred_pts_pix[1], c='red', s=15, alpha=0.6, label='Pred Grid')
     
-    # 绘制 GT 点 (绿色小点)
-    ax1.scatter(gt_pts_pix[1], gt_pts_pix[0], c='g', s=2, alpha=0.5, label='GT')
-    # 绘制 Pred 点 (红色小点)
-    ax1.scatter(pred_pts_pix[1], pred_pts_pix[0], c='r', s=2, alpha=0.5, label='Pred')
+    # 绘制全图误差场 (Quiver)
+    # 箭头从 GT 指向 Pred
+    ax_global.quiver(gt_pts_pix[0], gt_pts_pix[1], 
+                     pred_pts_pix[0] - gt_pts_pix[0], pred_pts_pix[1] - gt_pts_pix[1],
+                     angles='xy', scale_units='xy', scale=1, 
+                     color='red', alpha=0.4, width=0.002, headwidth=3, label='Error Vector')
+
+    # 强制锁定坐标系 (关键！)
+    ax_global.set_xlim(0, W)
+    ax_global.set_ylim(H, 0) # Y轴向下
+    ax_global.grid(True, linestyle=':', alpha=0.3)
+    ax_global.legend(loc='upper right')
+
+    # ==========================
+    # 2. Local Views (Bottom)
+    # ==========================
     
-    # 绘制误差箭头 (GT -> Pred)
-    # 为了避免过于密集，进行下采样
-    num_pts = gt_pts_pix.shape[1]
-    step = max(1, num_pts // 200) # 最多画200个箭头
-    for i in range(0, num_pts, step):
-        # (x, y)
-        start = (gt_pts_pix[1, i], gt_pts_pix[0, i])
-        end = (pred_pts_pix[1, i], pred_pts_pix[0, i])
-        ax1.arrow(start[0], start[1], end[0]-start[0], end[1]-start[1], 
-                  color='orange', alpha=0.6, head_width=5, length_includes_head=True)
-    
-    ax1.legend()
-    
-    # View 2: Grid Alignment (Bounding Box)
-    # 绘制原始 source_points 的边界框经过变换后的样子
-    ax2 = axes[1]
-    ax2.set_title("Alignment Check (Green=GT, Red=Pred)")
-    ax2.set_xlim(0, W)
-    ax2.set_ylim(H, 0)
-    
-    # 计算边界框角点索引 (Min/Max X/Y)
-    # 注意: source_points 是 [x, y, 1] (AffineLoss._create_grid)
-    # grid_stride 导致点是网格状的。
-    # 我们可以直接取四个角点 (TopLeft, TopRight, BottomLeft, BottomRight)
-    # source_points 是 meshgrid 展平，顺序通常是 col-major 或 row-major
-    # AffineLoss: stack([grid_x, grid_y...]) -> ij indexing -> y varies first? 
-    # let's just pick min/max coordinates to be safe.
-    src_x = source_points[0].numpy()
-    src_y = source_points[1].numpy()
-    
-    # 找到四个角点的索引
-    # TL: min_x, min_y; TR: max_x, min_y; ...
-    # 由于仿射变换保持直线，画这四个点的连线即可模拟网格框
-    corners_idx = []
-    # 近似找角点
-    for tx in [src_x.min(), src_x.max()]:
-        for ty in [src_y.min(), src_y.max()]:
-            # 找距离最近的点索引
-            dist = (src_x - tx)**2 + (src_y - ty)**2
-            corners_idx.append(np.argmin(dist))
-            
-    # 排序角点以绘制多边形 (TL -> TR -> BR -> BL)
-    # 简单起见，分别绘制 GT 和 Pred 的所有点作为点云，或者仅连接角点
-    # 这里绘制变换后的外框 (Polygon)
-    
-    def draw_poly(ax, pts_pix, color, label):
-        # pts_pix: [2, N]
-        # 提取角点
-        poly_pts = pts_pix[:, corners_idx].T # [4, 2] (y, x)
-        # 交换为 (x, y)
-        poly_pts = poly_pts[:, [1, 0]]
+    # 定义 5 个关键区域的切片索引 (row_slice, col_slice)
+    # 选取 2x2 的块
+    roi_configs = [
+        ("Top-Left", slice(0, 2), slice(0, 2)),
+        ("Top-Right", slice(0, 2), slice(grid_side_len-2, grid_side_len)),
+        ("Center", slice(grid_side_len//2-1, grid_side_len//2+1), slice(grid_side_len//2-1, grid_side_len//2+1)),
+        ("Bottom-Left", slice(grid_side_len-2, grid_side_len), slice(0, 2)),
+        ("Bottom-Right", slice(grid_side_len-2, grid_side_len), slice(grid_side_len-2, grid_side_len))
+    ]
+
+    # 绘制顺序以形成闭合四边形: (0,0) -> (0,1) -> (1,1) -> (1,0) -> (0,0)
+    # 对应的 flat index (在 2x2 块内): 0 -> 2 -> 3 -> 1 -> 0
+    # 注意 numpy reshape 后的存储顺序
+    poly_order = [0, 2, 3, 1, 0] 
+
+    for i, (name, r_slice, c_slice) in enumerate(roi_configs):
+        ax_local = fig.add_subplot(gs[1, i])
         
-        # 排序以形成闭合环 (TL, TR, BR, BL)
-        # 简单的排序方法：按角度或坐标
-        # 由于只有4个点，直接按 x, y 排序
-        # 这种排序不一定构成凸包，但在矩形变换下通常是凸的
-        center = poly_pts.mean(axis=0)
-        angles = np.arctan2(poly_pts[:,1]-center[1], poly_pts[:,0]-center[0])
-        sort_order = np.argsort(angles)
-        poly_pts = poly_pts[sort_order]
+        # 提取局部 2x2 数据 [2, 2, 2] -> [2, 4]
+        # x 坐标
+        local_gt_x = gt_grid[0, r_slice, c_slice].flatten()
+        local_gt_y = gt_grid[1, r_slice, c_slice].flatten()
+        local_pred_x = pred_grid[0, r_slice, c_slice].flatten()
+        local_pred_y = pred_grid[1, r_slice, c_slice].flatten()
         
-        # 闭合
-        poly_pts = np.vstack([poly_pts, poly_pts[0]])
+        # 计算平均误差
+        diff = np.sqrt((local_gt_x - local_pred_x)**2 + (local_gt_y - local_pred_y)**2)
+        mean_err = np.mean(diff)
         
-        ax.plot(poly_pts[:, 0], poly_pts[:, 1], color=color, linewidth=2, label=label)
-    
-    draw_poly(ax2, gt_pts_pix, 'lime', 'GT Box')
-    draw_poly(ax2, pred_pts_pix, 'red', 'Pred Box')
-    
-    # 同时也画点云作为背景参考
-    ax2.scatter(gt_pts_pix[1, ::step], gt_pts_pix[0, ::step], c='g', s=1, alpha=0.2)
-    ax2.scatter(pred_pts_pix[1, ::step], pred_pts_pix[0, ::step], c='r', s=1, alpha=0.2)
-    ax2.legend()
-    
+        # 绘制点
+        ax_local.scatter(local_gt_x, local_gt_y, c='green', s=60, edgecolors='white', zorder=3)
+        ax_local.scatter(local_pred_x, local_pred_y, c='red', s=60, edgecolors='white', zorder=3)
+        
+        # 绘制结构多边形 (Polygon) - 关键：体现局部几何畸变
+        ax_local.plot(local_gt_x[poly_order], local_gt_y[poly_order], 'g-', linewidth=2, alpha=0.5)
+        ax_local.plot(local_pred_x[poly_order], local_pred_y[poly_order], 'r--', linewidth=2, alpha=0.5)
+        
+        # 绘制对应点连线 (误差箭头)
+        for k in range(4):
+            ax_local.annotate("", 
+                              xy=(local_pred_x[k], local_pred_y[k]), 
+                              xytext=(local_gt_x[k], local_gt_y[k]),
+                              arrowprops=dict(arrowstyle="->", color="orange", lw=1.5, alpha=0.8))
+
+        # 自动调整视口范围 (以 GT 包围盒为中心并外扩)
+        min_x, max_x = local_gt_x.min(), local_gt_x.max()
+        min_y, max_y = local_gt_y.min(), local_gt_y.max()
+        
+        center_x, center_y = (min_x + max_x) / 2, (min_y + max_y) / 2
+        span_x, span_y = max_x - min_x, max_y - min_y
+        
+        # 保证最小可视半径 (防止点重合时视口太小) 且 容纳误差
+        margin = max(40, span_x * 1.2, span_y * 1.2, mean_err * 2.5) 
+        
+        ax_local.set_xlim(center_x - margin, center_x + margin)
+        ax_local.set_ylim(center_y + margin, center_y - margin) # Y轴向下
+        
+        # 样式设置
+        title_color = 'green' if mean_err < 1.0 else ('red' if mean_err > 20.0 else 'black')
+        ax_local.set_title(f"{name}\nErr: {mean_err:.1f}px", fontsize=10, color=title_color, fontweight='bold')
+        ax_local.grid(True, linestyle='--', alpha=0.5)
+        ax_local.set_xticks([])
+        ax_local.set_yticks([])
+        
+        # 在 Global View 上绘制对应的 ROI 框 (虚线矩形)
+        rect = patches.Rectangle((min_x, min_y), max_x-min_x, max_y-min_y, 
+                                 linewidth=1.5, edgecolor='blue', facecolor='none', linestyle='--')
+        ax_global.add_patch(rect)
+        # 标注 ROI 名字
+        ax_global.text(min_x, min_y - 5, name, fontsize=8, color='blue', ha='left')
+
     plt.tight_layout()
-    img = fig_to_numpy(fig)
+    
+    # 转换为图像
+    img_out = fig_to_numpy(fig)
     plt.close(fig)
     
-    return img, img # 这里简单返回相同的图，或者您可以拆分返回
+    return img_out, img_out

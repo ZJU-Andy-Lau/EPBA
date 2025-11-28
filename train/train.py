@@ -395,8 +395,8 @@ def main(args):
             for key in debug_info['values']:
                 print(f"{key} : {debug_info['values'][key]}")
         
-            if loss < min_loss:
-                min_loss = loss
+            if records['loss_affine'] < min_loss:
+                min_loss = records['loss_affine']
                 encoder.module.save_adapter(os.path.join(args.model_save_path,'adapter.pth'))
                 torch.save(gru.state_dict(),os.path.join(args.model_save_path,'gru.pth'))
                 torch.save(ctx_decoder.state_dict(),os.path.join(args.model_save_path,'ctx_decoder.pth'))
