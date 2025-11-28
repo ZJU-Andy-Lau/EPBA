@@ -147,7 +147,11 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
     imgs_pred_2 = ctx_decoder(ctx_feats_2)
     
     windows = Windows(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
-    preds_ab = windows.solve(flag = 'ab')
+    if get_debuf_info:
+        preds_ab, vis_pyramid_ab = windows.solve(flag = 'ab', return_vis=True)
+    else:
+        preds_ab = windows.solve(flag = 'ab')
+        vis_pyramid_ab = {}
     preds_ba = windows.solve(flag = 'ba')
 
     loss_input = {
@@ -224,6 +228,9 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
                 "preds_ab":preds_ab,
             }
         }
+
+        for lvl_name, img_arr in vis_pyramid_ab.items():
+            debug_info['imgs'][f'corr_pyramid/{lvl_name}'] = img_arr
 
         #=============================================================
     else:

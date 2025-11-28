@@ -9,7 +9,7 @@ from model.gru import GRUBlock
 from model.cost_volume import CostVolume
 from utils.rpc import RPCModelParameterTorch
 from utils.utils import debug_print
-from utils.visualize import vis_corr_heatmap, vis_flow_quiver, vis_reprojection, vis_grid_evolution
+from utils.visualize import vis_pyramid_correlation
 from criterion.utils import invert_affine_matrix
 
 class Windows():
@@ -256,7 +256,7 @@ class Windows():
         # heatmap_vis = vis_corr_heatmap(corr_simi, title="Iter Heatmap")
         # debug_artifacts['heatmap'] = heatmap_vis
 
-        # 将b中的采样点通过 Hb-1 -> RPC_b -> RPC_a -> Ha 投影回到a中的坐标
+        # 将b中的采样点通过 Hb-1 -> RPC_b -> RPC_a -> M_a_b-1 -> Ha 投影回到a中的坐标
         corr_coords_in_2 = corr_coords.permute(0,3,4,1,2).flatten(1,3) # (B,H*W*N,2)
         corr_coords_in_1 = self.transform_points_coords(corr_coords_in_2,Hs_2,Hs_1,invert_affine_matrix(Ms),rpc_1,rpc_2,device=self.device) # (B,h*w*N,2)
         corr_coords_in_1 = corr_coords_in_1.reshape(self.B,self.h,self.w,-1,2) # (B,h,w,N,2)
@@ -291,17 +291,28 @@ class Windows():
 
         
 
-    def solve(self,flag = 'ab'):
+    def solve(self,flag = 'ab', return_vis=False):
         """
         返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
         hidden_state = torch.zeros((self.B,self.gru_access.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
         # flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
         preds = []
+        vis_dict = {}
+
         for iter in range(self.gru_max_iter):
             # 计算a->b的仿射
             if flag == 'ab':
                 corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b)
+                if return_vis and iter == 0:
+                    vis_dict = vis_pyramid_correlation(
+                        corr_simi_ab, 
+                        corr_offset_ab, 
+                        self.norm_factors_a,
+                        num_levels=self.gru_access.corr_levels,
+                        radius=self.gru_access.corr_radius
+                    )
+
                 delta_affines_ab, hidden_state = self.gru(corr_simi_ab,
                                                                corr_offset_ab,
                                                             #    flow,
@@ -329,8 +340,11 @@ class Windows():
                 preds.append(delta_affines_ba)
                 self.Ms_b_a = self.Ms_b_a + delta_affines_ba
                 # flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
-        print(f"norm_factor_a:{self.norm_factors_a}")
-        print(f"norm_factor_b:{self.norm_factors_b}")
+        # print(f"norm_factor_a:{self.norm_factors_a}")
+        # print(f"norm_factor_b:{self.norm_factors_b}")
         preds = torch.stack(preds,dim=1)
         
-        return preds            
+        if return_vis:
+            return preds, vis_dict # [修改] 返回元组
+        else:
+            return preds        
