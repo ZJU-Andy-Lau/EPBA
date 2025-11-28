@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class GRUBlock(nn.Module):
     def __init__(self, 
-                 corr_levels=4, 
+                 corr_levels=2, 
                  corr_radius=4, 
                  context_dim=128, 
                  hidden_dim=128):
@@ -12,7 +12,7 @@ class GRUBlock(nn.Module):
         基于图的 GRU 迭代更新模块 (Graph-based GRU Update Block)
         
         Args:
-            corr_levels (int): 相关性金字塔层数 (默认 4)
+            corr_levels (int): 相关性金字塔层数 (默认 2)
             corr_radius (int): 查表半径 (默认 4)
             context_dim (int): 上下文特征通道数 (默认 128)
             hidden_dim (int): GRU 隐藏状态维度 (默认 128)

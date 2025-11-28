@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from utils.utils import debug_print
 
 class CostVolume:
-    def __init__(self, fmap_query, fmap_ref, num_levels=4, radius=4):
+    def __init__(self, fmap_query, fmap_ref, num_levels=2, radius=4):
         """
         构建全对相关性金字塔。
         
@@ -108,8 +108,8 @@ class CostVolume:
             # --- 计算 Level 0 像素坐标 ---
             # 将归一化坐标映射回 Level 0 像素空间
             coords_lvl0 = torch.zeros_like(coords_norm) # line,samp
-            coords_lvl0[..., 1] = (coords_norm[..., 0] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
-            coords_lvl0[..., 0] = (coords_norm[..., 1] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0
+            coords_lvl0[..., 0] = (coords_norm[..., 0] + 1.0) * (H_ref_0 * 16 - 1.0) / 2.0 # 16为提取特征图时的下采样倍率，乘以16转化为原图尺寸
+            coords_lvl0[..., 1] = (coords_norm[..., 1] + 1.0) * (W_ref_0 * 16 - 1.0) / 2.0
             
             # debug_print(f"===========lvl {i} img512===========")
             # debug_print(f"{coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")

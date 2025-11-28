@@ -94,7 +94,7 @@ def load_models(args):
     pprint("Loading Models")
     
     encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128)
-    gru = GRUBlock(corr_levels=4,corr_radius=4,context_dim=128,hidden_dim=128)
+    gru = GRUBlock(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128)
     ctx_decoder = ContextDecoder(ctx_dim=128)
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder

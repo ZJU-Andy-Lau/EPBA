@@ -35,8 +35,8 @@ class Windows():
         self.h,self.w = self.ctx_feats_a.shape[-2:]
         self.device = self.ctx_feats_a.device
 
-        self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b)
-        self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a)
+        self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b,num_levels=self.gru_access.corr_levels)
+        self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a,num_levels=self.gru_access.corr_levels)
 
         self.Ms_a_b = torch.tensor([
             [
