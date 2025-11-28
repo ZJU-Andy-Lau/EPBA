@@ -98,9 +98,9 @@ def load_models(args):
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
     
-    if not args.encoder_path is None:
+    if not args.adapter_path is None:
         encoder.load_adapter(os.path.join(args.adapter_path))
-        pprint("Encoder Loaded")
+        pprint("Adapter Loaded")
 
     if not args.decoder_path is None:
         load_model_state_dict(ctx_decoder,args.decoder_path)
