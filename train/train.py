@@ -367,18 +367,18 @@ def main(args):
                 cost_time = curtime - start_time
                 remain_time = remain_step * cost_time / curstep
                 info = (
-                    f"epoch:{epoch} \t"
+                    f"epoch:{epoch} "
                     f"batch:{batch_idx+1} / {batch_num} \t"
-                    f"loss:{loss_details['loss'].item():.2f} \t"
-                    f"l_sim:{loss_details['loss_sim'].item():.2f} \t"
-                    f"l_conf:{loss_details['loss_conf'].item():.2f} \t"
-                    f"l_af:{loss_details['loss_affine'].item():.2f} \t"
-                    f"l_af_l:{loss_details['loss_affine_last'].item():.2f} \t"
-                    f"l_cons:{loss_details['loss_consist'].item():.2f} \t"
+                    f"loss:{loss_details['loss'].item():.2f} "
+                    f"l_sim:{loss_details['loss_sim'].item():.2f} "
+                    f"l_conf:{loss_details['loss_conf'].item():.2f} "
+                    f"l_af:{loss_details['loss_affine'].item():.2f} "
+                    f"l_af_l:{loss_details['loss_affine_last'].item():.2f} "
+                    f"l_cons:{loss_details['loss_consist'].item():.2f} "
                     f"l_ctx:{loss_details['loss_ctx'].item():.2f} \t"
-                    f"lr_encoder:{adapter_scheduler.get_last_lr()[0]:.2e} \t"
+                    f"lr_encoder:{adapter_scheduler.get_last_lr()[0]:.2e} "
                     f"lr_gru:{gru_scheduler.get_last_lr()[0]:.2e} \t"
-                    f"time:{str(datetime.timedelta(seconds=round(cost_time)))} \t"
+                    f"time:{str(datetime.timedelta(seconds=round(cost_time)))} "
                     f"ETA:{str(datetime.timedelta(seconds=round(remain_time)))} \t"
                 )
                 print(info)
