@@ -240,7 +240,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
                 gt_matrix = aff['gt_affine'][0],
                 source_points = aff['coords_a'][0],
                 Hs_b = aff['Hs_b'][0],
-                canvas_size = (H, W)
+                canvas_size = (H, W),
+                grid_side_len = int(np.sqrt(aff['coords_a'].shape[-1])),
             )
             debug_info['imgs']['vis_affine/grid'] = aff_vis_img
             debug_info['values']['m_pred'] = aff['pred_affine'][0].detach().cpu().numpy()
