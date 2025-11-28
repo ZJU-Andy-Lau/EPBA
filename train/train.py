@@ -228,7 +228,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
                 'conf_img_2':conf_img_2
             },
             'values':{
-                "preds_ab":preds_ab,
+                "m_pred":preds_ab[0,-1],
+                "m_gt":M_a_b
             }
         }
         
