@@ -15,7 +15,7 @@ class Loss(nn.Module):
                                 temperature = temperature)
         self.conf_loss = ConfLoss()
         self.affine_loss = AffineLoss(img_size = img_size,
-                                      grid_stride = downsample_factor,
+                                      grid_stride = 64,
                                       decay_rate = decay_rate,
                                       reg_weight = reg_weight,
                                       device = device)
