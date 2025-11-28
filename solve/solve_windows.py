@@ -113,7 +113,7 @@ class Windows():
         B,N = coords.shape[:2]
         coords = coords.permute(0,2,1) # B,2,N
         ones = torch.ones(B, 1, N, device=device)
-        coords_homo = torch.cat([coords_homo,ones],dim=1) # B,3,N
+        coords_homo = torch.cat([coords,ones],dim=1) # B,3,N
         coords_trans_homo = torch.bmm(Hs,coords_homo) # (B,3,3) @ (B,3,N) -> (B,3,N)
         eps = 1e-7
         z = coords_trans_homo[:, 2:3, :]
@@ -130,7 +130,7 @@ class Windows():
         B,N = coords.shape[:2]
         coords = coords.permute(0,2,1) # B,2,N
         ones = torch.ones(B, 1, N, device=device)
-        coords_homo = torch.cat([coords_homo,ones],dim=1) # B,3,N
+        coords_homo = torch.cat([coords,ones],dim=1) # B,3,N
         coords_trans = torch.bmm(Ms,coords_homo) # (B,2,3) @ (B,3,N) -> (B,2,N)
         return coords_trans.permute(0,2,1) # B,N,2
 
@@ -171,28 +171,6 @@ class Windows():
 
 
         return corr_simi,corr_offset
-    
-    # def get_flow(self,Hs,Ms,norm_factor,device):
-    #     Hs_inv = torch.inverse(Hs).to(torch.float32)
-    #     ones = torch.ones(self.B, self.h * self.w, 1, device=device)
-    #     coords_local = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=device) # B,h,w,2
-    #     coords_local_homo = torch.cat([coords_local.flatten(1,2),ones],dim=-1).permute(0,2,1) # B,3,h*w
-    #     coords_ori_homo = torch.bmm(Hs_inv,coords_local_homo) # B,3,3 @ B,3,h*w -> B,3,h*w
-    #     eps = 1e-7
-    #     z_ori = coords_ori_homo[:, 2:3, :]
-    #     coords_ori = coords_ori_homo[:, :2, :] / (z_ori + eps) # B,2,h*w
-        
-    #     ones = torch.ones(self.B, 1, self.h * self.w, device=device)
-    #     coords_ori_homo = torch.cat([coords_ori,ones],dim=1)    
-    #     coords_ori_af = torch.bmm(Ms,coords_ori_homo) # B,2,3 @ B,3,h*w -> B,2,h*w
-    #     coords_ori_af = coords_ori_af.reshape(self.B,2,self.h,self.w) # B,2,h,w
-    #     coords_ori = coords_ori.reshape(self.B,2,self.h,self.w) # B,2,h,w
-    #     flow = coords_ori_af - coords_ori # B,2,h,w
-    #     flow = self.coord_norm(flow,norm_factor) # B,2,h,w
-
-    #     return flow
-
-        
 
     def solve(self,flag = 'ab', return_vis=False):
         """
