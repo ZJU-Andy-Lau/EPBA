@@ -169,7 +169,9 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
         'imgs_pred_2':imgs_pred_2,
         'Hs_a':Hs_a,
         'Hs_b':Hs_b,
-        'M_a_b':M_a_b
+        'M_a_b':M_a_b,
+        'norm_factor_a':windows.norm_factors_a,
+        'norm_factor_b':windows.norm_factors_b,
     }
 
     # [修改] 调用 loss_funcs 时传入 return_details

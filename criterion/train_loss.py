@@ -46,19 +46,22 @@ class Loss(nn.Module):
                                                                                 Hs_a = input['Hs_a'],
                                                                                 Hs_b = input['Hs_b'],
                                                                                 M_a_b = input['M_a_b'],
+                                                                                norm_factor = input['norm_factor_a'],
                                                                                 return_details = True)
         else:
             loss_affine_1, loss_affine_last_1 = self.affine_loss(delta_affines = input['preds_1'],
                                                                 Hs_a = input['Hs_a'],
                                                                 Hs_b = input['Hs_b'],
-                                                                M_a_b = input['M_a_b'])
+                                                                M_a_b = input['M_a_b'],
+                                                                norm_factor = input['norm_factor_a'])
             affine_details = None
         
         # 反向过程 (B->A) 暂时不采集可视化信息
         loss_affine_2, loss_affine_last_2 = self.affine_loss(delta_affines = input['preds_2'],
                                                             Hs_a = input['Hs_b'],
                                                             Hs_b = input['Hs_a'],
-                                                            M_a_b = invert_affine_matrix(input['M_a_b']))
+                                                            M_a_b = invert_affine_matrix(input['M_a_b']),
+                                                            norm_factor = input['norm_factor_b'])
         
         loss_affine = .5 * loss_affine_1 + .5 * loss_affine_2
         loss_affine_last = .5 * loss_affine_last_1 + .5 * loss_affine_last_2

@@ -81,16 +81,18 @@ class AffineLoss(nn.Module):
         
         return ref_grid
 
-    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, return_details=False):
+    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, norm_factor, return_details=False):
         """
         Args:
             delta_affines: (B, steps, 2, 3) 预测的仿射变换增量
             Hs_a: (B, 3, 3) Img A -> Large A 的单应矩阵
             Hs_b: (B, 3, 3) Img B -> Large B 的单应矩阵 (本方案中仅保留接口兼容性，不实际参与计算)
             M_a_b: (B, 2, 3) 或 (2, 3) Large A -> Large B 的真值仿射变换
+            norm_factor: (B,)
             return_details: (bool) 是否返回可视化所需的详细信息
         """
         B, steps, _, _ = delta_affines.shape
+        scale = 512. / norm_factor
         
         # --- 1. 构建参考网格 (Reference Grid) ---
         # 将 Img A 的网格还原到大图物理空间
@@ -129,9 +131,9 @@ class AffineLoss(nn.Module):
             pred_points = torch.bmm(current_affine, ref_grid)
             
             # 计算 L2 距离
-            loss_dist = torch.mean(torch.norm(pred_points - target_points,dim=1))
+            loss_dist = torch.norm(pred_points - target_points,dim=1) # B,N
 
-            last_loss = loss_dist
+            last_loss = torch.mean(loss_dist * scale.unsqueeze(-1))
             
             # B. 正则化损失 (Regularization)
             # 约束仿射变换的线性部分 (旋转/缩放/剪切) 接近单位阵，防止过拟合或病态扭曲
@@ -140,7 +142,7 @@ class AffineLoss(nn.Module):
             loss_reg = torch.norm(pred_linear - identity_linear, p='fro', dim=(1, 2)).mean()
             
             # C. 单步总 Loss
-            total_step_loss = loss_dist + self.reg_weight * loss_reg
+            total_step_loss = torch.mean(loss_dist) + self.reg_weight * loss_reg
             step_losses.append(total_step_loss)
             
         # --- 4. 时间加权聚合 ---
