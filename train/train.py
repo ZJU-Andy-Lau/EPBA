@@ -243,8 +243,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
                 canvas_size = (H, W)
             )
             debug_info['imgs']['vis_affine/grid'] = aff_vis_img
-            debug_info['values']['m_pred'] = aff['pred_affine'][0]
-            debug_info['values']['m_gt'] = aff['gt_affine'][0]
+            debug_info['values']['m_pred'] = aff['pred_affine'][0].detach().cpu().numpy()
+            debug_info['values']['m_gt'] = aff['gt_affine'][0].detach().cpu().numpy()
 
         for lvl_name, img_arr in vis_pyramid_ab.items():
             debug_info['imgs'][f'corr_pyramid/{lvl_name}'] = img_arr
