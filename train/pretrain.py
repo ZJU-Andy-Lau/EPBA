@@ -328,8 +328,8 @@ def main(args):
                 print(f"{key} : {debug_info['values'][key]}")
             
             # 保存模型
-            if loss < min_loss:
-                min_loss = loss
+            if records['loss'] < min_loss:
+                min_loss = records['loss']
                 encoder.module.save_adapter(os.path.join(args.model_save_path,'adapter.pth'))
                 torch.save(ctx_decoder.state_dict(),os.path.join(args.model_save_path,'ctx_decoder.pth'))
                 print("Best Updated")
