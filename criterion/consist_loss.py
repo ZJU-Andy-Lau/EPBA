@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .utils import merge_affine
 
 class ConsistLoss(nn.Module):
     def __init__(self, img_size, grid_stride=32, decay_rate=0.8, device='cuda'):
@@ -76,8 +77,8 @@ class ConsistLoss(nn.Module):
         for t in range(steps):
             # --- 更新变换矩阵 ---
             # M_t = M_{t-1} + Delta_t
-            current_M_ab = current_M_ab + delta_affine_a[:, t]
-            current_M_ba = current_M_ba + delta_affine_b[:, t]
+            current_M_ab = merge_affine(current_M_ab,delta_affine_a[:, t])
+            current_M_ba = merge_affine(current_M_ba,delta_affine_b[:, t])
 
             # --- 扩展为 3x3 以进行矩阵乘法 ---
             M_ab_3x3 = self._to_homogeneous_matrix(current_M_ab)

@@ -43,3 +43,40 @@ def invert_affine_matrix(M):
         return M_inv.squeeze(0)
     
     return M_inv
+
+def merge_affine(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    """
+    计算两个仿射变换的复合变换 C，使得 C(p) = B(A(p))。
+
+    参数:
+        A (torch.Tensor): 第一个仿射变换矩阵，形状为 (B, 2, 3)。
+        B (torch.Tensor): 第二个仿射变换矩阵，形状为 (B, 2, 3)。
+
+    返回:
+        torch.Tensor: 复合仿射变换矩阵 C，形状为 (B, 2, 3)。
+    """
+    if A.shape[0] != B.shape[0]:
+        raise ValueError(f"Batch size a ({A.shape[0]}) 与 B ({B.shape[0]}) 不匹配。")
+    if A.shape[1:] != (2, 3) or B.shape[1:] != (2, 3):
+        raise ValueError(f"Tensor 形状必须为 (B, 2, 3)。")
+
+    batch_size = A.shape[0]
+
+    # 1. 创建用于填充的 [0, 0, 1] 行
+    # 确保它在与输入张量相同的设备和数据类型上
+    pad_row = torch.zeros((batch_size, 1, 3), device=A.device, dtype=A.dtype)
+    pad_row[..., 2] = 1.0  # (B, 1, 3)
+
+    # 2. 将 A 和 B 转换为 (B, 3, 3) 的齐次矩阵
+    A_hom = torch.cat([A, pad_row], dim=1)  # (B, 3, 3)
+    B_hom = torch.cat([B, pad_row], dim=1)  # (B, 3, 3)
+
+    # 3. 计算复合矩阵 C_hom = B_hom @ A_hom
+    # 注意：顺序是 B @ A，因为 B(A(p)) 对应 H_B * (H_A * p) = (H_B * H_A) * p
+    # torch.matmul (或 @) 会自动处理批量矩阵乘法
+    C_hom = B_hom @ A_hom
+
+    # 4. 从齐次矩阵 C_hom 中提取 (B, 2, 3) 的仿射部分
+    C = C_hom[:, :2, :]
+
+    return C

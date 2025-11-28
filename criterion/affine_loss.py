@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .utils import merge_affine
 
 class AffineLoss(nn.Module):
     def __init__(self, img_size, grid_stride=16, decay_rate=0.8, reg_weight=1e-3,device = 'cuda'):
@@ -146,7 +147,7 @@ class AffineLoss(nn.Module):
         # 3. 序列预测循环
         for t in range(steps):
             delta = delta_affines[:, t, :, :]
-            current_affine = current_affine + delta
+            current_affine = merge_affine(current_affine,delta)
 
             # --- A. 距离 Loss ---
             # 预测点位置: pred = current_affine @ coords_a

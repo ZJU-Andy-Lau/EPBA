@@ -66,7 +66,7 @@ class GRUBlock(nn.Module):
         self.register_buffer('scale_trans', torch.tensor(0.1))
         # 线性部分: 强约束，抑制旋转/缩放震荡
         self.register_buffer('scale_linear', torch.tensor(0.0001))
-        
+       
         # 6. 参数初始化
         self._reset_parameters()
 
@@ -145,5 +145,14 @@ class GRUBlock(nn.Module):
         # 输出顺序: [da, db, dc, dd, dtx, dty]
         # 对应矩阵: [[1+da, db, dtx], [dc, 1+dd, dty]]
         delta_affine = torch.cat([delta_linear.reshape(-1,2,2), delta_trans.unsqueeze(-1)], dim=-1) # B,2,3
+
+        base_matrix = torch.tensor([
+            [
+                [1.0,0.0,0.0],
+                [0.0,1.0,0.0]
+            ]
+        ] * delta_affine.shape[0]).to(device=delta_affine.device,dtype=delta_affine.dtype) # B,2,3
+
+        delta_affine = base_matrix + delta_affine
         
         return delta_affine, new_hidden_state

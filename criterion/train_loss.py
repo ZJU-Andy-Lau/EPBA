@@ -58,7 +58,7 @@ class Loss(nn.Module):
         loss_ctx_2 = self.ctx_loss(input['imgs_pred_2'],input['imgs_2'])
         loss_ctx = .5 * loss_ctx_1 + .5 * loss_ctx_2
         
-        loss = loss_sim + loss_conf + loss_affine + loss_consist + loss_ctx
+        loss = loss_sim + loss_conf + loss_affine + loss_consist * 0. + loss_ctx
         loss_details = {
             'loss':loss.clone().detach(),
             'loss_sim':loss_sim.clone().detach(),

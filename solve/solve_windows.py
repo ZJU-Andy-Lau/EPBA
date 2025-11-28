@@ -134,6 +134,26 @@ class Windows():
         coords_trans = torch.bmm(Ms,coords_homo) # (B,2,3) @ (B,3,N) -> (B,2,N)
         return coords_trans.permute(0,2,1) # B,N,2
 
+    def merge_M(self,Ma: torch.Tensor, Mb: torch.Tensor) -> torch.Tensor:
+
+        # 1. 创建用于填充的 [0, 0, 1] 行
+        # 确保它在与输入张量相同的设备和数据类型上
+        pad_row = torch.zeros((self.B, 1, 3), device=Ma.device, dtype=Ma.dtype)
+        pad_row[..., 2] = 1.0  # (B, 1, 3)
+
+        # 2. 将 A 和 B 转换为 (B, 3, 3) 的齐次矩阵
+        A_hom = torch.cat([Ma, pad_row], dim=1)  # (B, 3, 3)
+        B_hom = torch.cat([Mb, pad_row], dim=1)  # (B, 3, 3)
+
+        # 3. 计算复合矩阵 C_hom = B_hom @ A_hom
+        # 注意：顺序是 B @ A，因为 B(A(p)) 对应 H_B * (H_A * p) = (H_B * H_A) * p
+        # torch.matmul (或 @) 会自动处理批量矩阵乘法
+        C_hom = B_hom @ A_hom
+
+        # 4. 从齐次矩阵 C_hom 中提取 (B, 2, 3) 的仿射部分
+        C = C_hom[:, :2, :]
+
+        return C
 
     def prepare_data(self,cost_volume:CostVolume,Hs_1,Hs_2,Ms,norm_factor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None):
         anchor_coords_in_1 = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=self.device) # (B,h,w,2)
@@ -177,7 +197,6 @@ class Windows():
         返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
         hidden_state = torch.zeros((self.B,self.gru_access.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
-        # flow = torch.zeros((self.B,2,self.h,self.w),dtype=self.ctx_feats_a.dtype,device=self.device)
         preds = []
         vis_dict = {}
 
@@ -195,34 +214,29 @@ class Windows():
                     )
 
                 delta_affines_ab, hidden_state = self.gru(corr_simi_ab,
-                                                               corr_offset_ab,
-                                                            #    flow,
-                                                               self.ctx_feats_a,
-                                                               self.confs_a,
-                                                               hidden_state)
+                                                          corr_offset_ab,
+                                                          self.ctx_feats_a,
+                                                          self.confs_a,
+                                                          hidden_state)
                 
                 delta_affines_ab[...,2] = self.coord_norm_inv(delta_affines_ab[...,2] , self.norm_factors_a)
                 preds.append(delta_affines_ab)
-                self.Ms_a_b = self.Ms_a_b + delta_affines_ab
-                # flow = self.get_flow(self.H_as,self.Ms_a_b,self.norm_factors_a,device=self.device)
+                self.Ms_a_b = self.merge_M(self.Ms_a_b,delta_affines_ab)
 
 
             # 计算b->a的仿射
             if flag == 'ba':
                 corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a)
                 delta_affines_ba, hidden_state = self.gru(corr_simi_ba,
-                                                               corr_offset_ba,
-                                                            #    flow,
-                                                               self.ctx_feats_b,
-                                                               self.confs_b,
-                                                               hidden_state)
+                                                          corr_offset_ba,
+                                                          self.ctx_feats_b,
+                                                          self.confs_b,
+                                                          hidden_state)
                 
                 delta_affines_ba[...,2] = self.coord_norm_inv(delta_affines_ba[...,2] , self.norm_factors_b)
                 preds.append(delta_affines_ba)
-                self.Ms_b_a = self.Ms_b_a + delta_affines_ba
-                # flow = self.get_flow(self.H_bs,self.Ms_b_a,self.norm_factors_b,device=self.device)
-        # print(f"norm_factor_a:{self.norm_factors_a}")
-        # print(f"norm_factor_b:{self.norm_factors_b}")
+                self.Ms_b_a = self.merge_M(self.Ms_b_a,delta_affines_ba)
+
         preds = torch.stack(preds,dim=1)
         
         if return_vis:
