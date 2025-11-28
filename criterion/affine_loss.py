@@ -117,13 +117,14 @@ class AffineLoss(nn.Module):
 
         return coords_a, target_coords_b_2d, mask
 
-    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b):
+    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, return_details=False): # [修改] 增加 return_details 参数
         """
         Args:
             delta_affines: (B, steps, 2, 3) 预测的仿射变换增量
             Hs_a: (B, 3, 3) Img A -> Large A 的单应矩阵
             Hs_b: (B, 3, 3) Img B -> Large B 的单应矩阵
             M_a_b: (B, 2, 3) 或 (2, 3) Large A -> Large B 的真值仿射变换
+            return_details: Bool, 是否返回可视化所需的中间数据
         """
         B, steps, _, _ = delta_affines.shape
         device = delta_affines.device
@@ -182,5 +183,20 @@ class AffineLoss(nn.Module):
         weights = torch.pow(self.decay_rate, exponents)
         
         weighted_loss = (step_losses_tensor * weights).sum() / weights.sum()
+
+        if return_details:
+            # M_a_b 可能是 (2,3) 或 (B,2,3)，统一确保它在返回时可被处理
+            if M_a_b.dim() == 2:
+                M_a_b_batch = M_a_b.unsqueeze(0).repeat(B, 1, 1)
+            else:
+                M_a_b_batch = M_a_b
+
+            details = {
+                'pred_affine': current_affine.detach(), # (B, 2, 3)
+                'gt_affine': M_a_b_batch.detach(),      # (B, 2, 3)
+                'coords_a': coords_a.detach(),          # (B, 3, N) - 大图坐标系下的源点
+                'Hs_b': Hs_b.detach()                   # (B, 3, 3) - 用于投影回 Img B
+            }
+            return weighted_loss, details
 
         return weighted_loss

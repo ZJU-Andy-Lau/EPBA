@@ -36,6 +36,8 @@ from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
 from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
+# [修改] 引入新的可视化函数
+from utils.visualize import vis_pyramid_correlation, vis_affine_prediction
 from solve.solve_windows import Windows
 
 def print_on_main(msg, rank):
@@ -170,7 +172,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
         'M_a_b':M_a_b
     }
 
-    loss,loss_details = loss_funcs(loss_input)
+    # [修改] 调用 loss_funcs 时传入 return_details
+    loss,loss_details,extra_info = loss_funcs(loss_input, return_details=get_debuf_info)
 
     if get_debuf_info:
         #====================准备debug info===========================
@@ -228,6 +231,19 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
                 "preds_ab":preds_ab,
             }
         }
+        
+        #添加 Affine 可视化图像到 debug_info
+        if 'affine_details' in extra_info:
+            aff = extra_info['affine_details']
+            # 仅取 Batch 0 的数据进行可视化
+            aff_vis_img, _ = vis_affine_prediction(
+                pred_matrix = aff['pred_affine'][0],
+                gt_matrix = aff['gt_affine'][0],
+                source_points = aff['coords_a'][0],
+                Hs_b = aff['Hs_b'][0],
+                canvas_size = (H, W)
+            )
+            debug_info['imgs']['vis_affine/grid'] = aff_vis_img
 
         for lvl_name, img_arr in vis_pyramid_ab.items():
             debug_info['imgs'][f'corr_pyramid/{lvl_name}'] = img_arr
@@ -429,6 +445,3 @@ if __name__ == '__main__':
         pprint(f"{k}:{v}")
     pprint("===================================================================")
     main(args)
-
-
-

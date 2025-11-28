@@ -25,7 +25,7 @@ class Loss(nn.Module):
                                         device = device)
         self.ctx_loss = CtxLoss()
     
-    def forward(self,input):
+    def forward(self,input, return_details=False): # [修改] 增加 return_details 参数
         match_feats_1, _, confs_1 = input['feats_1']
         match_feats_2, _, confs_2 = input['feats_2']
 
@@ -39,11 +39,22 @@ class Loss(nn.Module):
         loss_conf_2 = self.conf_loss(conf = confs_2, residual = input['residual_1'])
         loss_conf = .5 * loss_conf_1 + .5 * loss_conf_2
 
-        loss_affine_1 = self.affine_loss(delta_affines = input['preds_1'],
-                                         Hs_a = input['Hs_a'],
-                                         Hs_b = input['Hs_b'],
-                                         M_a_b = input['M_a_b'])
+        # [修改] 处理 Affine Loss 的可视化返回
+        if return_details:
+            # 仅对 loss_affine_1 (A->B) 进行可视化采集，避免信息过载
+            loss_affine_1, affine_details = self.affine_loss(delta_affines = input['preds_1'],
+                                            Hs_a = input['Hs_a'],
+                                            Hs_b = input['Hs_b'],
+                                            M_a_b = input['M_a_b'],
+                                            return_details = True)
+        else:
+            loss_affine_1 = self.affine_loss(delta_affines = input['preds_1'],
+                                            Hs_a = input['Hs_a'],
+                                            Hs_b = input['Hs_b'],
+                                            M_a_b = input['M_a_b'])
+            affine_details = None
         
+        # 反向过程 (B->A) 暂时不采集可视化信息
         loss_affine_2 = self.affine_loss(delta_affines = input['preds_2'],
                                          Hs_a = input['Hs_b'],
                                          Hs_b = input['Hs_a'],
@@ -68,6 +79,9 @@ class Loss(nn.Module):
             'loss_ctx':loss_ctx.clone().detach()
         }
 
+        # [修改] 构造 extra_info 返回包
+        extra_info = {}
+        if affine_details is not None:
+            extra_info['affine_details'] = affine_details
 
-        return loss,loss_details
-        
+        return loss,loss_details,extra_info # [修改] 返回三个值
