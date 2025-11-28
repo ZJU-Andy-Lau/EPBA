@@ -103,192 +103,72 @@ class Windows():
         norm_factor = norm_factor.view(target_shape)
         return coords * norm_factor
 
-
-    def transform_coords_mat(
-        self,
-        B: int,
-        h: int,
-        w: int,
-        Hs_1: torch.Tensor,
-        Hs_2: torch.Tensor,
-        Ms: torch.Tensor,
-        rpc_1:RPCModelParameterTorch = None,
-        rpc_2:RPCModelParameterTorch = None,
-        stride: int = 16,
-        device: str = 'cpu'
-    ) -> torch.Tensor:
+    def apply_H(self,coords:torch.Tensor,Hs:torch.Tensor,device:str = 'cpu'):
         """
-        将a图中patch的中心点坐标投影到b图坐标系
-        
-        参数:
-            B: Batch size
-            h: 特征图高度
-            w: 特征图宽度
-            Hs_1: (B, 3, 3) 单应变换矩阵 (大图 -> Imgs_1), 定义在 (row, col) 空间
-            Hs_2: (B, 3, 3) 单应变换矩阵 (大图 -> Imgs_2), 定义在 (row, col) 空间
-            Ms:   (B, 2, 3) 仿射变换矩阵 (在大图坐标系下应用), 定义在 (row, col) 空间
-            stride: 下采样倍率，默认16
-            device: 运行设备
-            
-        返回:
-            imgs_a_coords_b: (B, h, w, 2) 变换后的坐标，格式为 (row, col)
-        """
-        
-        y_range = torch.arange(h, device=device, dtype=torch.float32)
-        x_range = torch.arange(w, device=device, dtype=torch.float32)
-        grid_row, grid_col = torch.meshgrid(y_range, x_range, indexing='ij')
-        coords_row = grid_row * stride + stride / 2.0
-        coords_col = grid_col * stride + stride / 2.0
+        coords: B,N,2
+        Hs: B,3,3
 
-        N = h * w
+        return: B,N,2
+        """
+        B,N = coords.shape[:2]
+        coords = coords.permute(0,2,1) # B,2,N
         ones = torch.ones(B, 1, N, device=device)
-        coords_row_flat = coords_row.reshape(1, -1).expand(B, -1) # (h, w) -> (N,) -> (B, N)
-        coords_col_flat = coords_col.reshape(1, -1).expand(B, -1)
-        imgs_a_coords_homo = torch.stack([coords_row_flat, coords_col_flat, ones.squeeze(1)], dim=1) # imgs_a_coords_homo: (B, 3, N) -> Stack as [row, col, 1]
-
-        Hs_1_inv = torch.inverse(Hs_1).to(torch.float32) # (B, 3, 3)
-        coords_ori_homo = torch.bmm(Hs_1_inv, imgs_a_coords_homo) #(B, 3, 3) @ (B, 3, N) -> (B, 3, N)
+        coords_homo = torch.cat([coords_homo,ones],dim=1) # B,3,N
+        coords_trans_homo = torch.bmm(Hs,coords_homo) # (B,3,3) @ (B,3,N) -> (B,3,N)
         eps = 1e-7
-        z_ori = coords_ori_homo[:, 2:3, :]
-        coords_ori_rc = coords_ori_homo[:, :2, :] / (z_ori + eps) # (B, 2, N), channel 0 is row, 1 is col
-        
-        coords_ori_rehomo = torch.cat([coords_ori_rc, ones], dim=1) # (B, 3, N)
-        coords_ori_af = torch.bmm(Ms, coords_ori_rehomo) # (B,2,3) @ (B,3,N) -> (B,2,N)
-        
-        #==========================================
-        # RPC 投影与反投影 （TODO）
-        #==========================================
-        if not rpc_1 is None and not rpc_2 is None:
-            pass
-            raise ValueError("Not Impleted")
-        else:
-            coords_b_ori = coords_ori_af # (B,2,N)
-
-        coords_b_ori_homo = torch.cat([coords_b_ori, ones], dim=1) # (B, 3, N)
-        coords_b_homo = torch.bmm(Hs_2, coords_b_ori_homo) # (B, 3, 3) @ (B, 3, N) -> (B, 3, N)
-        z_b = coords_b_homo[:, 2:3, :]
-        coords_b_rc = coords_b_homo[:, :2, :] / (z_b + eps) # (B, 2, N) -> [row, col]
-        
-        imgs_a_coords_b = coords_b_rc.view(B, 2, h, w).permute(0, 2, 3, 1) # (B, 2, N) -> (B, 2, h, w) -> (B, h, w, 2)
-        
-        return imgs_a_coords_b
-
-    def proj_img1_to_big2(
-        self,
-        points: torch.Tensor,
-        Hs_1: torch.Tensor,
-        rpc_1:RPCModelParameterTorch = None,
-        rpc_2:RPCModelParameterTorch = None,
-        device: str = 'cpu'
-    ) -> torch.Tensor:
-        """
-        将 imgs_b 中的采样点坐标变换回 imgs_a 的坐标系。
-        不包含仿射变换。
-        所有坐标和矩阵基于 (row, col) 格式。
-
-        参数:
-            B: Batch size
-            coords_b: (B, N, 2) 采样点坐标，格式为 (row, col)
-            H_as: (B, 3, 3) 单应变换矩阵 (大图 -> Imgs_A)
-            device: 运行设备
-            
-        返回:
-            coords_a: (B, N, 2) 变换后的坐标，格式为 (row, col)
-        """
-        
-        # 获取采样点数量
-        B,N = points.shape[:2]
-        ones = torch.ones(B, 1, N, device=device)
-        
-        # 1. 准备数据: (B, N, 2) -> (B, 2, N) -> (B, 3, N) [row, col, 1]
-        # 注意：输入 coords_1 最后一维是 (row, col)
-        coords_1_permuted = points.permute(0, 2, 1) 
-        coords_1_homo = torch.cat([coords_1_permuted, ones], dim=1)
-        
-        Hs_1_inv = torch.inverse(Hs_1).to(torch.float32)
-        coords_ori_homo = torch.bmm(Hs_1_inv, coords_1_homo)
-        
-        # 透视除法
-        eps = 1e-7
-        z_ori = coords_ori_homo[:, 2:3, :]
-        coords_ori_rc = coords_ori_homo[:, :2, :] / (z_ori + eps) # (B, 2, N)
-
-        #==========================================
-        # RPC 投影与反投影 （TODO）
-        #==========================================
-        if not rpc_1 is None and not rpc_2 is None:
-            pass
-            raise ValueError("Not Impleted")
-        else:
-            coords_big_2 = coords_ori_rc
-
-        return coords_big_2.permute(0,2,1) # B,N,2
+        z = coords_trans_homo[:, 2:3, :]
+        coords_trans = coords_trans_homo[:, :2, :] / (z + eps) # B,2,N
+        return coords_trans.permute(0,2,1) # B,N,2
     
-    def proj_img1_to_big1(
-        self,
-        points: torch.Tensor,
-        Hs_1: torch.Tensor,
-        Ms: torch.Tensor,
-        device: str = 'cpu'
-    ) -> torch.Tensor:
+    def apply_M(self,coords:torch.Tensor,Ms:torch.Tensor,device:str = 'cpu'):
         """
-        将 imgs_b 中的采样点坐标变换回 imgs_a 的坐标系。
-        不包含仿射变换。
-        所有坐标和矩阵基于 (row, col) 格式。
+        coords: B,N,2
+        Ms: B,2,3
 
-        参数:
-            B: Batch size
-            coords_b: (B, N, 2) 采样点坐标，格式为 (row, col)
-            H_as: (B, 3, 3) 单应变换矩阵 (大图 -> Imgs_A)
-            device: 运行设备
-            
-        返回:
-            coords_a: (B, N, 2) 变换后的坐标，格式为 (row, col)
+        return: B,N,2
         """
-        
-        # 获取采样点数量
-        B,N = points.shape[:2]
+        B,N = coords.shape[:2]
+        coords = coords.permute(0,2,1) # B,2,N
         ones = torch.ones(B, 1, N, device=device)
-        
-        # 1. 准备数据: (B, N, 2) -> (B, 2, N) -> (B, 3, N) [row, col, 1]
-        # 注意：输入 coords_1 最后一维是 (row, col)
-        coords_1_permuted = points.permute(0, 2, 1) 
-        coords_1_homo = torch.cat([coords_1_permuted, ones], dim=1)
-        
-        Hs_1_inv = torch.inverse(Hs_1).to(torch.float32)
-        coords_ori_homo = torch.bmm(Hs_1_inv, coords_1_homo)
-        
-        # 透视除法
-        eps = 1e-7
-        z_ori = coords_ori_homo[:, 2:3, :]
-        coords_ori_rc = coords_ori_homo[:, :2, :] / (z_ori + eps) # (B, 2, N)
+        coords_homo = torch.cat([coords_homo,ones],dim=1) # B,3,N
+        coords_trans = torch.bmm(Ms,coords_homo) # (B,2,3) @ (B,3,N) -> (B,2,N)
+        return coords_trans.permute(0,2,1) # B,N,2
 
-        coords_ori_rehomo = torch.cat([coords_ori_rc,ones], dim=1) # (B,3,N)
-        coords_ori_af = torch.bmm(Ms, coords_ori_rehomo) # (B,2,3) @ (B,3,N) -> (B,2,N)
-        coords_big_1 = coords_ori_af.permute(0,2,1) # B,N,2
-        
-
-        return coords_big_1
 
     def prepare_data(self,cost_volume:CostVolume,Hs_1,Hs_2,Ms,norm_factor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None):
-        imgs_1_coords_2 = self.transform_coords_mat(self.B,self.h,self.w,Hs_1,Hs_2,Ms,rpc_1,rpc_2,device=self.device) # 得到a的坐标网格投影到b后的坐标
-        imgs_1_coords_2[...,0] = ((imgs_1_coords_2[...,0] / (self.H - 1)) * 2.) - 1.
-        imgs_1_coords_2[...,1] = ((imgs_1_coords_2[...,1] / (self.W - 1)) * 2.) - 1.
+        anchor_coords_in_1 = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=self.device) # (B,h,w,2)
+        anchor_coords_in_1_flat = anchor_coords_in_1.flatten(1,2) # B,h*w,2
 
-        corr_simi, corr_coords = cost_volume.lookup(imgs_1_coords_2) #通过a投影到b中的归一化坐标在代价体中查询相似性，并且记录采样点在b中坐标，corr_simi(B,N,h,w),corr_coords(B,N,2,h,w)
+        anchor_coords_in_big_1_flat = self.apply_H(anchor_coords_in_1_flat,torch.linalg.inv(Hs_1),device=self.device)
+        anchor_coords_in_big_1_flat_af = self.apply_M(anchor_coords_in_big_1_flat,Ms,device=self.device)
+        anchor_coords_in_big_1_af = anchor_coords_in_big_1_flat_af.reshape(self.B,self.h,self.w,2) # B,h,w,2
 
-        corr_coords_in_2 = corr_coords.permute(0,3,4,1,2).flatten(1,3) # (B,h*w*N,2) b小图坐标系下采样点坐标
-        corr_coords_in_big_1 = self.proj_img1_to_big2(corr_coords_in_2,Hs_2,device=self.device).reshape(self.B,self.h,self.w,-1,2) # (B,h,w,N,2)
+        if not rpc_1 is None and not rpc_2 is None:
+            pass
+        else:
+            anchor_coords_in_big_2 = anchor_coords_in_big_1_flat_af
+        
+        anchor_coords_in_2_flat = self.apply_H(anchor_coords_in_big_2,Hs_2,device=self.device) # B,h*w,2
+        anchor_coords_in_2 = anchor_coords_in_2_flat.reshape(self.B,self.h,self.w,2) # B,h,w,2
+        anchor_coords_in_2[...,0] = ((anchor_coords_in_2[...,0] / (self.H - 1)) * 2.) - 1.
+        anchor_coords_in_2[...,1] = ((anchor_coords_in_2[...,1] / (self.W - 1)) * 2.) - 1.
 
+        corr_simi, corr_coords = cost_volume.lookup(anchor_coords_in_2) #corr_simi(B,N,h,w), corr_coords(B,h,w,N,2)
 
-        #得到每组采样点的基准点（也就是a中的网格点），然后相减，得到每个采样点相对于其基准点的offset
-        anchor_coords_in_1 = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=self.device).flatten(1,2) # (B,h*w,2)
-        anchor_coords_in_big_1 = self.proj_img1_to_big1(anchor_coords_in_1,Hs_1,Ms,device=self.device).reshape(self.B,self.h,self.w,2) # B,h,w,2
+        corr_coords_in_2_flat = corr_coords.flatten(1,3) # (B,h*w*N,2) b小图坐标系下采样点坐标
+        corr_coords_in_big_2_flat = self.apply_H(corr_coords_in_2_flat,torch.linalg.inv(Hs_2),device=self.device) # B,h*w*N,2
 
+        if not rpc_1 is None and not rpc_2 is None:
+            pass
+        else:
+            corr_coords_in_big_1_flat = corr_coords_in_big_2_flat
 
-        corr_offset = corr_coords_in_big_1 - anchor_coords_in_big_1.unsqueeze(3) # (B,h,w,N,2)
-        corr_offset = corr_offset.permute(0,3,4,1,2).flatten(1,2) # (B,N*2,h,w)
+        corr_coords_in_big_1 = corr_coords_in_big_1_flat.reshape(self.B,self.h,self.w,-1,2) # B,h,w,N,2
+        
+        corr_offset = corr_coords_in_big_1 - anchor_coords_in_big_1_af.unsqueeze(3) # B,h,w,N,2
+        corr_offset = corr_offset.flatten(3,4).permute(0,3,1,2) # (B,N*2,h,w)
         corr_offset = self.coord_norm(corr_offset,norm_factor) # 将offset进行归一化
+
 
         return corr_simi,corr_offset
     

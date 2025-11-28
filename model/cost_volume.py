@@ -114,9 +114,8 @@ class CostVolume:
             # debug_print(f"===========lvl {i} img512===========")
             # debug_print(f"{coords_lvl0[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_lvl0[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
 
-            # 调整维度: [B, H, W, N, 2] -> [B, N, 2, H, W]
             # N 对应 Channels 维度的一部分
-            out_coords_list.append(coords_lvl0.permute(0, 3, 4, 1, 2))
+            out_coords_list.append(coords_lvl0) #[B, H, W, N, 2]
             # ----------------------------
             
             # 4. Grid Sample
@@ -144,7 +143,7 @@ class CostVolume:
         # 调整维度顺序: [B, Channels, H, W] 适应 CNN 输入
         out = out.permute(0, 3, 1, 2).contiguous()
         
-        # 拼接所有层级坐标: [B, Total_Channels, 2, H, W]
-        out_coords = torch.cat(out_coords_list, dim=1).contiguous()
+        # 拼接所有层级坐标
+        out_coords = torch.cat(out_coords_list, dim=3).contiguous() #[B, H, W, Total_Channels, 2]
         
         return out, out_coords
