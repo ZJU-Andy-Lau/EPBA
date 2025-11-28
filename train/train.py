@@ -282,6 +282,7 @@ def main(args):
     dataset,dataloader,sampler = load_data(args)
     
     args.dataset_num = dataset.dataset_num
+    batch_num = len(dataloader)
     # train_images = dataset.get_train_images()
     # if rank == 0:
     #     for i,img in enumerate(train_images):
@@ -291,12 +292,12 @@ def main(args):
     encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer = load_models(args)
 
     adapter_scheduler = MultiStageOneCycleLR(optimizer=adapter_optimizer,
-                                             total_steps=args.max_epoch * len(dataloader),
+                                             total_steps=args.max_epoch * batch_num,
                                              warmup_ratio=min(5. / args.max_epoch,.1),
                                              cooldown_ratio=.9)
     
     gru_scheduler = MultiStageOneCycleLR(optimizer=gru_optimizer,
-                                         total_steps=args.max_epoch * len(dataloader),
+                                         total_steps=args.max_epoch * batch_num,
                                          warmup_ratio=min(5. / args.max_epoch,.1),
                                          cooldown_ratio=.9)
 
@@ -307,6 +308,10 @@ def main(args):
                       reg_weight = 1e-3,
                       device = args.device)
 
+    start_time = time.perf_counter()
+    step_count = 0
+    
+
     for epoch in range(args.max_epoch):
         pprint(f'\nEpoch:{epoch}')
         sampler.set_epoch(epoch)
@@ -316,9 +321,9 @@ def main(args):
             "loss_sim":0,
             "loss_conf":0,
             "loss_affine":0,
+            "loss_affine_last":0,
             "loss_consist":0,
             "loss_ctx":0,
-            "count":0
         }
         encoder.train()
         gru.train()
@@ -327,7 +332,7 @@ def main(args):
             adapter_optimizer.zero_grad()
             gru_optimizer.zero_grad()
 
-            loss,loss_details,debug_info = get_loss(args,encoder,gru,ctx_decoder,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == len(dataloader) - 1))
+            loss,loss_details,debug_info = get_loss(args,encoder,gru,ctx_decoder,data,loss_funcs,epoch,get_debuf_info = (epoch % 5 == 0 and batch_idx == batch_num - 1))
 
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
@@ -353,32 +358,40 @@ def main(args):
             dist.barrier()
             for key in loss_details.keys():
                 records[key] += loss_details[key]
-            records['count'] += 1
 
             if rank == 0:
+                curtime = time.perf_counter()
+                curstep = step_count
+                remain_step = (args.max_epoch - epoch)  * batch_num - batch_idx - 1
+                cost_time = curtime - start_time
+                remain_time = remain_step * cost_time / curstep
                 info = (
                     f"epoch:{epoch} \t"
-                    f"batch:{batch_idx+1} / {len(dataloader)} \t"
+                    f"batch:{batch_idx+1} / {batch_num} \t"
                     f"loss:{loss_details['loss'].item():.2f} \t"
                     f"l_sim:{loss_details['loss_sim'].item():.2f} \t"
                     f"l_conf:{loss_details['loss_conf'].item():.2f} \t"
                     f"l_af:{loss_details['loss_affine'].item():.2f} \t"
+                    f"l_af_l:{loss_details['loss_affine_last'].item():.2f} \t"
                     f"l_cons:{loss_details['loss_consist'].item():.2f} \t"
                     f"l_ctx:{loss_details['loss_ctx'].item():.2f} \t"
                     f"lr_encoder:{adapter_scheduler.get_last_lr()[0]:.2e} \t"
                     f"lr_gru:{gru_scheduler.get_last_lr()[0]:.2e} \t"
+                    f"time:{str(datetime.timedelta(seconds=round(cost_time)))} \t"
+                    f"ETA:{str(datetime.timedelta(seconds=round(remain_time)))} \t"
                 )
                 print(info)
 
         if rank == 0:
             for key in loss_details.keys():
-                records[key] /= records['count']
+                records[key] /= batch_num
             info = (
                     f"epoch:{epoch} \t"
                     f"loss:{records['loss'].item():.2f} \t"
                     f"l_sim:{records['loss_sim'].item():.2f} \t"
                     f"l_conf:{records['loss_conf'].item():.2f} \t"
                     f"l_af:{records['loss_affine'].item():.2f} \t"
+                    f"l_af_l:{records['loss_affine_last'].item():.2f} \t"
                     f"l_cons:{records['loss_consist'].item():.2f} \t"
                     f"l_ctx:{records['loss_ctx'].item():.2f} \t"
                     f"min_loss:{min_loss:.2f} \t"
@@ -386,8 +399,6 @@ def main(args):
             print(info)
 
             for key in records:
-                if key == 'count':
-                    continue
                 logger.add_scalar(f"loss/{key}",records[key].item(),epoch)
 
             for key in debug_info['imgs']:
@@ -396,8 +407,8 @@ def main(args):
             for key in debug_info['values']:
                 print(f"{key} : {debug_info['values'][key]}")
         
-            if records['loss_affine'] < min_loss:
-                min_loss = records['loss_affine']
+            if records['loss_affine_last'] < min_loss:
+                min_loss = records['loss_affine_last']
                 encoder.module.save_adapter(os.path.join(args.model_save_path,'adapter.pth'))
                 torch.save(gru.state_dict(),os.path.join(args.model_save_path,'gru.pth'))
                 torch.save(ctx_decoder.state_dict(),os.path.join(args.model_save_path,'ctx_decoder.pth'))

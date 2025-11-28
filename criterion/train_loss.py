@@ -42,25 +42,26 @@ class Loss(nn.Module):
         # [修改] 处理 Affine Loss 的可视化返回
         if return_details:
             # 仅对 loss_affine_1 (A->B) 进行可视化采集，避免信息过载
-            loss_affine_1, affine_details = self.affine_loss(delta_affines = input['preds_1'],
-                                            Hs_a = input['Hs_a'],
-                                            Hs_b = input['Hs_b'],
-                                            M_a_b = input['M_a_b'],
-                                            return_details = True)
+            loss_affine_1, loss_affine_last_1, affine_details = self.affine_loss(delta_affines = input['preds_1'],
+                                                                                Hs_a = input['Hs_a'],
+                                                                                Hs_b = input['Hs_b'],
+                                                                                M_a_b = input['M_a_b'],
+                                                                                return_details = True)
         else:
-            loss_affine_1 = self.affine_loss(delta_affines = input['preds_1'],
-                                            Hs_a = input['Hs_a'],
-                                            Hs_b = input['Hs_b'],
-                                            M_a_b = input['M_a_b'])
+            loss_affine_1, loss_affine_last_1 = self.affine_loss(delta_affines = input['preds_1'],
+                                                                Hs_a = input['Hs_a'],
+                                                                Hs_b = input['Hs_b'],
+                                                                M_a_b = input['M_a_b'])
             affine_details = None
         
         # 反向过程 (B->A) 暂时不采集可视化信息
-        loss_affine_2 = self.affine_loss(delta_affines = input['preds_2'],
-                                         Hs_a = input['Hs_b'],
-                                         Hs_b = input['Hs_a'],
-                                         M_a_b = invert_affine_matrix(input['M_a_b']))
+        loss_affine_2, loss_affine_last_2 = self.affine_loss(delta_affines = input['preds_2'],
+                                                            Hs_a = input['Hs_b'],
+                                                            Hs_b = input['Hs_a'],
+                                                            M_a_b = invert_affine_matrix(input['M_a_b']))
         
         loss_affine = .5 * loss_affine_1 + .5 * loss_affine_2
+        loss_affine_last = .5 * loss_affine_last_1 + .5 * loss_affine_last_2
 
         loss_consist = self.consist_loss(delta_affine_a = input['preds_1'],
                                          delta_affine_b = input['preds_2'])
@@ -75,6 +76,7 @@ class Loss(nn.Module):
             'loss_sim':loss_sim.clone().detach(),
             'loss_conf':loss_conf.clone().detach(),
             'loss_affine':loss_affine.clone().detach(),
+            'loss_affine_last':loss_affine_last.clone.detach(),
             'loss_consist':loss_consist.clone().detach(),
             'loss_ctx':loss_ctx.clone().detach()
         }

@@ -115,6 +115,7 @@ class AffineLoss(nn.Module):
         identity_linear = torch.eye(2, device=self.device, dtype=delta_affines.dtype).unsqueeze(0).repeat(B, 1, 1)
         
         step_losses = []
+        last_loss = None
         
         for t in range(steps):
             delta = delta_affines[:, t]
@@ -127,9 +128,10 @@ class AffineLoss(nn.Module):
             # pred_points: (B, 2, N)
             pred_points = torch.bmm(current_affine, ref_grid)
             
-            # 计算 L1 距离
-            # 在大图坐标系下，坐标数值可能很大 (e.g. 10000+)，L1 Loss 相比 MSE (L2^2) 梯度更稳定，不易爆炸
-            loss_dist = torch.mean(torch.abs(pred_points - target_points))
+            # 计算 L2 距离
+            loss_dist = torch.mean(torch.norm(pred_points - target_points,dim=1))
+
+            last_loss = loss_dist
             
             # B. 正则化损失 (Regularization)
             # 约束仿射变换的线性部分 (旋转/缩放/剪切) 接近单位阵，防止过拟合或病态扭曲
@@ -157,6 +159,6 @@ class AffineLoss(nn.Module):
                 'coords_a': ref_grid.detach(), # 返回大图坐标系下的参考点
                 'Hs_b': Hs_b.detach()          # 保留 Hs_b 以便在可视化函数中投影回 Img B
             }
-            return weighted_loss, details
+            return weighted_loss, last_loss, details
             
-        return weighted_loss
+        return weighted_loss, last_loss
