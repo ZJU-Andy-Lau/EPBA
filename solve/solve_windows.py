@@ -216,7 +216,7 @@ class Windows():
                 delta_affines_ab, hidden_state = self.gru(corr_simi_ab,
                                                           corr_offset_ab,
                                                           self.ctx_feats_a,
-                                                          self.confs_a,
+                                                          self.confs_a.detach(),
                                                           hidden_state)
                 
                 delta_affines_ab[...,2] = self.coord_norm_inv(delta_affines_ab[...,2] , self.norm_factors_a)
@@ -230,7 +230,7 @@ class Windows():
                 delta_affines_ba, hidden_state = self.gru(corr_simi_ba,
                                                           corr_offset_ba,
                                                           self.ctx_feats_b,
-                                                          self.confs_b,
+                                                          self.confs_b.detach(),
                                                           hidden_state)
                 
                 delta_affines_ba[...,2] = self.coord_norm_inv(delta_affines_ba[...,2] , self.norm_factors_b)
