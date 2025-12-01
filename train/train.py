@@ -399,7 +399,7 @@ def main(args):
                     img_conf_over = visualizer.vis_confidence_overlay(img_a_np, conf_np)
                     logger.add_image('Visual_Adv/C1_Confidence_Overlay', img_conf_over, epoch, dataformats='HWC')
                     
-                    img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np)
+                    img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np, level_num=gru.module.corr_levels)
                     logger.add_image('Visual_Adv/C2_Pyramid_Response', img_resp, epoch, dataformats='HWC')
 
                     # --- Panel D: 轨迹 (使用 Fixed Size + Zoom Inset) ---
