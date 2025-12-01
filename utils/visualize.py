@@ -49,9 +49,9 @@ def rc2xy_mat(M_rc):
     """
     M_xy = M_rc.copy()
     # 交换行 (y <-> x output)
-    M_xy[[0, 1], :] = M_xy[[1, 0], :]
+    M_xy[...,[0, 1], :] = M_xy[...,[1, 0], :]
     # 交换列 (y <-> x input)
-    M_xy[:, [0, 1]] = M_xy[:, [1, 0]]
+    M_xy[...,:, [0, 1]] = M_xy[...,:, [1, 0]]
     return M_xy
 
 def make_checkerboard(img1, img2, num_tiles=8):
