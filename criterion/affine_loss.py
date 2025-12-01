@@ -108,11 +108,11 @@ class AffineLoss(nn.Module):
         step_losses = []
         last_loss = None
         
-        # [新增] 记录迭代轨迹 (仅当需要返回详情时)
+        # [修改] 始终记录轨迹，用于可视化返回
         affine_trajectory = []
         if return_details:
             affine_trajectory.append(current_affine.clone())
-
+        
         for t in range(steps):
             delta = delta_affines[:, t]
             current_affine = merge_affine(current_affine, delta)
@@ -143,9 +143,10 @@ class AffineLoss(nn.Module):
         # --- 5. 返回结果与可视化信息 ---
         if return_details:
             details = {
-                # 返回 (B, Steps+1, 2, 3)
+                # 返回整个轨迹 (B, Steps+1, 2, 3)
                 'pred_affines_list': torch.stack(affine_trajectory, dim=1),
                 'gt_affine': M_gt.detach(),
+                'coords_a': ref_grid.detach(), # 保留以备不时之需
                 'Hs_b': Hs_b.detach()
             }
             return weighted_loss, last_loss, details

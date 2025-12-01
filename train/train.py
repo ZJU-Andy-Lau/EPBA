@@ -36,8 +36,7 @@ from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
 from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
-# [新增] 引入新的可视化模块
-import utils.visualize as visualizer
+import utils.visualize as visualizer # 引入新的可视化模块
 from solve.solve_windows import Windows
 
 def print_on_main(msg, rank):
@@ -148,7 +147,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
     
     windows = Windows(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
     
-    # [修改] 移除了 Windows.solve 的 return_vis 参数，由 Loss 统一管理
+    # [修改] 移除 Windows 层的 return_vis 参数，可视化由外部统一接管
     preds_ab = windows.solve(flag = 'ab')
     preds_ba = windows.solve(flag = 'ba')
 
@@ -170,7 +169,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
         'norm_factor_b':windows.norm_factors_b,
     }
 
-    # [修改] 传递 get_debuf_info 标志给 Loss
+    # [修改] 传递 get_debuf_info 给 Loss，获取 Affine Loss 的详细信息 (trajectory)
     loss,loss_details,extra_info = loss_funcs(loss_input, return_details=get_debuf_info)
 
     debug_info = {
@@ -179,7 +178,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
     }
 
     if get_debuf_info:
-        # ==================== 1. [恢复] 原有的 Debug Info (Basic) ===========================
+        # =================== Part 1: 恢复原有的 Basic Visuals ===================
         # train_imgs
         train_img_1 = imgs1_train[0].permute(1,2,0).detach().cpu().numpy()
         train_img_2 = imgs2_train[0].permute(1,2,0).detach().cpu().numpy()
@@ -216,7 +215,6 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
         _,conf_img_1 = vis_conf(conf_1,train_img_1,16)
         _,conf_img_2 = vis_conf(conf_2,train_img_2,16)
 
-        # 填充到 debug_info
         debug_info['imgs'].update({
             'train_img_1':train_img_1,
             'train_img_2':train_img_2,
@@ -229,20 +227,19 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
             'conf_img_1':conf_img_1,
             'conf_img_2':conf_img_2
         })
-
-        # ==================== 2. [新增] 新方案数据 (Advanced) ===========================
-        # 收集 Batch 中第一个样本的所有关键数据，传递给 main 循环中的 visualize 处理
+        
+        # =================== Part 2: 收集全场景透明化所需数据 ===================
+        # 取 Batch 0
         vis_data = {
             'img_a': imgs1_label[0],     # Tensor (3, H, W) - 原始归一化图
             'img_b': imgs2_label[0],     # Tensor (3, H, W)
             'feat_a': match_feats_1[0],   # Tensor (C, H, W)
             'feat_b': match_feats_2[0],   # Tensor (C, H, W)
             'conf_a': confs_1[0][0],      # Tensor (H, W)
-            'gt_affine': M_a_b,        # Tensor (2, 3) RC
+            'gt_affine': M_a_b[0],        # Tensor (2, 3) RC
         }
-        
         if 'affine_details' in extra_info:
-            # pred_affines_list: (Steps+1, 2, 3) RC
+            # (Steps+1, 2, 3)
             vis_data['pred_affines_list'] = extra_info['affine_details']['pred_affines_list'][0]
             
         debug_info['vis_data'] = vis_data
@@ -296,7 +293,7 @@ def main(args):
     start_time = time.perf_counter()
     step_count = 0
     
-    # [新增] 可视化频率
+    # [新增] 定义可视化频率
     VIS_FREQ = 5
 
     for epoch in range(args.max_epoch):
@@ -319,7 +316,7 @@ def main(args):
             adapter_optimizer.zero_grad()
             gru_optimizer.zero_grad()
 
-            # [修改] 可视化触发条件
+            # [修改] 触发条件：Rank 0, 指定 Epoch, 第一个 Batch
             is_vis_step = (rank == 0) and (epoch % VIS_FREQ == 0) and (batch_idx == 0)
 
             loss,loss_details,debug_info = get_loss(args,encoder,gru,ctx_decoder,data,loss_funcs,epoch, get_debuf_info = is_vis_step)
@@ -349,41 +346,59 @@ def main(args):
                 records[key] += loss_details[key]
             step_count += 1
 
-            # [新增] 可视化处理 (主进程)
+            # [新增] 在主进程处理可视化逻辑 (不影响训练流)
             if is_vis_step and rank == 0:
                 vis_data = debug_info.get('vis_data', None)
                 if vis_data:
-                    # Tensor 转 Numpy
+                    # 数据准备
                     img_a_np = visualizer.denormalize_image(vis_data['img_a'])
                     img_b_np = visualizer.denormalize_image(vis_data['img_b'])
-                    gt_aff_np = vis_data['gt_affine'].detach().cpu().numpy()
-                    pred_affs_np = vis_data['pred_affines_list'].detach().cpu().numpy()
+                    gt_aff_rc = vis_data['gt_affine'].detach().cpu().numpy()
+                    pred_affs_rc = vis_data['pred_affines_list'].detach().cpu().numpy()
+                    final_pred_rc = pred_affs_rc[-1]
+                    
                     feat_a_np = vis_data['feat_a'].detach().cpu().numpy()
                     feat_b_np = vis_data['feat_b'].detach().cpu().numpy()
                     conf_np = vis_data['conf_a'].detach().cpu().numpy()
+
+                    # --- Panel A: 配准全景 (三组独立展示) ---
+                    # 1. Origin
+                    gt_xy = visualizer.rc2xy_mat(gt_aff_rc)
+                    gt_inv = np.linalg.inv(np.vstack([gt_xy, [0,0,1]]))[:2]
+                    img_b_rec = cv2.warpAffine(img_b_np, gt_inv, (img_a_np.shape[1], img_a_np.shape[0]))
+                    strip_origin = visualizer.vis_registration_strip(img_a_np, img_b_rec, "Origin (Aligned)")
+                    logger.add_image('Visual_Adv/A1_Origin_Alignment', strip_origin, epoch, dataformats='HWC')
                     
-                    final_pred_np = pred_affs_np[-1]
+                    # 2. Training Input
+                    strip_input = visualizer.vis_registration_strip(img_a_np, img_b_np, "Training Input (Misaligned)")
+                    logger.add_image('Visual_Adv/A2_Training_Input', strip_input, epoch, dataformats='HWC')
+                    
+                    # 3. Prediction
+                    pred_xy = visualizer.rc2xy_mat(final_pred_rc)
+                    img_a_corr = cv2.warpAffine(img_a_np, pred_xy, (img_a_np.shape[1], img_a_np.shape[0]))
+                    strip_pred = visualizer.vis_registration_strip(img_a_corr, img_b_np, "Prediction (Corrected)")
+                    logger.add_image('Visual_Adv/A3_Prediction_Result', strip_pred, epoch, dataformats='HWC')
 
-                    # 1. Panel A: 三棋盘格配准
-                    pan_reg = visualizer.vis_registration_panorama(img_a_np, img_b_np, gt_aff_np, final_pred_np)
-                    logger.add_image('Visual_Adv/A_Registration_Panorama', pan_reg, epoch, dataformats='HWC')
-
-                    # 2. Panel B: 特征匹配连线
-                    img_match = visualizer.vis_feature_matching(img_a_np, img_b_np, feat_a_np, feat_b_np, gt_aff_np)
+                    # --- Panel B: 特征匹配 ---
+                    img_match = visualizer.vis_sparse_match(img_a_np, img_b_np, feat_a_np, feat_b_np, conf_np)
                     logger.add_image('Visual_Adv/B_Feature_Matching', img_match, epoch, dataformats='HWC')
 
-                    # 3. Panel C: 金字塔响应 & 置信度
-                    img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np)
-                    logger.add_image('Visual_Adv/C_Correlation_Response', img_resp, epoch, dataformats='HWC')
+                    # --- Panel C: 置信度 & 响应 ---
+                    img_conf_over = visualizer.vis_confidence_overlay(img_a_np, conf_np)
+                    logger.add_image('Visual_Adv/C1_Confidence_Overlay', img_conf_over, epoch, dataformats='HWC')
                     
-                    conf_img = (conf_np * 255).astype(np.uint8)
-                    conf_heatmap = cv2.applyColorMap(conf_img, cv2.COLORMAP_JET)
-                    logger.add_image('Visual_Adv/C_Confidence', conf_heatmap, epoch, dataformats='HWC')
+                    img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np)
+                    logger.add_image('Visual_Adv/C2_Pyramid_Response', img_resp, epoch, dataformats='HWC')
 
-                    # 4. Panel D: 迭代轨迹
-                    H_img, W_img = img_a_np.shape[:2]
-                    img_traj = visualizer.vis_iterative_trajectory(pred_affs_np, gt_aff_np, H_img, W_img)
+                    # --- Panel D: 轨迹 ---
+                    H, W = img_a_np.shape[:2]
+                    img_traj = visualizer.vis_trajectory_zoomed(pred_affs_rc, gt_aff_rc, H, W)
                     logger.add_image('Visual_Adv/D_Iterative_Trajectory', img_traj, epoch, dataformats='HWC')
+
+                    # [恢复] 将原有的 Debug 图像写入 Visual_Basic
+                    if 'imgs' in debug_info:
+                        for key in debug_info['imgs']:
+                            logger.add_image(f"Visual_Basic/{key}", debug_info['imgs'][key], epoch, dataformats='HWC')
 
             if rank == 0:
                 curtime = time.perf_counter()
@@ -426,10 +441,6 @@ def main(args):
             for key in records:
                 logger.add_scalar(f"loss/{key}",records[key].item(),epoch)
 
-            # [恢复] 写入原有的可视化图像 (归类到 Visual_Basic)
-            if 'imgs' in debug_info:
-                for key in debug_info['imgs']:
-                    logger.add_image(f"Visual_Basic/{key}", debug_info['imgs'][key], epoch, dataformats='HWC')
             
             if 'values' in debug_info:
                 for key in debug_info['values']:
