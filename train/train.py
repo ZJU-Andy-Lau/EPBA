@@ -236,7 +236,10 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
             'feat_a': match_feats_1[0],   # Tensor (C, H, W)
             'feat_b': match_feats_2[0],   # Tensor (C, H, W)
             'conf_a': confs_1[0][0],      # Tensor (H, W)
-            'gt_affine': M_a_b,        # Tensor (2, 3) RC
+            'gt_affine': M_a_b[0],        # Tensor (2, 3) RC, 注意这里取 Batch 0
+            # [新增] 记录 H_a 和 H_b 用于全局坐标恢复
+            'H_a': Hs_a[0],               # Tensor (3, 3) RC
+            'H_b': Hs_b[0],               # Tensor (3, 3) RC
         }
         if 'affine_details' in extra_info:
             # (Steps+1, 2, 3)
@@ -353,30 +356,39 @@ def main(args):
                     # 数据准备
                     img_a_np = visualizer.denormalize_image(vis_data['img_a'])
                     img_b_np = visualizer.denormalize_image(vis_data['img_b'])
+                    
+                    # [修改] 提取所需的矩阵 (转为 numpy)
                     gt_aff_rc = vis_data['gt_affine'].detach().cpu().numpy()
                     pred_affs_rc = vis_data['pred_affines_list'].detach().cpu().numpy()
                     final_pred_rc = pred_affs_rc[-1]
+                    H_a_rc = vis_data['H_a'].detach().cpu().numpy()
+                    H_b_rc = vis_data['H_b'].detach().cpu().numpy()
                     
                     feat_a_np = vis_data['feat_a'].detach().cpu().numpy()
                     feat_b_np = vis_data['feat_b'].detach().cpu().numpy()
                     conf_np = vis_data['conf_a'].detach().cpu().numpy()
 
-                    # --- Panel A: 配准全景 (三组独立展示) ---
-                    # 1. Origin
-                    gt_xy = visualizer.rc2xy_mat(gt_aff_rc)
-                    gt_inv = np.linalg.inv(np.vstack([gt_xy, [0,0,1]]))[:2]
-                    img_b_rec = cv2.warpAffine(img_b_np, gt_inv, (img_a_np.shape[1], img_a_np.shape[0]))
-                    strip_origin = visualizer.vis_registration_strip(img_a_np, img_b_rec, "Origin (Aligned)")
+                    # --- Panel A: 配准全景 (使用 Global Warp) ---
+                    target_wh = (img_b_np.shape[1], img_b_np.shape[0])
+                    
+                    # 1. Origin (Aligned by GT)
+                    # 使用 GT 矩阵将 Image A 变换到 Image B
+                    img_a_aligned_gt = visualizer.warp_image_by_global_affine(
+                        img_a_np, H_a_rc, H_b_rc, gt_aff_rc, target_wh
+                    )
+                    strip_origin = visualizer.vis_registration_strip(img_a_aligned_gt, img_b_np, "Origin (Aligned by GT)")
                     logger.add_image('Visual_Adv/A1_Origin_Alignment', strip_origin, epoch, dataformats='HWC')
                     
-                    # 2. Training Input
-                    strip_input = visualizer.vis_registration_strip(img_a_np, img_b_np, "Training Input (Misaligned)")
+                    # 2. Training Input (Misaligned)
+                    # 这里的 "Training Input" 展示原始的小图
+                    strip_input = visualizer.vis_registration_strip(img_a_np, img_b_np, "Training Input (Raw Crops)")
                     logger.add_image('Visual_Adv/A2_Training_Input', strip_input, epoch, dataformats='HWC')
                     
-                    # 3. Prediction
-                    pred_xy = visualizer.rc2xy_mat(final_pred_rc)
-                    img_a_corr = cv2.warpAffine(img_a_np, pred_xy, (img_a_np.shape[1], img_a_np.shape[0]))
-                    strip_pred = visualizer.vis_registration_strip(img_a_corr, img_b_np, "Prediction (Corrected)")
+                    # 3. Prediction (Aligned by Pred)
+                    img_a_aligned_pred = visualizer.warp_image_by_global_affine(
+                        img_a_np, H_a_rc, H_b_rc, final_pred_rc, target_wh
+                    )
+                    strip_pred = visualizer.vis_registration_strip(img_a_aligned_pred, img_b_np, "Prediction (Corrected)")
                     logger.add_image('Visual_Adv/A3_Prediction_Result', strip_pred, epoch, dataformats='HWC')
 
                     # --- Panel B: 特征匹配 ---
@@ -390,9 +402,10 @@ def main(args):
                     img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np)
                     logger.add_image('Visual_Adv/C2_Pyramid_Response', img_resp, epoch, dataformats='HWC')
 
-                    # --- Panel D: 轨迹 ---
+                    # --- Panel D: 轨迹 (使用 Fixed Size + Zoom Inset) ---
                     H, W = img_a_np.shape[:2]
-                    img_traj = visualizer.vis_trajectory_zoomed(pred_affs_rc, gt_aff_rc, H, W)
+                    # [修改] 传入 H_a_rc 进行坐标还原
+                    img_traj = visualizer.vis_trajectory_fixed_size(pred_affs_rc, gt_aff_rc, H_a_rc, H, W)
                     logger.add_image('Visual_Adv/D_Iterative_Trajectory', img_traj, epoch, dataformats='HWC')
 
                     # [恢复] 将原有的 Debug 图像写入 Visual_Basic

@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+# [新增] 引入 inset_locator 用于绘制局部放大图
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 import cv2
 import io
 from sklearn.decomposition import PCA
@@ -9,6 +11,7 @@ from sklearn.decomposition import PCA
 def fig_to_numpy(fig):
     """将 matplotlib figure 转换为 numpy array (H, W, 3) RGB"""
     io_buf = io.BytesIO()
+    # [修改] 这里的 bbox_inches='tight' 会导致尺寸变化，后续在定尺寸绘图中我们会手动控制 layout
     fig.savefig(io_buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0.1)
     io_buf.seek(0)
     img_arr = np.frombuffer(io_buf.getvalue(), dtype=np.uint8)
@@ -37,7 +40,9 @@ def denormalize_image(img_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224,
 def rc2xy_mat(M_rc):
     """将 (Row, Col) 仿射矩阵转换为 (X, Y)"""
     M_xy = M_rc.copy()
+    # 交换行
     M_xy[...,[0, 1], :] = M_xy[...,[1, 0], :]
+    # 交换列
     M_xy[...,:, [0, 1]] = M_xy[...,:, [1, 0]]
     return M_xy
 
@@ -79,23 +84,69 @@ def make_checkerboard(img1, img2, num_tiles=8):
 
 # --- Panel A: Registration Quality (Strip View) ---
 
+# [新增] 基于全局仿射矩阵进行图像 Warp
+def warp_image_by_global_affine(img_src, H_src_rc, H_dst_rc, M_global_rc, target_wh):
+    """
+    将 img_src (对应 H_src) 通过全局仿射 M_global 变换到 img_dst (对应 H_dst) 的视角下。
+    变换链: Small_Src -> Large_Src -> Large_Dst -> Small_Dst
+    
+    Args:
+        img_src: (H, W, 3) 源图像 (小图)
+        H_src_rc: (3, 3) Large -> Small Src 的单应矩阵 (RC坐标系)
+        H_dst_rc: (3, 3) Large -> Small Dst 的单应矩阵 (RC坐标系)
+        M_global_rc: (2, 3) Large Src -> Large Dst 的全局仿射 (RC坐标系)
+        target_wh: tuple (W, H) 目标输出尺寸
+    """
+    # 1. 准备矩阵
+    # 确保 M_global 是 3x3
+    if M_global_rc.shape == (2, 3):
+        M_global_3x3 = np.eye(3)
+        M_global_3x3[:2, :] = M_global_rc
+    else:
+        M_global_3x3 = M_global_rc
+        
+    # 计算 H_src 的逆 (Small -> Large)
+    try:
+        H_src_inv = np.linalg.inv(H_src_rc)
+    except np.linalg.LinAlgError:
+        H_src_inv = np.linalg.pinv(H_src_rc)
+        
+    # 2. 计算总变换矩阵 T_total (RC坐标系)
+    # T = H_dst * M_global * H_src_inv
+    # 变换顺序: 右乘点向量 P_new = T @ P_old
+    T_rc = H_dst_rc @ M_global_3x3 @ H_src_inv
+    
+    # 3. 转换为 XY 坐标系 (OpenCV 使用 XY)
+    # rc2xy_mat 同时适用于 2x3 和 3x3
+    T_xy = rc2xy_mat(T_rc)
+    
+    # 4. 执行变换
+    # 注意：cv2.warpPerspective 使用的矩阵是 3x3
+    warped_img = cv2.warpPerspective(img_src, T_xy, target_wh, flags=cv2.INTER_LINEAR)
+    
+    return warped_img
+
 def vis_registration_strip(img_ref, img_target, title="Registration"):
     """
-    生成单个条带: [Ref] --gap-- [Target] --gap-- [Checkerboard]
+    生成单个条带: [Ref (Warped)] --gap-- [Target] --gap-- [Checkerboard]
     """
     checker = make_checkerboard(img_ref, img_target)
     
     # 添加文字标签
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.6
+    thickness = 2
+    
     img_ref_labeled = img_ref.copy()
-    cv2.putText(img_ref_labeled, "Image A (Warped)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    cv2.putText(img_ref_labeled, "Image A (Warped)", (10, 30), font, font_scale, (0, 255, 0), thickness)
     
     img_target_labeled = img_target.copy()
-    cv2.putText(img_target_labeled, "Image B (Reference)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    cv2.putText(img_target_labeled, "Image B (Reference)", (10, 30), font, font_scale, (0, 255, 0), thickness)
     
     checker_labeled = checker.copy()
-    cv2.putText(checker_labeled, f"Checkerboard: {title}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+    cv2.putText(checker_labeled, f"{title}", (10, 30), font, font_scale, (0, 255, 255), thickness)
     
-    strip = concat_with_padding([img_ref_labeled, img_target_labeled, checker_labeled], pad_width=20)
+    strip = concat_with_padding([img_ref_labeled, img_target_labeled, checker_labeled], pad_width=10)
     return strip
 
 # --- Panel B: Sparse Feature Matching ---
@@ -253,66 +304,128 @@ def vis_pyramid_response(feat_a, feat_b):
 
 # --- Panel D: Iterative Trajectory ---
 
-def vis_trajectory_zoomed(pred_affines_list, gt_matrix_rc, H, W):
+# [新增] 固定尺寸、大图坐标系、局部放大的轨迹可视化
+def vis_trajectory_fixed_size(pred_affines_list, gt_matrix_rc, H_a_rc, H, W):
     """
-    面板 D: 迭代轨迹 (自动放大聚焦)
+    面板 D: 迭代轨迹可视化 (Fixed Size, Large Coords, Zoom Inset)
+    
+    Args:
+        pred_affines_list: (Steps, 2, 3) Large A -> Large B 的预测矩阵序列 (RC)
+        gt_matrix_rc: (2, 3) Large A -> Large B 的真值矩阵 (RC)
+        H_a_rc: (3, 3) Large A -> Small A 的单应矩阵 (RC)
+        H, W: Small Image 尺寸
     """
-    fig, ax = plt.subplots(figsize=(6, 6))
+    # 1. 设置固定画布尺寸 (例如 640x640 px)
+    fig_size_inch = 6.4
+    dpi = 100
+    fig, ax = plt.subplots(figsize=(fig_size_inch, fig_size_inch), dpi=dpi)
     
-    # 使用中心点作为观察对象
-    pt_homo_rc = np.array([[H/2], [W/2], [1.0]]) # (3, 1)
+    # 2. 坐标转换：Small A Center -> Large A -> Large B
+    # 2.1 Small A 中心 (RC)
+    pt_small_rc = np.array([[H/2], [W/2], [1.0]]) # (3, 1)
     
-    # 1. 计算所有关键点位置 (Row, Col)
-    # Target
-    target_rc = gt_matrix_rc @ pt_homo_rc # (2, 1)
+    # 2.2 转换到 Large A 坐标系: P_large = inv(H_a) @ P_small
+    try:
+        H_a_inv = np.linalg.inv(H_a_rc)
+    except np.linalg.LinAlgError:
+        H_a_inv = np.linalg.pinv(H_a_rc)
+        
+    pt_large_a = H_a_inv @ pt_small_rc
+    pt_large_a = pt_large_a / (pt_large_a[2] + 1e-8) # 归一化
     
-    # Trajectory
-    path_rc = []
+    # 2.3 计算轨迹 (在 Large B 坐标系下)
+    # 初始点 (Step 0, Identity, 即 P_large_a 本身)
+    start_pt = pt_large_a[:2] # (2, 1)
+    
+    # 预测轨迹
+    path_points = [start_pt.flatten()]
     for mat in pred_affines_list:
-        p = mat @ pt_homo_rc
-        path_rc.append(p)
-    path_rc = np.array(path_rc).squeeze(-1) # (Steps, 2)
+        # M @ P_large (注意 M 是 2x3, P_large 是 3x1)
+        p_pred = mat @ pt_large_a
+        path_points.append(p_pred.flatten())
     
-    # 转换到 XY (Col, Row) 用于绘图
-    # path_xy: (Steps, 2) -> [col, row]
-    path_xy = path_rc[:, ::-1] 
-    target_xy = target_rc.squeeze(-1)[::-1]
+    path_points = np.array(path_points) # (Steps+1, 2) [row, col]
+    
+    # 真值目标点
+    target_pt = (gt_matrix_rc @ pt_large_a).flatten() # (2,)
+    
+    # 3. 转换为 XY 坐标用于绘图 (RC -> XY)
+    # path_points: [row, col] -> [col(x), row(y)]
+    path_xy = path_points[:, ::-1]
+    target_xy = target_pt[::-1]
     start_xy = path_xy[0]
-    end_xy = path_xy[-1]
+    final_xy = path_xy[-1]
     
-    # 2. 计算 Bounding Box 并添加 Margin
+    # 4. 绘制主图 (Main Plot)
+    # 绘制轨迹线
+    ax.plot(path_xy[:, 0], path_xy[:, 1], 'b.-', alpha=0.6, linewidth=1.5, label='Trajectory')
+    # 起点
+    ax.scatter(start_xy[0], start_xy[1], c='gray', marker='o', s=60, label='Start', zorder=5)
+    # 终点
+    ax.scatter(final_xy[0], final_xy[1], c='red', marker='*', s=150, label='Pred', zorder=10)
+    # 真值
+    ax.scatter(target_xy[0], target_xy[1], c='green', marker='x', s=100, label='GT', zorder=10)
+    
+    ax.set_title("Optimization Trajectory (Global Coords)")
+    ax.legend(loc='upper left', fontsize='small')
+    ax.grid(True, linestyle='--', alpha=0.3)
+    
+    # 自动调整主视图范围，留出边距
     all_pts = np.vstack([path_xy, target_xy[None, :]])
     min_xy = all_pts.min(axis=0)
     max_xy = all_pts.max(axis=0)
-    span = max_xy - min_xy
-    margin = np.maximum(span * 0.3, 5.0) # 至少留 5px 边距
-    
-    # 设置视图范围 (Zoom In)
+    span = np.maximum(max_xy - min_xy, 10.0) # 最小 span 防止奇异
+    margin = span * 0.2
     ax.set_xlim(min_xy[0] - margin[0], max_xy[0] + margin[0])
-    ax.set_ylim(max_xy[1] + margin[1], min_xy[1] - margin[1]) # Y轴反转
+    ax.set_ylim(max_xy[1] + margin[1], min_xy[1] - margin[1]) # Y轴反转 (图像坐标系)
     ax.set_aspect('equal')
-    ax.grid(True, linestyle='--', alpha=0.5)
+
+    # 5. 绘制局部放大图 (Inset Plot)
+    # 位置：右下角，占 35%
+    axins = inset_axes(ax, width="35%", height="35%", loc='lower right', borderpad=1)
     
-    # 3. 绘图
-    # Target
-    ax.scatter(target_xy[0], target_xy[1], c='g', marker='x', s=150, linewidth=2, label='Target (GT)', zorder=10)
+    # 在放大图中只画 GT 和 Final Pred
+    axins.scatter(target_xy[0], target_xy[1], c='green', marker='x', s=100, linewidth=2)
+    axins.scatter(final_xy[0], final_xy[1], c='red', marker='*', s=150)
     
-    # Start
-    ax.scatter(start_xy[0], start_xy[1], c='gray', marker='o', s=80, label='Start', zorder=5)
+    # 画连接线表示误差
+    axins.plot([target_xy[0], final_xy[0]], [target_xy[1], final_xy[1]], 'k--', alpha=0.5, linewidth=1)
     
-    # Path (Line)
-    ax.plot(path_xy[:, 0], path_xy[:, 1], 'b-', alpha=0.5, linewidth=1.5)
+    # 计算像素误差 (L2 dist)
+    error = np.linalg.norm(target_xy - final_xy)
+    mid_pt = (target_xy + final_xy) / 2
+    axins.text(mid_pt[0], mid_pt[1], f"{error:.2f}px", fontsize=8, ha='center', va='bottom', color='black')
     
-    # Path (Points) - 标注每个点
-    ax.scatter(path_xy[:, 0], path_xy[:, 1], c='b', marker='.', s=30, zorder=6)
+    # 设置放大图的范围：以 GT 和 Pred 为中心，外扩一点点
+    sub_pts = np.vstack([target_xy, final_xy])
+    s_min = sub_pts.min(axis=0)
+    s_max = sub_pts.max(axis=0)
+    s_span = np.maximum(s_max - s_min, 1.0) # 最小 1px
+    s_margin = s_span * 0.5 # 留白 50%
     
-    # End
-    ax.scatter(end_xy[0], end_xy[1], c='r', marker='*', s=200, label='Prediction', zorder=10)
+    axins.set_xlim(s_min[0] - s_margin[0], s_max[0] + s_margin[0])
+    axins.set_ylim(s_max[1] + s_margin[1], s_min[1] - s_margin[1]) # Y轴反转
     
-    ax.legend(loc='best', fontsize='small')
-    ax.set_title("Iterative Trajectory (Zoomed)")
+    # 隐藏刻度，只看相对位置
+    axins.set_xticks([])
+    axins.set_yticks([])
+    axins.set_title("Zoom: Error", fontsize=9)
     
-    return fig_to_numpy(fig)
+    # 添加连线指示放大区域 (mark_inset)
+    # loc1=2 (左上), loc2=4 (右下) 连接到主图
+    mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5", linestyle=':')
+    
+    # 6. 转换输出
+    # 不使用 bbox_inches='tight' 以保证尺寸固定
+    canvas = fig.canvas
+    canvas.draw()
+    
+    # 从 buffer 获取图像
+    width, height = canvas.get_width_height()
+    img_arr = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8).reshape(height, width, 3)
+    
+    plt.close(fig)
+    return img_arr
     
 # --- Legacy Helpers (Keep) ---
 def feats_pca(feats:np.ndarray):
