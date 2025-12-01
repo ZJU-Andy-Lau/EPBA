@@ -238,7 +238,7 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
             'feat_a': match_feats_1[0],   # Tensor (C, H, W)
             'feat_b': match_feats_2[0],   # Tensor (C, H, W)
             'conf_a': confs_1[0][0],      # Tensor (H, W)
-            'gt_affine': M_a_b[0],        # Tensor (2, 3) RC
+            'gt_affine': M_a_b,        # Tensor (2, 3) RC
         }
         
         if 'affine_details' in extra_info:
