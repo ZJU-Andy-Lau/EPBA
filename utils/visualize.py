@@ -422,7 +422,8 @@ def vis_trajectory_fixed_size(pred_affines_list, gt_matrix_rc, H_a_rc, H, W):
     
     # 从 buffer 获取图像
     width, height = canvas.get_width_height()
-    img_arr = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8).reshape(height, width, 3)
+    img_arr = np.frombuffer(canvas.buffer_rgba(), dtype=np.uint8).reshape(height, width, 4)
+    img_arr = img_arr[:, :, :3]
     
     plt.close(fig)
     return img_arr
