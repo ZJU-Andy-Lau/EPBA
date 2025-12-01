@@ -20,6 +20,8 @@ class SimLoss(nn.Module):
         构建从 Feat_A 到 Feat_B 的复合变换矩阵 T
         变换链: Feat_A -> Img_A -> Large_A -> Large_B -> Img_B -> Feat_B
         
+        注意：输入的所有矩阵均为 (Row, Col) 坐标系
+        
         Args:
             Hs_a: (B, 3, 3) 大图A -> Img_A 的单应矩阵
             Hs_b: (B, 3, 3) 大图B -> Img_B 的单应矩阵
@@ -44,7 +46,7 @@ class SimLoss(nn.Module):
             M_pad = torch.cat([M_a_b, last_row], dim=1) # (B, 3, 3)
 
         # 2. 构建缩放矩阵 S (Feat -> Img) 和 S_inv (Img -> Feat)
-        # S 将特征图坐标 (u,v) 放大 scale 倍到图像坐标
+        # S 将特征图坐标放大 scale 倍到图像坐标
         S = torch.eye(3, dtype=Hs_a.dtype, device=device).unsqueeze(0).repeat(B, 1, 1)
         S[:, 0, 0] = self.scale
         S[:, 1, 1] = self.scale
@@ -54,7 +56,6 @@ class SimLoss(nn.Module):
         S_inv[:, 1, 1] = 1.0 / self.scale
 
         # 3. 计算 Hs_a 的逆矩阵 (Img_A -> Large_A)
-        # 注意: torch.inverse 可能不稳定，如果 H 奇异需处理，这里假设 H 都是良好的
         Ha_inv = torch.inverse(Hs_a).to(torch.float32)
 
         # 4. 组合变换矩阵 (注意矩阵乘法顺序: 右乘列向量，故 T = Last @ ... @ First)
@@ -66,46 +67,50 @@ class SimLoss(nn.Module):
     def warp_features(self, feats_b, T, target_h, target_w):
         """
         利用变换矩阵 T，将 feats_b 采样到 feats_a 的网格上
+        注意：内部计算全程使用 (Row, Col) 坐标系
         """
         B, D, H_b, W_b = feats_b.shape
         device = feats_b.device
 
-        # 1. 生成 feats_a 的像素坐标网格 (y, x)
+        # 1. 生成 feats_a 的像素坐标网格 (row, col)
         # 形状: (H, W)
-        y_range = torch.arange(target_h, dtype=torch.float32, device=device)
-        x_range = torch.arange(target_w, dtype=torch.float32, device=device)
+        y_range = torch.arange(target_h, dtype=torch.float32, device=device) # row
+        x_range = torch.arange(target_w, dtype=torch.float32, device=device) # col
         grid_y, grid_x = torch.meshgrid(y_range, x_range, indexing='ij')
 
-        # 堆叠为齐次坐标 (B, 3, H*W) -> [x, y, 1]^T
-        # 注意: grid_sample 坐标系是 (x, y)，所以我们构建 [x, y, 1]
+        # 堆叠为齐次坐标 (B, 3, H*W) -> [row, col, 1]^T
+        # [修改] 交换堆叠顺序：[grid_y, grid_x, ones] -> [row, col, 1]
         ones = torch.ones_like(grid_x)
-        coords = torch.stack([grid_x, grid_y, ones], dim=0) # (3, H, W)
+        coords = torch.stack([grid_y, grid_x, ones], dim=0) # (3, H, W)
         coords = coords.view(3, -1).unsqueeze(0).repeat(B, 1, 1) # (B, 3, N)
 
         # 2. 应用变换 T
         # T: (B, 3, 3), coords: (B, 3, N) -> new_coords: (B, 3, N)
+        # T 是 RC 坐标系的，coords 也是 RC，直接相乘正确
         new_coords = torch.bmm(T, coords)
 
         # 3. 归一化齐次坐标 (处理透视除法)
         z = new_coords[:, 2:3, :] + self.epsilon # 避免除零
-        x_trans = new_coords[:, 0:1, :] / z
-        y_trans = new_coords[:, 1:2, :] / z
+        row_trans = new_coords[:, 0:1, :] / z
+        col_trans = new_coords[:, 1:2, :] / z
 
         # 4. 转换为 grid_sample 所需的归一化坐标 [-1, 1]
         # 公式: norm = 2 * pixel / (size - 1) - 1
-        x_norm = 2 * x_trans / (W_b - 1) - 1
-        y_norm = 2 * y_trans / (H_b - 1) - 1
+        # [修改] row 对应 H_b, col 对应 W_b
+        row_norm = 2 * row_trans / (H_b - 1) - 1
+        col_norm = 2 * col_trans / (W_b - 1) - 1
 
-        # 拼接为 (B, H, W, 2)
-        grid = torch.cat([x_norm, y_norm], dim=1).view(B, 2, target_h, target_w).permute(0, 2, 3, 1)
+        # 5. [关键修改] Grid Sample 适配
+        # grid_sample 需要 input 为 (x, y) 即 (col, row)
+        # 所以这里堆叠顺序必须是 [col_norm, row_norm]
+        grid = torch.cat([col_norm, row_norm], dim=1).view(B, 2, target_h, target_w).permute(0, 2, 3, 1)
 
-        # 5. 生成 Mask (标记变换后落在 feats_b 范围内的点)
-        # grid 在 [-1, 1] 之间为有效
+        # 6. 生成 Mask (标记变换后落在 feats_b 范围内的点)
         valid_mask = (grid[..., 0] >= -1) & (grid[..., 0] <= 1) & \
                      (grid[..., 1] >= -1) & (grid[..., 1] <= 1)
         valid_mask = valid_mask.float().unsqueeze(1) # (B, 1, H, W)
 
-        # 6. 重采样 (Padding 模式设为 0)
+        # 7. 重采样 (Padding 模式设为 0)
         warped_feats_b = F.grid_sample(feats_b, grid, mode='bilinear', padding_mode='zeros', align_corners=True)
 
         return warped_feats_b, valid_mask
@@ -115,9 +120,9 @@ class SimLoss(nn.Module):
         Args:
             feats_a (Tensor): (B, D, h, w)
             feats_b (Tensor): (B, D, h, w)
-            Hs_a (Tensor): (B, 3, 3) Img_A 对应的单应矩阵
-            Hs_b (Tensor): (B, 3, 3) Img_B 对应的单应矩阵
-            M_a_b (Tensor): (2, 3) A到B的仿射变换 (全局共享)
+            Hs_a (Tensor): (B, 3, 3) Img_A 对应的单应矩阵 (RC)
+            Hs_b (Tensor): (B, 3, 3) Img_B 对应的单应矩阵 (RC)
+            M_a_b (Tensor): (2, 3) A到B的仿射变换 (RC)
         """
         B, D, h, w = feats_a.shape
         N = h * w
@@ -135,8 +140,6 @@ class SimLoss(nn.Module):
         mask_flat = mask.view(B * N)                               # Mask (Flattened for loss)
 
         # 4. L2 归一化 (Cosine Similarity 前置)
-        # 注意：padding 区域是全0向量，normalize 后可能会产生 0 或 NaN (取决于 epsilon)
-        # 我们依赖 F.normalize 的 epsilon 避免除零错误
         feats_a_norm = F.normalize(feats_a_flat, p=2, dim=2)
         warped_b_norm = F.normalize(warped_b_flat, p=2, dim=2)
 
@@ -149,7 +152,6 @@ class SimLoss(nn.Module):
         logits_reshaped = logits.view(-1, N) # (B*N, N)
         
         # 目标标签: 对于 Query i，正样本就是 Key i
-        # labels: [0, 1, ..., N-1, 0, 1, ..., N-1, ...]
         labels = torch.arange(N, device=feats_a.device).repeat(B) # (B*N)
 
         # 使用 reduction='none' 获取每个样本的 loss

@@ -10,7 +10,7 @@ class ConsistLoss(nn.Module):
 
         Args:
             img_size (tuple): 影像尺寸 (H, W)
-            grid_stride (int): 网格采样步长。由于仿射变换自由度低，稀疏网格(如32或64)即可捕捉平移和旋转。
+            grid_stride (int): 网格采样步长。
             decay_rate (float): 时间步权重的衰减系数，默认为 0.8
         """
         super(ConsistLoss, self).__init__()
@@ -23,18 +23,16 @@ class ConsistLoss(nn.Module):
         self.register_buffer('base_grid', self._create_grid())
 
     def _create_grid(self):
-        """生成稀疏的像素采样网格 (3, N)"""
-        # 使用较大的 stride 生成稀疏点，减少计算量
-        # 即使是 3x3 的网格也能很好地约束仿射变换
+        """生成稀疏的像素采样网格 (3, N) - RC坐标系"""
         y_range = torch.arange(0, self.H, self.grid_stride, dtype=torch.float32,device=self.device)
         x_range = torch.arange(0, self.W, self.grid_stride, dtype=torch.float32,device=self.device)
         grid_y, grid_x = torch.meshgrid(y_range, x_range, indexing='ij')
 
         N = grid_y.numel()
-        # 堆叠为齐次坐标 [x, y, 1]^T
+        # [修改] 堆叠为齐次坐标 [row, col, 1]^T
         grid = torch.stack([
-            grid_x.reshape(-1),
             grid_y.reshape(-1),
+            grid_x.reshape(-1),
             torch.ones(N, dtype=torch.float32, device=self.device)
         ], dim=0)
 
@@ -100,7 +98,7 @@ class ConsistLoss(nn.Module):
             points_recon_b = torch.bmm(cycle_M_bab, points_identity)
 
             # --- 计算几何距离损失 ---
-            # 只取前两维 (x, y) 计算欧氏距离
+            # 只取前两维 (row, col) 计算欧氏距离
             # Target 是原始点 points_identity
             
             # Dir 1: || P_recon_a - P_origin ||

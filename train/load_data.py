@@ -43,6 +43,23 @@ def downsample(arr,ds):
     arr_ds = arr_ds.reshape(len(lines),len(samps),-1).squeeze()
     return arr_ds
 
+def xy2rc_mat(M: np.ndarray) -> np.ndarray:
+    """
+    将基于 (x, y) 坐标系的变换矩阵转换为基于 (row, col) 坐标系的矩阵。
+    原理: P_rc = S @ P_xy, 其中 S 是交换前两维的置换矩阵。
+    M_rc = S @ M_xy @ S^-1
+    这等价于交换 M 的前两行，并交换 M 的前两列。
+    
+    Args:
+        M: shape (..., 3, 3) or (..., 2, 3)
+    """
+    M_new = M.copy()
+    # 交换第0行和第1行
+    M_new[..., [0, 1], :] = M_new[..., [1, 0], :]
+    # 交换第0列和第1列
+    M_new[..., :, [0, 1]] = M_new[..., :, [1, 0]]
+    return M_new
+
 def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k = 1):
     """
     生成 k 对具有较大重叠但变换参数独立的单应性裁切矩阵。
@@ -54,9 +71,9 @@ def generate_affine_matrices(image_size, size_range, output_size=(512, 512), k =
         k (int): 需要生成的窗口对数量
         
     返回:
-        H_as (np.ndarray): (k, 3, 3) A -> Output
-        H_bs (np.ndarray): (k, 3, 3) B -> Output
-        M_a_b (np.ndarray): (2, 3) A -> B 全局仿射
+        H_as (np.ndarray): (k, 3, 3) A -> Output (XY Coordinates)
+        H_bs (np.ndarray): (k, 3, 3) B -> Output (XY Coordinates)
+        M_a_b (np.ndarray): (2, 3) A -> B 全局仿射 (XY Coordinates)
     """
     
     H_img, W_img = image_size
@@ -233,20 +250,27 @@ def process_image(
     residual2 = np.zeros((K, output_size, output_size), dtype=np.float32)
     # print(H,W,min_crop_side,int(H * 0.5))
 
-    H_as, H_bs, M_a_b = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.5)),(output_size,output_size),K)
+    # 生成 XY 坐标系下的矩阵
+    H_as_xy, H_bs_xy, M_a_b_xy = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.5)),(output_size,output_size),K)
 
-    img2_full_aff = cv2.warpAffine(img2_full, M_a_b, (W, H), flags=cv2.INTER_LINEAR)
-    residual2_full_aff = cv2.warpAffine(residual2_full, M_a_b, (W, H), flags=cv2.INTER_NEAREST, borderValue=np.nan)
+    # OpenCV 使用 (x, y) 坐标系，所以这里先用 XY 矩阵进行 warp
+    img2_full_aff = cv2.warpAffine(img2_full, M_a_b_xy, (W, H), flags=cv2.INTER_LINEAR)
+    residual2_full_aff = cv2.warpAffine(residual2_full, M_a_b_xy, (W, H), flags=cv2.INTER_NEAREST, borderValue=np.nan)
 
     for k in range(K):
         dsize = (output_size, output_size)
-        imgs1[k] = cv2.warpPerspective(img1_full, H_as[k], dsize, flags=cv2.INTER_LINEAR)
-        imgs2[k] = cv2.warpPerspective(img2_full_aff, H_bs[k], dsize, flags=cv2.INTER_LINEAR)
-        residual1[k] = cv2.warpPerspective(residual1_full, H_as[k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
-        residual2[k] = cv2.warpPerspective(residual2_full_aff, H_bs[k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
+        imgs1[k] = cv2.warpPerspective(img1_full, H_as_xy[k], dsize, flags=cv2.INTER_LINEAR)
+        imgs2[k] = cv2.warpPerspective(img2_full_aff, H_bs_xy[k], dsize, flags=cv2.INTER_LINEAR)
+        residual1[k] = cv2.warpPerspective(residual1_full, H_as_xy[k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
+        residual2[k] = cv2.warpPerspective(residual2_full_aff, H_bs_xy[k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
 
+    # [关键修改] 将生成的 XY 坐标系矩阵转换为 Row-Col 坐标系矩阵
+    # 以供后续 PyTorch 模型训练使用
+    H_as_rc = xy2rc_mat(H_as_xy)
+    H_bs_rc = xy2rc_mat(H_bs_xy)
+    M_a_b_rc = xy2rc_mat(M_a_b_xy)
 
-    return imgs1, imgs2, residual1, residual2, H_as, H_bs, M_a_b
+    return imgs1, imgs2, residual1, residual2, H_as_rc, H_bs_rc, M_a_b_rc
 
 class TrainDataset(Dataset):
     def __init__(self,root,
