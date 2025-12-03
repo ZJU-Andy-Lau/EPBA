@@ -110,6 +110,7 @@ class Solver():
         corners_linesamps_b = self.rs_image_b.convert_diags_to_corners(diags,self.rpc_b)
         
         imgs_a,dems_a,Hs_a = self.rs_image_a.crop_windows(corners_linesamps_a)
+        print(imgs_a)
         imgs_b,dems_b,Hs_b = self.rs_image_b.crop_windows(corners_linesamps_b)
         
         return (imgs_a,dems_a,Hs_a),(imgs_b,dems_b,Hs_b)
