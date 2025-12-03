@@ -8,9 +8,9 @@ import os
 import cv2
 
 
-from .utils import warp_quads
-from utils.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
-from utils.rpc import RPCModelParameterTorch
+from utils import warp_quads
+from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
+from shared.rpc import RPCModelParameterTorch
 from tqdm import tqdm,trange
 import rasterio
 from typing import Tuple

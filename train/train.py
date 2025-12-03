@@ -35,8 +35,8 @@ from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
-from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
-import utils.visualize as visualizer # 引入新的可视化模块
+from shared.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
+import shared.visualize as visualizer # 引入新的可视化模块
 from solve.solve_windows import WindowSolver
 
 def print_on_main(msg, rank):

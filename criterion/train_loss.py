@@ -6,7 +6,7 @@ from .conf_loss import ConfLoss
 from .affine_loss import AffineLoss
 from .consist_loss import ConsistLoss
 from .ctx_loss import CtxLoss
-from .utils import invert_affine_matrix
+from utils import invert_affine_matrix
 
 class Loss(nn.Module):
     def __init__(self,img_size = (512,512), downsample_factor = 16,temperature = 0.07,decay_rate = 0.8,reg_weight = 0.001,device = 'cuda'):

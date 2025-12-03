@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.utils import debug_print
+from shared.utils import debug_print
 
 class CostVolume:
     def __init__(self, fmap_query, fmap_ref, num_levels=2, radius=4):

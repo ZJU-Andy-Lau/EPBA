@@ -1,12 +1,7 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from .sim_loss import SimLoss
 from .conf_loss import ConfLoss
-from .affine_loss import AffineLoss
-from .consist_loss import ConsistLoss
 from .ctx_loss import CtxLoss
-from .utils import invert_affine_matrix
 
 class Loss(nn.Module):
     def __init__(self, downsample_factor = 16,temperature = 0.07):

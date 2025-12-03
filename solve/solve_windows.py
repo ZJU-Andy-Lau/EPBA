@@ -8,9 +8,9 @@ import os
 from model.encoder import Encoder
 from model.gru import GRUBlock
 from model.cost_volume import CostVolume
-from utils.rpc import RPCModelParameterTorch,project_linesamp
-from utils.utils import debug_print
-from utils.visualize import vis_pyramid_correlation
+from shared.rpc import RPCModelParameterTorch,project_linesamp
+from shared.utils import debug_print
+from shared.visualize import vis_pyramid_correlation
 from criterion.utils import invert_affine_matrix
 
 class WindowSolver():

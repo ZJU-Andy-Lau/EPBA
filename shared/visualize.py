@@ -401,7 +401,7 @@ def feats_pca(feats:np.ndarray):
     return feats
 
 def vis_conf(conf:np.ndarray,img:np.ndarray,ds,div = .5,output_path = None):
-    from .utils import get_coord_mat
+    from utils import get_coord_mat
     points = (get_coord_mat(conf.shape[0],conf.shape[1]) * ds + ds * .5).reshape(-1,2)
     scores = conf.reshape(-1)
     canvas_cont = img.copy()

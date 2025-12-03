@@ -35,8 +35,8 @@ from torchvision import transforms
 from model.encoder import Encoder
 from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
-from utils.utils import str2bool,get_current_time
-from .utils import is_overlap,convert_pair_dicts_to_solver_inputs,load_config,get_error_report
+from shared.utils import str2bool,get_current_time
+from utils import is_overlap,convert_pair_dicts_to_solver_inputs,load_config,get_error_report
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver
 from rs_image import RSImage

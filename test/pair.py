@@ -8,9 +8,9 @@ import os
 from typing import List
 from copy import deepcopy
 
-from utils.rpc import RPCModelParameterTorch
+from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
-from .utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags
 from window import Window
 from model.encoder import Encoder
 from model.gru import GRUBlock

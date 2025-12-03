@@ -6,7 +6,7 @@ from torch.utils.data import Dataset,DataLoader,Sampler
 import os
 import cv2
 from tqdm import tqdm,trange
-from utils.utils import get_coord_mat,bilinear_interpolate
+from shared.utils import get_coord_mat,bilinear_interpolate
 from torchvision import transforms
 import random
 import math

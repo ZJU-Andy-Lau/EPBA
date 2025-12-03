@@ -35,7 +35,7 @@ from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from criterion.pretrain_loss import Loss
 from scheduler import MultiStageOneCycleLR
-from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
+from shared.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
 
 def print_on_main(msg, rank):
     if rank == 0:

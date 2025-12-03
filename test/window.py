@@ -6,9 +6,9 @@ import numpy as np
 import cv2
 import os
 
-from .utils import feats_type
+from utils import feats_type
 
-from utils.rpc import RPCModelParameterTorch
+from shared.rpc import RPCModelParameterTorch
 
 
 
