@@ -253,7 +253,7 @@ class WindowSolver():
         for iter in range(self.gru_max_iter):
             # 计算a->b的仿射
             if flag == 'ab':
-                corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b)
+                corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b,self.height)
                 if return_vis and iter == 0:
                     vis_dict = vis_pyramid_correlation(
                         corr_simi_ab, 
@@ -276,7 +276,7 @@ class WindowSolver():
 
             # 计算b->a的仿射
             if flag == 'ba':
-                corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a)
+                corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a,self.height)
                 delta_affines_ba, hidden_state = self.gru(corr_simi_ba,
                                                           corr_offset_ba,
                                                           self.ctx_feats_b,
