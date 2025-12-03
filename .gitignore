@@ -3,5 +3,6 @@ datasets/
 weights/
 log/
 tmp/
+results/
 *.sh
 test.ipynb
