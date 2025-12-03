@@ -107,7 +107,7 @@ class RSImage():
         corners_xy[:,3,0] = diags[:,0,0]
         corners_xy[:,3,1] = diags[:,1,1]
         corners_xy_flat = corners_xy.reshape(-1,2) # N*4,2
-        corners_samplines_flat = self.xy_to_sampline(corners_xy_flat,rpc)
+        corners_samplines_flat = self.xy_to_sampline(corners_xy_flat,rpc=rpc)
         corners_linesamps = corners_samplines_flat.reshape(N,4,2)[...,[1,0]]
         return corners_linesamps
 
