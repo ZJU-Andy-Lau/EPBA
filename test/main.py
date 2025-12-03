@@ -132,7 +132,7 @@ def main(args):
     init_random_seed(args)
 
     images = load_images(args)
-    pairs = build_pairs(images)
+    pairs = build_pairs(args,images)
     encoder,gru = load_models(args)
 
     Ms = solve(args,pairs,encoder,gru)
