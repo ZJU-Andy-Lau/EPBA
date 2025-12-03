@@ -169,8 +169,8 @@ class Solver():
         Hs_a = np.stack(Hs_a,axis=0)
         Hs_b = np.stack(Hs_b,axis=0)
         if to_tensor:
-            Hs_a = torch.from_numpy(Hs_a).to(self.device)
-            Hs_b = torch.from_numpy(Hs_b).to(self.device)
+            Hs_a = torch.from_numpy(Hs_a).to(device=self.device,dtype=torch.float32)
+            Hs_b = torch.from_numpy(Hs_b).to(device=self.device,dtype=torch.float32)
         return Hs_a,Hs_b
 
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):

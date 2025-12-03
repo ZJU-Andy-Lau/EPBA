@@ -210,7 +210,7 @@ class WindowSolver():
             anchor_lines_in_big_1_af = anchor_coords_in_big_1_flat_af[...,0].ravel()
             anchor_samps_in_big_1_af = anchor_coords_in_big_1_flat_af[...,1].ravel()
             anchor_lines_in_big_2, anchor_samps_in_big_2 = project_linesamp(rpc_1,rpc_2,anchor_lines_in_big_1_af,anchor_samps_in_big_1_af,height.ravel())
-            anchor_coords_in_big_2_flat = torch.stack([anchor_lines_in_big_2,anchor_samps_in_big_2],dim=-1).reshape(self.B,-1,2) # B,h*w,2
+            anchor_coords_in_big_2_flat = torch.stack([anchor_lines_in_big_2,anchor_samps_in_big_2],dim=-1).reshape(self.B,-1,2).to(torch.float32) # B,h*w,2
         else:
             anchor_coords_in_big_2_flat = anchor_coords_in_big_1_flat_af # B,h*w,2
         
@@ -229,7 +229,7 @@ class WindowSolver():
             corr_lines_in_big_2 = corr_coords_in_big_2_flat[...,0].ravel() # B*h*w*N
             corr_samps_in_big_2 = corr_coords_in_big_2_flat[...,1].ravel()
             corr_lines_in_big_1, corr_samps_in_big_1 = project_linesamp(rpc_2,rpc_1,corr_lines_in_big_2,corr_samps_in_big_2,corr_heights.ravel())
-            corr_coords_in_big_1_flat = torch.stack([corr_lines_in_big_1,corr_samps_in_big_1],dim=-1).reshape(self.B,-1,2) # B,h*w*N,2
+            corr_coords_in_big_1_flat = torch.stack([corr_lines_in_big_1,corr_samps_in_big_1],dim=-1).reshape(self.B,-1,2).to(torch.float32) # B,h*w*N,2
         else:
             corr_coords_in_big_1_flat = corr_coords_in_big_2_flat # B,h*w*N,2
 
