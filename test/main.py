@@ -95,9 +95,12 @@ def load_models(args):
     encoder = encoder.to(args.device).eval()
     gru = gru.to(args.device).eval()
 
+    print("Models Loaded")
+
     return encoder,gru
 
 def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
+    print("Start Solving")
     results = []
     for pair in pairs:
         print(f"Solving Pair {pair.id_a} - {pair.id_b}")
