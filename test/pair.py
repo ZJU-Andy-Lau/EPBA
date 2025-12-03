@@ -192,7 +192,7 @@ class Solver():
                                 rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                                 height=height)
         
-        preds = solver.solve(flag = 'ab')[:,-1] # B,2,3
+        preds = solver.solve(flag = 'ab',final_only=True)
 
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
@@ -233,7 +233,7 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         preds,scores = self.get_window_affines(encoder,gru)
         affine = self.merge_affines(preds,Hs_a,scores)
-
+        print(f"\n{affine}\n")
         self.rpc_a.Update_Adjust(affine)
 
         return affine

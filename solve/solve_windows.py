@@ -11,7 +11,7 @@ from model.cost_volume import CostVolume
 from shared.rpc import RPCModelParameterTorch,project_linesamp
 from shared.utils import debug_print
 from shared.visualize import vis_pyramid_correlation
-from criterion.utils import invert_affine_matrix
+from criterion.utils import merge_affine
 
 class WindowSolver():
     def __init__(self,B,H,W,
@@ -205,12 +205,10 @@ class WindowSolver():
         anchor_coords_in_big_1_flat = self.apply_H(anchor_coords_in_1_flat,torch.linalg.inv(Hs_1),device=self.device)
         anchor_coords_in_big_1_flat_af = self.apply_M(anchor_coords_in_big_1_flat,Ms,device=self.device)
         anchor_coords_in_big_1_af = anchor_coords_in_big_1_flat_af.reshape(self.B,self.h,self.w,2) # B,h,w,2
-        print(f"1 {anchor_coords_in_big_1_af.shape}")
 
         if not rpc_1 is None and not rpc_2 is None:
             anchor_lines_in_big_1_af = anchor_coords_in_big_1_flat_af[...,0].ravel()
             anchor_samps_in_big_1_af = anchor_coords_in_big_1_flat_af[...,1].ravel()
-            print(f"2 {anchor_samps_in_big_1_af.shape} {height.shape} {height.ravel().shape}")
             anchor_lines_in_big_2, anchor_samps_in_big_2 = project_linesamp(rpc_1,rpc_2,anchor_lines_in_big_1_af,anchor_samps_in_big_1_af,height.ravel())
             anchor_coords_in_big_2_flat = torch.stack([anchor_lines_in_big_2,anchor_samps_in_big_2],dim=-1).reshape(self.B,-1,2).to(torch.float32) # B,h*w,2
         else:
@@ -244,7 +242,7 @@ class WindowSolver():
 
         return corr_simi,corr_offset
 
-    def solve(self,flag = 'ab', return_vis=False):
+    def solve(self,flag = 'ab',final_only = False, return_vis=False):
         """
         返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
@@ -290,6 +288,13 @@ class WindowSolver():
                 self.Ms_b_a = self.merge_M(self.Ms_b_a,delta_affines_ba)
 
         preds = torch.stack(preds,dim=1)
+
+        if final_only:
+            final = torch.eye(2, 3, device=self.device, dtype=preds.dtype).unsqueeze(0).repeat(self.B, 1, 1)
+            for t in range(self.gru_max_iter):
+                pred = preds[:,t]
+                final = merge_affine(final,pred)
+            return final # B,2,3
         
         if return_vis:
             return preds, vis_dict # [修改] 返回元组
