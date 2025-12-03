@@ -510,6 +510,37 @@ def convert_pair_dicts_to_solver_inputs(
 
     return edge_src, edge_dst, A_ij, t_ij, w_ij
 
+def avg_downsample(arr: np.ndarray, k: int) -> np.ndarray:
+    """
+    对一个 (B, H, W, ...) 的 NumPy 数组进行 K 倍均值下采样。
+
+    均值下采样在 H 和 W 维度上进行，将 KxK 块替换为它们的平均值。
+
+    Args:
+        arr (np.ndarray): 输入数组，形状为 (B, H, W, ...)。
+                          H 和 W 必须能被 K 整除。
+        k (int): 下采样的倍数（池化窗口的大小 KxK）。
+
+    Returns:
+        np.ndarray: 均值下采样后的数组，形状为 (B, H//K, W//K, ...)。
+    """
+    if arr.ndim < 3:
+        raise ValueError(f"输入数组的维度必须 >= 3，当前维度为 {arr.ndim}")
+        
+    H, W = arr.shape[1:3]
+    if H % k != 0 or W % k != 0:
+        raise ValueError(
+            f"数组的 H ({H}) 和 W ({W}) 维度必须能被下采样倍数 K ({k}) 整除。"
+        )
+    
+    B = arr.shape[0]
+    rest_shape = arr.shape[3:]
+    new_shape = (B, H // k, k, W // k, k) + rest_shape
+    reshaped_arr = arr.reshape(new_shape)
+    downsampled_arr = reshaped_arr.mean(axis=(2, 4))
+    
+    return downsampled_arr
+
 def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
     """计算两组 (lat, lon) 坐标之间的 Haversine 距离 (米)"""
     R = 6371000 

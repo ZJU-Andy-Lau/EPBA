@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample
 from window import Window
 from model.encoder import Encoder
 from model.gru import GRUBlock
@@ -179,12 +179,13 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
+        height = avg_downsample(dems_a,16)
         solver = WindowSolver(B,H,W,
                                 gru=gru,
                                 feats_a=feats_a,feats_b=feats_b,
                                 H_as=Hs_a,H_bs=Hs_b,
                                 rpc_a=self.rpc_a,rpc_b=self.rpc_b,
-                                height=dems_a)
+                                height=height)
         
         preds = solver.solve(flag = 'ab')[:,-1] # B,2,3
 
