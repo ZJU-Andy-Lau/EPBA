@@ -294,6 +294,7 @@ def extract_features(encoder:'Encoder',imgs_a:np.ndarray,imgs_b:np.ndarray,devic
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
+    print(f"3 {imgs_a.shape}")
     input_a = torch.stack([transform(img) for img in imgs_a],dim=0) # N,3,H,W
     input_b = torch.stack([transform(img) for img in imgs_b],dim=0) # N,3,H,W
     encoder = encoder.to(device).eval()

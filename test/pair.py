@@ -135,6 +135,7 @@ class Solver():
         imgs_b = []
         for window_pair in self.window_pairs:
             img_a = window_pair.window_a.img
+            print(f"1 {img_a.shape}")
             img_b = window_pair.window_b.img
             imgs_a.append(img_a)
             imgs_b.append(img_b)
@@ -175,6 +176,7 @@ class Solver():
 
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
+        print(f"2 {imgs_a.shape}")
         dems_a,dems_b = self.collect_dems()
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
