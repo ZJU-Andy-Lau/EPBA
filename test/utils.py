@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from torchvision import transforms
 
@@ -510,36 +511,40 @@ def convert_pair_dicts_to_solver_inputs(
 
     return edge_src, edge_dst, A_ij, t_ij, w_ij
 
-def avg_downsample(arr: np.ndarray, k: int) -> np.ndarray:
-    """
-    对一个 (B, H, W, ...) 的 NumPy 数组进行 K 倍均值下采样。
-
-    均值下采样在 H 和 W 维度上进行，将 KxK 块替换为它们的平均值。
-
-    Args:
-        arr (np.ndarray): 输入数组，形状为 (B, H, W, ...)。
-                          H 和 W 必须能被 K 整除。
-        k (int): 下采样的倍数（池化窗口的大小 KxK）。
-
-    Returns:
-        np.ndarray: 均值下采样后的数组，形状为 (B, H//K, W//K, ...)。
-    """
-    if arr.ndim < 3:
-        raise ValueError(f"输入数组的维度必须 >= 3，当前维度为 {arr.ndim}")
+def avg_downsample(tensor:torch.Tensor, k: int) -> torch.Tensor:
+    if tensor.ndim < 3:
+        raise ValueError(f"输入张量的维度必须 >= 3，当前维度为 {tensor.ndim}")
         
-    H, W = arr.shape[1:3]
+    H, W = tensor.shape[1:3]
     if H % k != 0 or W % k != 0:
         raise ValueError(
-            f"数组的 H ({H}) 和 W ({W}) 维度必须能被下采样倍数 K ({k}) 整除。"
+            f"张量的 H ({H}) 和 W ({W}) 维度必须能被下采样倍数 K ({k}) 整除。"
         )
+
+    rest_dims = tensor.shape[3:]
+    num_channels = torch.prod(torch.tensor(rest_dims)).item() if len(rest_dims) > 0 else 1
+    if len(rest_dims) == 0:
+        reshaped_tensor = tensor.unsqueeze(-1) # 形状变为 (B, H, W, 1)
+    else:
+        reshaped_tensor = tensor.view(tensor.shape[0], H, W, num_channels)
+
+    transposed_tensor = reshaped_tensor.permute(0, 3, 1, 2)
+    downsampled_transposed = F.avg_pool2d(
+        input=transposed_tensor,
+        kernel_size=k,
+        stride=k
+    ) # 形状：(B, C, H//K, W//K)
+
+    final_tensor_flat = downsampled_transposed.permute(0, 2, 3, 1)
+    output_shape = (
+        tensor.shape[0], 
+        H // k, 
+        W // k
+    ) + rest_dims
     
-    B = arr.shape[0]
-    rest_shape = arr.shape[3:]
-    new_shape = (B, H // k, k, W // k, k) + rest_shape
-    reshaped_arr = arr.reshape(new_shape)
-    downsampled_arr = reshaped_arr.mean(axis=(2, 4))
+    final_tensor = final_tensor_flat.view(output_shape)
     
-    return downsampled_arr
+    return final_tensor
 
 def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
     """计算两组 (lat, lon) 坐标之间的 Haversine 距离 (米)"""

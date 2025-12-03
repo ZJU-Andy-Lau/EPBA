@@ -140,7 +140,7 @@ class Solver():
             imgs_b.append(img_b)
         return np.stack(imgs_a,axis=0),np.stack(imgs_b,axis=0)
     
-    def collect_dems(self):
+    def collect_dems(self,to_tensor = False):
         """
         Returns:
             (dems_a,dems_b) -> (N,H,W),(N,H,W)
@@ -152,7 +152,12 @@ class Solver():
             dem_b = window_pair.window_b.dem
             dems_a.append(dem_a)
             dems_b.append(dem_b)
-        return np.stack(dems_a,axis=0),np.stack(dems_b,axis=0)
+        dems_a = np.stack(dems_a,axis=0)
+        dems_b = np.stack(dems_b,axis=0)
+        if to_tensor:
+            dems_a = torch.from_numpy(dems_a).to(device=self.device,dtype=torch.float32)
+            dems_b = torch.from_numpy(dems_b).to(device=self.device,dtype=torch.float32)
+        return dems_a,dems_b
     
     def collect_Hs(self,to_tensor = False):
         """
@@ -175,7 +180,7 @@ class Solver():
 
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
-        dems_a,dems_b = self.collect_dems()
+        dems_a,dems_b = self.collect_dems(to_tensor=True)
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
