@@ -205,10 +205,12 @@ class WindowSolver():
         anchor_coords_in_big_1_flat = self.apply_H(anchor_coords_in_1_flat,torch.linalg.inv(Hs_1),device=self.device)
         anchor_coords_in_big_1_flat_af = self.apply_M(anchor_coords_in_big_1_flat,Ms,device=self.device)
         anchor_coords_in_big_1_af = anchor_coords_in_big_1_flat_af.reshape(self.B,self.h,self.w,2) # B,h,w,2
+        print(f"1 {anchor_coords_in_big_1_af.shape}")
 
         if not rpc_1 is None and not rpc_2 is None:
             anchor_lines_in_big_1_af = anchor_coords_in_big_1_flat_af[...,0].ravel()
             anchor_samps_in_big_1_af = anchor_coords_in_big_1_flat_af[...,1].ravel()
+            print(f"2 {anchor_samps_in_big_1_af.shape} {height.shape} {height.ravel().shape}")
             anchor_lines_in_big_2, anchor_samps_in_big_2 = project_linesamp(rpc_1,rpc_2,anchor_lines_in_big_1_af,anchor_samps_in_big_1_af,height.ravel())
             anchor_coords_in_big_2_flat = torch.stack([anchor_lines_in_big_2,anchor_samps_in_big_2],dim=-1).reshape(self.B,-1,2).to(torch.float32) # B,h*w,2
         else:
