@@ -94,6 +94,7 @@ def load_models(args):
 def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
     results = []
     for pair in pairs:
+        print(f"Solving Pair {pair.id_a} - {pair.id_b}")
         affine_ab,affine_ba = pair.solve_affines(encoder,gru)
         result = {
             str(pair.id_a):affine_ab,
@@ -101,6 +102,7 @@ def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
         }
         results.append(result)
     solver_configs = load_config(args.solver_config_path)
+    print(f"Global Solving")
     solver = GlobalAffineSolver(num_nodes=args.image_num,
                                 lambda_anchor=solver_configs['lambda_anchor'],
                                 lambda_A=solver_configs['lambda_A'],
