@@ -7,11 +7,14 @@ import numpy as np
 import cv2
 from shapely.geometry import Polygon, box
 import os
+import typing
 from typing import List,Tuple
-from model.encoder import Encoder
-from rs_image import RSImage
-from pair import Pair
 import yaml
+
+if typing.TYPE_CHECKING:
+    from model.encoder import Encoder
+    from rs_image import RSImage
+    from pair import Pair
 
 def load_config(path):
     with open(path,'r') as f:
