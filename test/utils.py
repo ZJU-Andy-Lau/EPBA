@@ -279,7 +279,7 @@ def quadsplit_diags(diags:np.ndarray) -> np.ndarray:
 
 feats_type = Tuple[torch.Tensor,torch.Tensor,torch.Tensor]
 
-def extract_features(encoder:Encoder,imgs_a:np.ndarray,imgs_b:np.ndarray,device:str = 'cuda') -> Tuple[feats_type,feats_type]:
+def extract_features(encoder:'Encoder',imgs_a:np.ndarray,imgs_b:np.ndarray,device:str = 'cuda') -> Tuple[feats_type,feats_type]:
     """
     Args:
         encoder: Encoder
@@ -427,7 +427,7 @@ def solve_weighted_affine(src: torch.Tensor, dst: torch.Tensor, scores: torch.Te
 
     return affine_matrix
 
-def is_overlap(image_a:RSImage,image_b:RSImage,min_area:float = 0.):
+def is_overlap(image_a:'RSImage',image_b:'RSImage',min_area:float = 0.):
     poly1 = Polygon(image_a.corner_xys)
     poly2 = Polygon(image_b.corner_xys)
     overlap_area = poly1.intersection(poly2).area
@@ -532,7 +532,7 @@ def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
     
     return distance
 
-def get_error_report(pairs:List[Pair]):
+def get_error_report(pairs:List['Pair']):
     all_distances_list = []
     for pair in pairs:
         distances = pair.check_error()
