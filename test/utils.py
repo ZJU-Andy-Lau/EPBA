@@ -71,7 +71,7 @@ def warp_quads(corners, values:List[np.ndarray], output_size=(512, 512)):
         for i in range(len(values)):
             values_res.append(
                  np.stack([
-                      warped_values[j][i] for j in len(warped_values)
+                      warped_values[j][i] for j in range(len(warped_values))
                  ],axis=0)
             )
         Hs = np.stack(Hs,axis=0)
