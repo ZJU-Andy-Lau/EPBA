@@ -37,7 +37,7 @@ from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
 from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
 import utils.visualize as visualizer # 引入新的可视化模块
-from solve.solve_windows import Windows
+from solve.solve_windows import WindowSolver
 
 def print_on_main(msg, rank):
     if rank == 0:
@@ -145,11 +145,10 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
     imgs_pred_1 = ctx_decoder(ctx_feats_1)
     imgs_pred_2 = ctx_decoder(ctx_feats_2)
     
-    windows = Windows(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
+    windowsolver = WindowSolver(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
     
-    # [修改] 移除 Windows 层的 return_vis 参数，可视化由外部统一接管
-    preds_ab = windows.solve(flag = 'ab')
-    preds_ba = windows.solve(flag = 'ba')
+    preds_ab = windowsolver.solve(flag = 'ab')
+    preds_ba = windowsolver.solve(flag = 'ba')
 
     loss_input = {
         'imgs_1':imgs1_label,
@@ -165,8 +164,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
         'Hs_a':Hs_a,
         'Hs_b':Hs_b,
         'M_a_b':M_a_b,
-        'norm_factor_a':windows.norm_factors_a,
-        'norm_factor_b':windows.norm_factors_b,
+        'norm_factor_a':windowsolver.norm_factors_a,
+        'norm_factor_b':windowsolver.norm_factors_b,
     }
 
     # [修改] 传递 get_debuf_info 给 Loss，获取 Affine Loss 的详细信息 (trajectory)

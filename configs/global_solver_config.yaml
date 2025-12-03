@@ -1,0 +1,5 @@
+lambda_anchor: 100000000
+lambda_A: 10000
+lambda_t: 0
+sigma_A: 0.00001
+sigma_t: 5

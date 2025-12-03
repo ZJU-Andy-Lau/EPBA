@@ -36,7 +36,6 @@ from model.ctx_decoder import ContextDecoder
 from criterion.pretrain_loss import Loss
 from scheduler import MultiStageOneCycleLR
 from utils.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
-from solve.solve_windows import Windows
 
 def print_on_main(msg, rank):
     if rank == 0:

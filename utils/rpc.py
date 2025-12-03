@@ -307,7 +307,7 @@ class RPCModelParameterTorch:
             print("Adjust parameters are already identity. No merge needed.")
             return
 
-        print("Merging affine adjustment into RPC coefficients...")
+        # print("Merging affine adjustment into RPC coefficients...")
 
         # 2. 生成 3D 虚拟格网 (物方)
         #    Create_Virtual_3D_Grid 内部会调用 RPC_OBJ2PHOTO
@@ -368,7 +368,7 @@ class RPCModelParameterTorch:
         x_S, _ = self._solve_lstsq(ATA_S, ATl_S)
 
         # 7. 更新 正向 RPC 系数
-        print("Updating direct model coefficients (LNUM, LDEM, SNUM, SDEM)...")
+        # print("Updating direct model coefficients (LNUM, LDEM, SNUM, SDEM)...")
         self.LNUM = x_L[0:20].clone()
         self.LDEM[0] = 1.0
         self.LDEM[1:20] = x_L[20:39].clone()
@@ -380,14 +380,14 @@ class RPCModelParameterTorch:
         #    必须在 Calculate_Inverse_RPC 之前调用！
         #    因为 Calculate_Inverse_RPC 会调用 Create_Virtual_3D_Grid，
         #    那时必须使用新的正向模型 和 *零* 仿射变换。
-        print("Resetting adjustment parameters...")
+        # print("Resetting adjustment parameters...")
         self.Clear_Adjust()
 
         # 9. 重新计算 反向 RPC 系数
         #    (因为正向模型已经改变，反向模型必须重新拟合)
-        print("Recalculating inverse RPC model...")
+        # print("Recalculating inverse RPC model...")
         times = self.Calculate_Inverse_RPC()
-        print(f"Merge complete. Inverse RPC recalculated in {times} iterations.")
+        # print(f"Merge complete. Inverse RPC recalculated in {times} iterations.")
 
     def RPC_PLH_COEF(self, P, L, H):
         n_num = P.shape[0]
@@ -833,6 +833,9 @@ def load_rpc(rpc_path:str,to_gpu=False) -> RPCModelParameterTorch:
     return rpc
 
 def project_linesamp(rpc1:RPCModelParameterTorch,rpc2:RPCModelParameterTorch,lines,samps,heights,output_type='tensor'):
+    """
+    return : (lines,samps)
+    """
     lat,lon = rpc1.RPC_PHOTO2OBJ(samps,lines,heights)
     samps,lines = rpc2.RPC_OBJ2PHOTO(lat,lon,heights,output_type)
     return lines,samps
