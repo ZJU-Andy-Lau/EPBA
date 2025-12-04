@@ -12,6 +12,7 @@ from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
 from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample
 from shared.utils import get_current_time,check_invalid_tensors
+from criterion.utils import invert_affine_matrix
 from window import Window
 from model.encoder import Encoder
 from model.gru import GRUBlock
@@ -94,6 +95,7 @@ class Solver():
             new_diag,score = window_pair.quadsplit()
             new_diags.append(new_diag)
             scores.append(score)
+            window_pair.clear()
         
         new_diags = np.concatenate(new_diags,axis=0) # （4*N,2,2)
         scores = np.concatenate(scores,axis=0) #(4*N,)
@@ -264,8 +266,8 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.rpc_a.Update_Adjust(affine)
-        print(self.rpc_a.adjust_params.detach().cpu().numpy())
+        self.rpc_a.Update_Adjust(invert_affine_matrix(affine))
+        print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
         return affine
     
@@ -329,3 +331,7 @@ class WindowPair():
             self._get_score([mid_row,mid_col],[H,W]),
         ])
         return new_diags,scores
+
+    def clear(self):
+        self.window_a.clear()
+        self.window_b.clear()

@@ -23,4 +23,13 @@ class Window():
     
     def load_feats(self,feats:feats_type):
         self.match_feats,self.ctx_feats,self.confs = feats
+    
+    def clear(self):
+        del self.img
+        del self.dem
+        del self.H
+        del self.H_inv
+        del self.match_feats
+        del self.ctx_feats
+        del self.confs
 
