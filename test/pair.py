@@ -10,7 +10,8 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample,check_invalid_tensors
+from shared.utils import get_current_time
 from window import Window
 from model.encoder import Encoder
 from model.gru import GRUBlock
@@ -21,6 +22,7 @@ default_configs = {
     'min_window_size':500,
     'max_window_size':8000,
     'min_area_ratio':0.5,
+    'output_path':'./result'
 }
 
 class Pair():
@@ -184,6 +186,9 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
+        for i,img in enumerate(imgs_a):
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}.png"),img)
+        check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2]])
         height = avg_downsample(dems_a,16)
         solver = WindowSolver(B,H,W,
                                 gru=gru,

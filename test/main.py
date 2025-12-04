@@ -69,6 +69,7 @@ def build_pairs(args,images:List[RSImage]) -> List[Pair]:
         'min_window_size':args.min_window_size,
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
+        'output_path':args.output_path,
     }
     pairs = []
     for i,j in itertools.combinations(range(images_num),2):
