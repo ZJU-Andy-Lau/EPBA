@@ -201,7 +201,6 @@ class Solver():
     def distribute_feats(self,feats_a,feats_b):
         match_feats_a,ctx_feats_a,confs_a = feats_a
         match_feats_b,ctx_feats_b,confs_b = feats_b
-        print("feats shapes:",match_feats_a.shape,ctx_feats_a.shape,confs_a.shape)
         for idx, window_pair in enumerate(self.window_pairs):
             window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
@@ -363,6 +362,7 @@ class WindowPair():
     def visualize(self,output_path:str):
         match_feat_a,ctx_feat_a,conf_a = self.window_a.match_feats,self.window_a.ctx_feats,self.window_a.confs
         match_feat_b,ctx_feat_b,conf_b = self.window_b.match_feats,self.window_b.ctx_feats,self.window_b.confs
+        print("feats shapes:",match_feat_a.shape,ctx_feat_a.shape,conf_a.shape)
         img_a,img_b = self.window_a.img,self.window_b.img
         match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0).cpu().numpy())
         ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0).cpu().numpy())
