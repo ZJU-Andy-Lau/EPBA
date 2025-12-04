@@ -222,7 +222,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    args.device = 'cuda'
+    args.device = 'cuda:1'
 
     if args.experiment_id is None:
         args.experiment_id = get_current_time()
