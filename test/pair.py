@@ -363,8 +363,8 @@ class WindowPair():
         match_feat_a,ctx_feat_a,conf_a = self.window_a.match_feats,self.window_a.ctx_feats,self.window_a.confs
         match_feat_b,ctx_feat_b,conf_b = self.window_b.match_feats,self.window_b.ctx_feats,self.window_b.confs
         img_a,img_b = self.window_a.img,self.window_b.img
-        match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0))
-        ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0))
+        match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0).cpu().numpy())
+        ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0).cpu().numpy())
         img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),conf_a.cpu().numpy())
         pyr_res_vis = visualizer.vis_pyramid_response(match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),level_num=2)
         conf_vis = visualizer.vis_confidence_overlay(img_a,conf_a.cpu().numpy())
