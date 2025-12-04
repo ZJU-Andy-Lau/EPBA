@@ -233,7 +233,7 @@ class Solver():
         
 
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
-        check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
+        # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
         return merged_affine
 
@@ -246,8 +246,8 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
-        print(f"\n{affine}\n")
         self.rpc_a.Update_Adjust(affine)
+        print(self.rpc_a.adjust_params.detach().cpu().numpy())
 
         return affine
     
