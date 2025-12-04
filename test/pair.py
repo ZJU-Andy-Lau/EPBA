@@ -360,9 +360,8 @@ class WindowPair():
         return new_diags,scores
     
     def visualize(self,output_path:str):
-        match_feat_a,ctx_feat_a,conf_a = self.window_a.match_feats,self.window_a.ctx_feats,self.window_a.confs
-        match_feat_b,ctx_feat_b,conf_b = self.window_b.match_feats,self.window_b.ctx_feats,self.window_b.confs
-        print("feats shapes:",match_feat_a.shape,ctx_feat_a.shape,conf_a.shape)
+        match_feat_a,ctx_feat_a,conf_a = self.window_a.match_feats.permute(1,2,0),self.window_a.ctx_feats.permute(1,2,0),self.window_a.confs.permute(1,2,0)
+        match_feat_b,ctx_feat_b,conf_b = self.window_b.match_feats.permute(1,2,0),self.window_b.ctx_feats.permute(1,2,0),self.window_b.confs.permute(1,2,0)
         img_a,img_b = self.window_a.img,self.window_b.img
         match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0).cpu().numpy())
         ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0).cpu().numpy())
