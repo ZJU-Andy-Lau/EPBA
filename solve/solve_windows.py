@@ -9,7 +9,7 @@ from model.encoder import Encoder
 from model.gru import GRUBlock
 from model.cost_volume import CostVolume
 from shared.rpc import RPCModelParameterTorch,project_linesamp
-from shared.utils import debug_print
+from shared.utils import debug_print,check_invalid_tensors
 from shared.visualize import vis_pyramid_correlation
 from criterion.utils import merge_affine
 
@@ -239,6 +239,8 @@ class WindowSolver():
         corr_offset = corr_offset.flatten(3,4).permute(0,3,1,2) # (B,N*2,h,w)
         corr_offset = self.coord_norm(corr_offset,norm_factor) # 将offset进行归一化
 
+        check_invalid_tensors([anchor_coords_in_1,anchor_coords_in_big_1_flat,anchor_coords_in_big_1_flat_af,anchor_coords_in_big_1_af,anchor_lines_in_big_2,anchor_coords_in_big_2_flat,anchor_coords_in_2_flat,
+                               corr_simi,corr_coords,corr_coords_in_big_2_flat,corr_heights,corr_coords_in_big_1_flat,corr_offset],"[prepare data]: ")
 
         return corr_simi,corr_offset
 

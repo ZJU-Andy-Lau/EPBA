@@ -10,8 +10,8 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample,check_invalid_tensors
-from shared.utils import get_current_time
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample
+from shared.utils import get_current_time,check_invalid_tensors
 from window import Window
 from model.encoder import Encoder
 from model.gru import GRUBlock
@@ -192,11 +192,11 @@ class Solver():
         height = avg_downsample(dems_a,16)
         check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
-                                gru=gru,
-                                feats_a=feats_a,feats_b=feats_b,
-                                H_as=Hs_a,H_bs=Hs_b,
-                                rpc_a=self.rpc_a,rpc_b=self.rpc_b,
-                                height=height)
+                              gru=gru,
+                              feats_a=feats_a,feats_b=feats_b,
+                              H_as=Hs_a,H_bs=Hs_b,
+                              rpc_a=self.rpc_a,rpc_b=self.rpc_b,
+                              height=height)
         
         preds = solver.solve(flag = 'ab',final_only=True)
 

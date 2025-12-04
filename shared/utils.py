@@ -25,6 +25,7 @@ from matplotlib import pyplot as plt
 import io
 from shapely.geometry import Polygon
 import math
+from typing import List
 
 def get_current_time():
     """
@@ -55,6 +56,51 @@ def check_grad(input:torch.Tensor,name = ''):
     else:
         zero_grads = torch.sum(input.grad == 0).item()
         print(f"tensor {name} has {zero_grads} zero grad elements")
+
+def check_invalid_tensors(tensor_list: List[torch.Tensor],note = ""):
+    """
+    检查 List[torch.Tensor] 中的每个张量是否含有 NaN (非数字) 或 Inf (无穷大) 值。
+    如果发现异常值，则打印该张量在 List 中的索引。
+
+    Args:
+        tensor_list (List[torch.Tensor]): 待检查的 PyTorch 张量列表。
+    """
+    
+    # 计数器用于记录发现的异常张量数量
+    abnormal_count = 0
+    
+    print(f"--- {note}开始检查张量列表中的 NaN/Inf 值 ---")
+    
+    for idx, tensor in enumerate(tensor_list):
+        # 仅检查浮点数张量，因为整数张量通常不包含 NaN/Inf
+        if tensor.dtype.is_floating_point:
+            
+            # 1. 检查 NaN
+            # torch.isnan(tensor).any() 如果张量中至少有一个 NaN，则返回 True
+            has_nan = torch.isnan(tensor).any()
+            
+            # 2. 检查 Inf
+            # torch.isinf(tensor).any() 如果张量中至少有一个 ±Inf，则返回 True
+            has_inf = torch.isinf(tensor).any()
+            
+            if has_nan or has_inf:
+                abnormal_count += 1
+                
+                # 构造包含具体异常类型的报告
+                report = []
+                if has_nan:
+                    report.append("NaN")
+                if has_inf:
+                    report.append("Inf")
+                
+                print(f"🚨 异常张量发现：索引 {idx} 包含以下值: {', '.join(report)}。")
+                print(f"    - 形状: {tensor.shape}")
+                print(f"    - 数据类型: {tensor.dtype}")
+        
+    if abnormal_count == 0:
+        print("✅ 检查完毕：所有张量均未发现 NaN 或 Inf 值。")
+    else:
+        print(f"⚠️ 检查完毕：共发现 {abnormal_count} 个异常张量。")
 
 def crop_rect_from_image(image, rect_points, size):
     """
