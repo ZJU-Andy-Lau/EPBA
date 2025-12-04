@@ -302,7 +302,7 @@ class WindowSolver():
             for t in range(self.gru_max_iter):
                 pred = preds[:,t]
                 final = self.merge_M(final,pred)
-            return final # B,2,3
+            preds = final
         
         if return_vis:
             return preds, vis_dict # [修改] 返回元组

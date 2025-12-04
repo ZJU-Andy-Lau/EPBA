@@ -233,7 +233,9 @@ class Solver():
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                               height=height)
         
-        preds = solver.solve(flag = 'ab',final_only=True)
+        preds,pyr_vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl0.png"),pyr_vis['level_0'])
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl1.png"),pyr_vis['level_1'])
 
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
@@ -366,7 +368,7 @@ class WindowPair():
         match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0).cpu().numpy())
         ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0).cpu().numpy())
         img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),conf_a.squeeze().cpu().numpy())
-        pyr_res_vis = visualizer.vis_pyramid_response(match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),level_num=2)
+        pyr_res_vis = visualizer.vis_pyramid_response(match_feat_a.permute(2,0,1).cpu().numpy(),match_feat_b.permute(2,0,1).cpu().numpy(),level_num=2)
         conf_vis = visualizer.vis_confidence_overlay(img_a,conf_a.squeeze().cpu().numpy())
         os.makedirs(output_path,exist_ok=True)
         cv2.imwrite(os.path.join(output_path,'match_feat_a.png'),match_feats_vis[0])
