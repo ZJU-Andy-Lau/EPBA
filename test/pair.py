@@ -365,9 +365,9 @@ class WindowPair():
         img_a,img_b = self.window_a.img,self.window_b.img
         match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0).cpu().numpy())
         ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0).cpu().numpy())
-        img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),conf_a.cpu().numpy())
+        img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),conf_a.squeeze().cpu().numpy())
         pyr_res_vis = visualizer.vis_pyramid_response(match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),level_num=2)
-        conf_vis = visualizer.vis_confidence_overlay(img_a,conf_a.cpu().numpy())
+        conf_vis = visualizer.vis_confidence_overlay(img_a,conf_a.squeeze().cpu().numpy())
         os.makedirs(output_path,exist_ok=True)
         cv2.imwrite(os.path.join(output_path,'match_feat_a.png'),match_feats_vis[0])
         cv2.imwrite(os.path.join(output_path,'match_feat_b.png'),match_feats_vis[1])
