@@ -186,10 +186,11 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
-        for i,img in enumerate(imgs_a):
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}.png"),img)
-        check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2]])
+        for i in range(imgs_a.shape[0]):
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{self.window_size}_a.png"),imgs_a[i])
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{self.window_size}_b.png"),imgs_b[i])
         height = avg_downsample(dems_a,16)
+        check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2]],height)
         solver = WindowSolver(B,H,W,
                                 gru=gru,
                                 feats_a=feats_a,feats_b=feats_b,
