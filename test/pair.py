@@ -224,8 +224,13 @@ class Solver():
         coords_src = coords_src.reshape(-1,2) # B*1024,2
         coords_dst = coords_dst.reshape(-1,2) # B*1024,2
 
-        scores_norm = (scores - scores.min()) / (scores.max() - scores.min())
-        scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
+        print(scores)
+        if torch.abs(scores.max() - scores.min()) < 1e-4:
+            scores_norm = torch.ones(size=scores.shape,device=scores.device,dtype=scores.dtype)
+        else:
+            scores_norm = (scores - scores.min()) / (scores.max() - scores.min())
+            scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
+        
 
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
         check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
@@ -239,7 +244,7 @@ class Solver():
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         preds,scores = self.get_window_affines(encoder,gru)
-        check_invalid_tensors([preds,scores],"[solve level affine]: ")
+        # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
         print(f"\n{affine}\n")
         self.rpc_a.Update_Adjust(affine)
