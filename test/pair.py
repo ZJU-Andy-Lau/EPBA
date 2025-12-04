@@ -41,19 +41,21 @@ class Pair():
         self.solver_ab = Solver(rs_image_a=rs_image_a,
                                 rs_image_b=rs_image_b,
                                 configs={
+                                    **self.configs,
                                     **{
                                         'output_path':os.path.join(self.configs['output_path'],'solve_ab')
                                     },
-                                    **self.configs
+                                    
                                 },
                                 device=device)
         self.solver_ba = Solver(rs_image_a=rs_image_b,
                                 rs_image_b=rs_image_a,
                                 configs={
+                                    **self.configs,
                                     **{
                                         'output_path':os.path.join(self.configs['output_path'],'solve_ba')
                                     },
-                                    **self.configs
+                                    
                                 },
                                 device=device)
 
