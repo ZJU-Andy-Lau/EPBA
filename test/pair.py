@@ -202,9 +202,12 @@ class Solver():
 
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
+        print(confs_a.shape)
         scores_a = confs_a.reshape(B,-1).mean(dim=1) # B,
+        print(scores_a.shape)
         scores_b = confs_b.reshape(B,-1).mean(dim=1)
         scores = torch.sqrt(scores_a * scores_b) # B,
+        print(scores.shape)
         
         return preds,scores
     
