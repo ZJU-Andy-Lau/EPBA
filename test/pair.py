@@ -217,6 +217,8 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
+        for affine in affines:
+            print(f"{affine.detach().cpu().numpy()}\n")
         coords_mat = get_coord_mat(32,32,Hs.shape[0],16,self.device) # (B,32,32,2)
         coords_mat_flat = coords_mat.flatten(1,2) # (B,1024,2)
         coords_src = apply_H(coords=coords_mat_flat,Hs=torch.linalg.inv(Hs),device=self.device) # (B,1024,2) 大图坐标系下的坐标
@@ -233,6 +235,7 @@ class Solver():
         
 
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
+        print(f"merged:\n{merged_affine.detach().cpu().numpy()}")
         # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
         return merged_affine
