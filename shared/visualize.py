@@ -430,3 +430,30 @@ def vis_conf(conf:np.ndarray,img:np.ndarray,ds,div = .5,output_path = None):
 
 def vis_pyramid_correlation(corr_simi, corr_offset, norm_factor, num_levels=4, radius=4):
     return {}
+
+def create_checkerboard(img1: np.ndarray, 
+                        img2: np.ndarray, 
+                        output_path: str, 
+                        block_size: int = 32):
+ 
+    H, W = img1.shape[:2]
+    checkerboard_img = np.zeros_like(img1)
+
+    for i in range(0, H, block_size):
+        for j in range(0, W, block_size):
+            i_block = (i // block_size) % 2
+            j_block = (j // block_size) % 2
+            
+            if i_block == j_block:
+                checkerboard_img[i:min(i+block_size, H), j:min(j+block_size, W)] = \
+                    img1[i:min(i+block_size, H), j:min(j+block_size, W)]
+            else:
+                checkerboard_img[i:min(i+block_size, H), j:min(j+block_size, W)] = \
+                    img2[i:min(i+block_size, H), j:min(j+block_size, W)]
+    
+    if checkerboard_img.ndim == 3 and checkerboard_img.shape[2] == 3:
+        checkerboard_img_bgr = cv2.cvtColor(checkerboard_img, cv2.COLOR_RGB2BGR)
+    else:
+        checkerboard_img_bgr = checkerboard_img
+
+    cv2.imwrite(output_path, checkerboard_img_bgr)

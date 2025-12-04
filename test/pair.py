@@ -12,6 +12,7 @@ from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
 from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample
 from shared.utils import get_current_time,check_invalid_tensors
+from shared.visualize import make_checkerboard
 from criterion.utils import invert_affine_matrix
 from window import Window
 from model.encoder import Encoder
@@ -116,9 +117,13 @@ class Solver():
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
         self.window_pairs_num = len(self.window_pairs)
     
-    def get_data_by_diags(self,diags):
-        corners_linesamps_a = self.rs_image_a.convert_diags_to_corners(diags,self.rpc_a)
-        corners_linesamps_b = self.rs_image_b.convert_diags_to_corners(diags,self.rpc_b)
+    def get_data_by_diags(self,diags,rpc_a = None,rpc_b = None):
+        if rpc_a is None:
+            rpc_a = self.rpc_a
+        if rpc_b is None:
+            rpc_b = self.rpc_b
+        corners_linesamps_a = self.rs_image_a.convert_diags_to_corners(diags,rpc_a)
+        corners_linesamps_b = self.rs_image_b.convert_diags_to_corners(diags,rpc_b)
         
         imgs_a,dems_a,Hs_a = self.rs_image_a.crop_windows(corners_linesamps_a)
         imgs_b,dems_b,Hs_b = self.rs_image_b.crop_windows(corners_linesamps_b)
@@ -196,6 +201,17 @@ class Solver():
             window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
 
+    def check_adjust(self):
+        ori_rpc = deepcopy(self.rs_image_a.rpc)
+        test_diag = self.window_pairs[0].diag[None]
+        data_ori_a,data_b = self.get_data_by_diags(test_diag,rpc_a=ori_rpc)
+        data_a,_ = self.get_data_by_diags(test_diag)
+        img_ori,img_a,img_b = data_ori_a[0][0],data_a[0][0],data_b[0][0]
+        checker_ori_a = make_checkerboard(img_ori,img_a,num_tiles=16)
+        checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=16)
+        checker_a_b = make_checkerboard(img_a,img_b,num_tiles=16)
+        return checker_ori_a,checker_ori_b,checker_a_b
+
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
         dems_a,dems_b = self.collect_dems(to_tensor=True)
@@ -203,9 +219,16 @@ class Solver():
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
         self.distribute_feats(feats_a,feats_b)
-        for i in range(imgs_a.shape[0]):
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{int(self.window_size)}_a.png"),imgs_a[i])
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{int(self.window_size)}_b.png"),imgs_b[i])
+        
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a.png"),imgs_a[0])
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_b.png"),imgs_b[0])
+        
+        checker_ori_a,checker_ori_b,checker_a_b = self.check_adjust()
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_a.png"),checker_ori_a)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
+        
+
         height = avg_downsample(dems_a,16)
         # check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
@@ -266,11 +289,12 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.rpc_a.Update_Adjust(invert_affine_matrix(affine))
+        self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
         return affine
     
+    @torch.no_grad()
     def solve_affine(self,encoder:Encoder,gru:GRUBlock):
         self.init_window_pairs(a_max=self.configs['max_window_size'],
                                a_min=self.configs['min_window_size'],
