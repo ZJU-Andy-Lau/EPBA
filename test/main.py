@@ -86,6 +86,8 @@ def load_models(args):
                       embed_dim=model_configs['encoder']['embed_dim'],
                       ctx_dim=model_configs['encoder']['ctx_dim'])
     
+    encoder.load_adapter(args.adapter_path)
+    
     gru = GRUBlock(corr_levels=model_configs['gru']['corr_levels'],
                    corr_radius=model_configs['gru']['corr_radius'],
                    context_dim=model_configs['gru']['ctx_dim'],
