@@ -201,6 +201,7 @@ class Solver():
     def distribute_feats(self,feats_a,feats_b):
         match_feats_a,ctx_feats_a,confs_a = feats_a
         match_feats_b,ctx_feats_b,confs_b = feats_b
+        print("feats shapes:",match_feats_a.shape,ctx_feats_a.shape,confs_a.shape)
         for idx, window_pair in enumerate(self.window_pairs):
             window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
