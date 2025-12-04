@@ -40,11 +40,21 @@ class Pair():
         self.window_size = -1
         self.solver_ab = Solver(rs_image_a=rs_image_a,
                                 rs_image_b=rs_image_b,
-                                configs=self.configs,
+                                configs={
+                                    **{
+                                        'output_path':os.path.join(self.configs['output_path'],'solve_ab')
+                                    },
+                                    **self.configs
+                                },
                                 device=device)
         self.solver_ba = Solver(rs_image_a=rs_image_b,
                                 rs_image_b=rs_image_a,
-                                configs=self.configs,
+                                configs={
+                                    **{
+                                        'output_path':os.path.join(self.configs['output_path'],'solve_ba')
+                                    },
+                                    **self.configs
+                                },
                                 device=device)
 
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
@@ -82,6 +92,7 @@ class Solver():
         self.device = device
         self.window_pairs:List[WindowPair] = []
         self.window_size = -1
+        os.makedirs(self.configs['output_path'],exist_ok=True)
 
     def init_window_pairs(self,a_max = 8000,a_min = 500,area_ratio = 0.5):
         corners_a = self.rs_image_a.__get_corner_xys__() # (4,2)
@@ -215,6 +226,17 @@ class Solver():
         checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=8)
         checker_a_b = make_checkerboard(img_a,img_b,num_tiles=8)
         return checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b
+    
+    def check_rpc(self,rpc:RPCModelParameterTorch):
+        ori_rpc = deepcopy(self.rs_image_a.rpc)
+        test_diag = self.window_pairs[0].diag[None].copy()
+        data_ori_a,data_b = self.get_data_by_diags(test_diag,rpc_a=ori_rpc)
+        data_a,_ = self.get_data_by_diags(test_diag,rpc_a=rpc)
+        img_ori,img_a,img_b = data_ori_a[0][0],data_a[0][0],data_b[0][0]
+        checker_ori_a = make_checkerboard(img_ori,img_a,num_tiles=8)
+        checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=8)
+        checker_a_b = make_checkerboard(img_a,img_b,num_tiles=8)
+        return checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b
 
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
@@ -234,8 +256,20 @@ class Solver():
                               height=height)
         
         preds,pyr_vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
+        
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl0.png"),pyr_vis['level_0'])
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl1.png"),pyr_vis['level_1'])
+        rpc_a_test = deepcopy(self.rpc_a)
+        rpc_a_test.Update_Adjust(preds[0])
+        output_path = os.path.join(self.configs['output_path'],f"check_rpc_level_{self.window_size}")
+        os.makedirs(output_path,exist_ok=True)
+        checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b = self.check_rpc(rpc_a_test)
+        cv2.imwrite(os.path.join(output_path,f"a.png"),img_a)
+        cv2.imwrite(os.path.join(output_path,f"b.png"),img_b)
+        cv2.imwrite(os.path.join(output_path,f"ori_a.png"),checker_ori_a)
+        cv2.imwrite(os.path.join(output_path,f"ori_b.png"),checker_ori_b)
+        cv2.imwrite(os.path.join(output_path,f"a_b.png"),checker_a_b)
+
 
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
@@ -285,16 +319,19 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.rpc_a.Clear_Adjust()
+        # self.rpc_a.Clear_Adjust()
         self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
+
+        output_path = os.path.join(self.configs['output_path'],f"check_adjust_level_{self.window_size}")
+        os.makedirs(output_path,exist_ok=True)
         checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b = self.check_adjust()
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a.png"),img_a)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_b.png"),img_b)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_a.png"),checker_ori_a)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
-        self.window_pairs[0].visualize(os.path.join(self.configs['output_path'],f'feats_vis_{self.window_size}'))
+        cv2.imwrite(os.path.join(output_path,f"a.png"),img_a)
+        cv2.imwrite(os.path.join(output_path,f"b.png"),img_b)
+        cv2.imwrite(os.path.join(output_path,f"ori_a.png"),checker_ori_a)
+        cv2.imwrite(os.path.join(output_path,f"ori_b.png"),checker_ori_b)
+        cv2.imwrite(os.path.join(output_path,f"a_b.png"),checker_a_b)
+        self.window_pairs[0].visualize(os.path.join(output_path,f'feats_vis_{self.window_size}'))
 
         return affine
     
