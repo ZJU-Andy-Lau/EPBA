@@ -50,7 +50,6 @@ class Pair():
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
         print("solve ab")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
-        exit()
         print("solve ba")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
         return affine_ab,affine_ba
@@ -303,6 +302,7 @@ class Solver():
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
+            print(f"Solve level {self.window_size} m")
             self.solve_level_affine(encoder,gru)
             self.quadsplit_windows()
         return self.rpc_a.adjust_params
