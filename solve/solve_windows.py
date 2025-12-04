@@ -236,7 +236,6 @@ class WindowSolver():
         corr_coords_in_big_1 = corr_coords_in_big_1_flat.reshape(self.B,self.h,self.w,-1,2) # B,h,w,N,2
         
         corr_offset = corr_coords_in_big_1 - anchor_coords_in_big_1_af.unsqueeze(3) # B,h,w,N,2
-        print(f"corr_offset:\n{corr_offset[0,15,15]}")
         corr_offset = corr_offset.flatten(3,4).permute(0,3,1,2) # (B,N*2,h,w)
         corr_offset = self.coord_norm(corr_offset,norm_factor) # 将offset进行归一化
 
@@ -294,10 +293,15 @@ class WindowSolver():
         preds = torch.stack(preds,dim=1)
 
         if final_only:
-            final = torch.eye(2, 3, device=self.device, dtype=preds.dtype).unsqueeze(0).repeat(self.B, 1, 1)
+            final = torch.tensor([
+                    [
+                        [1.0,0.0,0.0],
+                        [0.0,1.0,0.0]
+                    ]
+                ] * self.B).to(device=self.device,dtype=torch.float32)
             for t in range(self.gru_max_iter):
                 pred = preds[:,t]
-                final = merge_affine(final,pred)
+                final = self.merge_M(final,pred)
             return final # B,2,3
         
         if return_vis:
