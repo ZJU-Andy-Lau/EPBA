@@ -16,7 +16,7 @@ import rasterio
 from typing import Tuple
 
 class RSImage():
-    def __init__(self,options,root:str,id:int):
+    def __init__(self,options,root:str,id:int,device:str='cuda'):
         """
         root: path to folder which contains 'image.png','dem.npy','rpc.txt',
         id: index of this image
@@ -31,11 +31,11 @@ class RSImage():
             self.tie_points = self.__load_tie_points__(os.path.join(root,'tie_points.txt'))
         else:
             self.tie_points = None
-
+        self.device = device
         self.H,self.W = self.image.shape[:2]
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
-        self.rpc.to_gpu()
+        self.rpc.to_gpu(device=device)
         
         self.corner_xys = self.__get_corner_xys__()
 

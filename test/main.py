@@ -56,7 +56,7 @@ def load_images(args) -> List[RSImage] :
     images = []
     for idx,folder in enumerate(img_folders):
         img_path = os.path.join(base_path,folder)
-        images.append(RSImage(args,img_path,idx))
+        images.append(RSImage(args,img_path,idx,args.device))
         print(f"Loaded Image {idx} from {folder}")
     print(f"Totally {len(images)} Images Loaded")
     args.image_num = len(images)

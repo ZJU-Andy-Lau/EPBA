@@ -214,7 +214,6 @@ class WindowSolver():
         else:
             anchor_coords_in_big_2_flat = anchor_coords_in_big_1_flat_af # B,h*w,2
         
-        print(anchor_coords_in_big_2_flat.device,Hs_2.device)
         anchor_coords_in_2_flat = self.apply_H(anchor_coords_in_big_2_flat,Hs_2,device=self.device) # B,h*w,2
         anchor_coords_in_2 = anchor_coords_in_2_flat.reshape(self.B,self.h,self.w,2) # B,h,w,2
         anchor_coords_in_2[...,0] = ((anchor_coords_in_2[...,0] / (self.H - 1)) * 2.) - 1.
