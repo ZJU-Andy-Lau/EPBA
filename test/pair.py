@@ -202,12 +202,9 @@ class Solver():
 
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
-        print(confs_a.shape)
         scores_a = confs_a.reshape(B,-1).mean(dim=1) # B,
-        print(scores_a.shape)
         scores_b = confs_b.reshape(B,-1).mean(dim=1)
         scores = torch.sqrt(scores_a * scores_b) # B,
-        print(scores.shape)
         
         return preds,scores
     
@@ -227,12 +224,12 @@ class Solver():
         coords_src = coords_src.reshape(-1,2) # B*1024,2
         coords_dst = coords_dst.reshape(-1,2) # B*1024,2
 
-        print(scores)
         if torch.abs(scores.max() - scores.min()) < 1e-4:
             scores_norm = torch.ones(size=scores.shape,device=scores.device,dtype=scores.dtype)
         else:
             scores_norm = (scores - scores.min()) / (scores.max() - scores.min())
-            scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
+
+        scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
 
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
