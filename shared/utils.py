@@ -101,6 +101,12 @@ def check_invalid_tensors(tensor_list: List[torch.Tensor],note = ""):
         print("✅ 检查完毕：所有张量均未发现 NaN 或 Inf 值。")
     else:
         print(f"⚠️ 检查完毕：共发现 {abnormal_count} 个异常张量。")
+        
+def load_model_state_dict(model:nn.Module,state_dict_path:str):
+    state_dict = torch.load(state_dict_path,map_location='cpu')
+    state_dict = {k.replace("module.",""):v for k,v in state_dict.items()}
+    model.load_state_dict(state_dict)
+    return model
 
 def crop_rect_from_image(image, rect_points, size):
     """

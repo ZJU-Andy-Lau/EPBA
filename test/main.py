@@ -35,7 +35,7 @@ from torchvision import transforms
 from model.encoder import Encoder
 from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
-from shared.utils import str2bool,get_current_time
+from shared.utils import str2bool,get_current_time,load_model_state_dict
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,load_config,get_error_report
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver
@@ -92,6 +92,8 @@ def load_models(args):
                    corr_radius=model_configs['gru']['corr_radius'],
                    context_dim=model_configs['gru']['ctx_dim'],
                    hidden_dim=model_configs['gru']['hidden_dim'])
+    
+    load_model_state_dict(gru,args.gru_path)
     
     args.gru_iter_num = model_configs['gru']['iter_num']
     

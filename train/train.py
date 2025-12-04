@@ -35,7 +35,7 @@ from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
-from shared.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad
+from shared.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad,load_model_state_dict
 import shared.visualize as visualizer # 引入新的可视化模块
 from solve.solve_windows import WindowSolver
 
@@ -49,12 +49,6 @@ def deb_print(msg):
 
 def distibute_model(model:nn.Module,local_rank):
     model = DistributedDataParallel(model,device_ids=[local_rank],output_device=local_rank,broadcast_buffers=False)
-    return model
-
-def load_model_state_dict(model:nn.Module,state_dict_path:str):
-    state_dict = torch.load(state_dict_path,map_location='cpu')
-    state_dict = {k.replace("module.",""):v for k,v in state_dict.items()}
-    model.load_state_dict(state_dict)
     return model
 
 def load_data(args):
