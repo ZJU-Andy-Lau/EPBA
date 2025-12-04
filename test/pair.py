@@ -88,19 +88,26 @@ class Solver():
         self.build_window_pairs(window_diags)
 
     def quadsplit_windows(self):
-        diags_old = []
+        new_diags = []
+        scores = []
         for window_pair in self.window_pairs:
-            diag = window_pair.diag
-            diags_old.append(diag)
-        diags_old = np.stack(diags_old,axis=0)
-        diags_new = quadsplit_diags(diags_old)
-
-        self.build_window_pairs(diags_new)
+            new_diag,score = window_pair.quadsplit()
+            new_diags.append(new_diag)
+            scores.append(score)
         
-    def build_window_pairs(self,window_diags):
+        new_diags = np.concatenate(new_diags,axis=0) # （4*N,2,2)
+        scores = np.concatenate(scores,axis=0) #(4*N,)
+
+        self.build_window_pairs(new_diags,scores)
+        
+    def build_window_pairs(self,window_diags,scores = None):
         if self.configs['max_window_num'] > 0 and window_diags.shape[0] > self.configs['max_window_num']:
-            idxs = np.random.choice(range(window_diags.shape[0]),self.configs['max_window_num'])
-            window_diags = window_diags[idxs]
+            if scores is None:
+                idxs = np.random.choice(range(window_diags.shape[0]),self.configs['max_window_num'])
+                window_diags = window_diags[idxs]
+            else:
+                sorted_idxs = np.argsort(-scores)[:self.configs['max_window_num']] #从大到小
+                window_diags = window_diags[sorted_idxs]
         self.window_size = np.abs(window_diags[0,1,0] - window_diags[0,0,0])
 
         data_a,data_b = self.get_data_by_diags(window_diags)
@@ -180,12 +187,20 @@ class Solver():
             Hs_b = torch.from_numpy(Hs_b).to(device=self.device,dtype=torch.float32)
         return Hs_a,Hs_b
 
+    def distribute_feats(self,feats_a,feats_b):
+        match_feats_a,ctx_feats_a,confs_a = feats_a
+        match_feats_b,ctx_feats_b,confs_b = feats_b
+        for idx, window_pair in enumerate(self.window_pairs):
+            window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
+            window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
+
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
         dems_a,dems_b = self.collect_dems(to_tensor=True)
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
+        self.distribute_feats(feats_a,feats_b)
         for i in range(imgs_a.shape[0]):
             cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{int(self.window_size)}_a.png"),imgs_a[i])
             cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{int(self.window_size)}_b.png"),imgs_b[i])
@@ -235,7 +250,7 @@ class Solver():
         
 
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
-        print(f"merged:\n{merged_affine.detach().cpu().numpy()}")
+        print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
         # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
         return merged_affine
@@ -269,3 +284,48 @@ class WindowPair():
         self.window_a = window_a
         self.window_b = window_b
         self.diag = diag
+    
+    def _get_score(self,tlrc,brrc):
+        confs_a = self.window_a.confs[...,tlrc[0]:brrc[0],tlrc[1]:brrc[1]].reshape(-1)
+        confs_b = self.window_b.confs[...,tlrc[0]:brrc[0],tlrc[1]:brrc[1]].reshape(-1)
+        scores = torch.sqrt(confs_a * confs_b).mean()
+        return scores.item()
+
+    def quadsplit(self):
+        """
+        Return:
+        new_diags: np.ndarray (4,2,2)
+        scores: np.ndarray (4,)
+        """
+        tlx,tly = self.diag[0]
+        brx,bry = self.diag[1]
+        mid_x = (tlx + brx) * 0.5
+        mid_y = (tly + bry) * 0.5
+        H,W = self.window_a.confs.shape[-2:]
+        mid_row = H // 2
+        mid_col = W // 2
+        new_diags = np.array([
+            [
+                [tlx,tly],
+                [mid_x,mid_y]
+            ],
+            [
+                [mid_x,tly],
+                [brx,mid_y]
+            ],
+            [
+                [tlx,mid_y],
+                [mid_x,bry]
+            ],
+            [
+                [mid_x,mid_y],
+                [brx,bry]
+            ]
+        ])
+        scores = np.array([
+            self._get_score([0,0],[mid_row,mid_col]),
+            self._get_score([0,mid_col],[mid_row,W]),
+            self._get_score([mid_row,0],[H,mid_col]),
+            self._get_score([mid_row,mid_col],[H,W]),
+        ])
+        return new_diags,scores
