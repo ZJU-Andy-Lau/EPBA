@@ -206,7 +206,7 @@ class Solver():
 
     def check_adjust(self):
         ori_rpc = deepcopy(self.rs_image_a.rpc)
-        test_diag = self.window_pairs[0].diag[None]
+        test_diag = self.window_pairs[0].diag[None].copy()
         test_diag[:,1,:] = test_diag[:,0,:] + [500,-500]
         data_ori_a,data_b = self.get_data_by_diags(test_diag,rpc_a=ori_rpc)
         data_a,_ = self.get_data_by_diags(test_diag)
