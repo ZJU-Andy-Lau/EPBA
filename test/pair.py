@@ -228,7 +228,7 @@ class Solver():
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
 
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
-        check_invalid_tensors([coords_mat_flat,coords_src,coords_dst,scores_norm],"[merge affines]: ")
+        check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm],"[merge affines]: ")
 
         return merged_affine
 
