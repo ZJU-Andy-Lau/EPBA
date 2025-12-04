@@ -274,7 +274,7 @@ class WindowSolver():
                 delta_affines_ab[...,2] = self.coord_norm_inv(delta_affines_ab[...,2] , self.norm_factors_a)
                 preds.append(delta_affines_ab)
                 self.Ms_a_b = self.merge_M(self.Ms_a_b,delta_affines_ab)
-                check_invalid_tensors([corr_simi_ab,corr_offset_ab,self.norm_factors_a,delta_affines_ab,hidden_state,self.Ms_a_b],f"[solve gru iter {iter}]: ")
+                # check_invalid_tensors([corr_simi_ab,corr_offset_ab,self.norm_factors_a,delta_affines_ab,hidden_state,self.Ms_a_b],f"[solve gru iter {iter}]: ")
 
 
             # 计算b->a的仿射
