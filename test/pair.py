@@ -13,6 +13,7 @@ from rs_image import RSImage
 from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample,affine_xy_to_rowcol
 from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
+import shared.visualize as visualizer
 from criterion.utils import invert_affine_matrix
 from window import Window
 from model.encoder import Encoder
@@ -291,6 +292,7 @@ class Solver():
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_a.png"),checker_ori_a)
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
+        self.window_pairs[0].visualize(os.path.join(self.configs['output_path'],'feats_vis'))
 
         return affine
     
@@ -355,6 +357,24 @@ class WindowPair():
             self._get_score([mid_row,mid_col],[H,W]),
         ])
         return new_diags,scores
+    
+    def visualize(self,output_path:str):
+        match_feat_a,ctx_feat_a,conf_a = self.window_a.match_feats,self.window_a.ctx_feats,self.window_a.confs
+        match_feat_b,ctx_feat_b,conf_b = self.window_b.match_feats,self.window_b.ctx_feats,self.window_b.confs
+        img_a,img_b = self.window_a.img,self.window_b.img
+        match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0))
+        ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0))
+        img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),conf_a.cpu().numpy())
+        pyr_res_vis = visualizer.vis_pyramid_response(match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),level_num=2)
+        conf_vis = visualizer.vis_confidence_overlay(img_a,conf_a.cpu().numpy())
+        os.makedirs(output_path,exist_ok=True)
+        cv2.imwrite(os.path.join(output_path,'match_feat_a.png'),match_feats_vis[0])
+        cv2.imwrite(os.path.join(output_path,'match_feat_b.png'),match_feats_vis[1])
+        cv2.imwrite(os.path.join(output_path,'ctx_feat_a.png'),ctx_feats_vis[0])
+        cv2.imwrite(os.path.join(output_path,'ctx_feat_b.png'),ctx_feats_vis[1])
+        cv2.imwrite(os.path.join(output_path,'img_match.png'),img_match_vis)
+        cv2.imwrite(os.path.join(output_path,'pyr_res.png'),pyr_res_vis)
+        cv2.imwrite(os.path.join(output_path,'conf.png'),conf_vis)        
 
     def clear(self):
         self.window_a.clear()
