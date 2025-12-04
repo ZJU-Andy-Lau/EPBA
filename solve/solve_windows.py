@@ -195,7 +195,7 @@ class WindowSolver():
 
         return C
 
-    def prepare_data(self,cost_volume:CostVolume,Hs_1,Hs_2,Ms,norm_factor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None,height:torch.Tensor = None):
+    def prepare_data(self,cost_volume:CostVolume,Hs_1:torch.Tensor,Hs_2:torch.Tensor,Ms:torch.Tensor,norm_factor:torch.Tensor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None,height:torch.Tensor = None):
         """
         height: B,h,w
         """
@@ -214,6 +214,7 @@ class WindowSolver():
         else:
             anchor_coords_in_big_2_flat = anchor_coords_in_big_1_flat_af # B,h*w,2
         
+        print(anchor_coords_in_big_2_flat.device,Hs_2.device)
         anchor_coords_in_2_flat = self.apply_H(anchor_coords_in_big_2_flat,Hs_2,device=self.device) # B,h*w,2
         anchor_coords_in_2 = anchor_coords_in_2_flat.reshape(self.B,self.h,self.w,2) # B,h,w,2
         anchor_coords_in_2[...,0] = ((anchor_coords_in_2[...,0] / (self.H - 1)) * 2.) - 1.
