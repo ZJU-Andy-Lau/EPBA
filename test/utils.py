@@ -280,6 +280,7 @@ def quadsplit_diags(diags:np.ndarray) -> np.ndarray:
 
 feats_type = Tuple[torch.Tensor,torch.Tensor,torch.Tensor]
 
+@torch.no_grad()
 def extract_features(encoder:'Encoder',imgs_a:np.ndarray,imgs_b:np.ndarray,device:str = 'cuda') -> Tuple[feats_type,feats_type]:
     """
     Args:
