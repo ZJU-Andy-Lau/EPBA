@@ -274,7 +274,6 @@ class Solver():
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
-        merged_affine = affine_xy_to_rowcol(merged_affine)
         print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
         # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
@@ -289,7 +288,7 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.rpc_a.Update_Adjust(affine)
+        # self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
         return affine
