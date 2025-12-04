@@ -292,7 +292,7 @@ class Solver():
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_a.png"),checker_ori_a)
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
-        self.window_pairs[0].visualize(os.path.join(self.configs['output_path'],'feats_vis'))
+        self.window_pairs[0].visualize(os.path.join(self.configs['output_path'],f'feats_vis_{self.window_size}'))
 
         return affine
     
