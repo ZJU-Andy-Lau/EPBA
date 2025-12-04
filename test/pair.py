@@ -262,7 +262,7 @@ class Solver():
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl0.png"),pyr_vis['level_0'])
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl1.png"),pyr_vis['level_1'])
         rpc_a_test = deepcopy(self.rpc_a)
-        rpc_a_test.Update_Adjust(preds[0])
+        rpc_a_test.Update_Adjust(invert_affine_matrix(preds[0]))
         output_path = os.path.join(self.configs['output_path'],f"check_rpc_level_{self.window_size}")
         os.makedirs(output_path,exist_ok=True)
         checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b = self.check_rpc(rpc_a_test)
