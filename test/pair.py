@@ -47,7 +47,9 @@ class Pair():
                                 device=device)
 
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
+        print("solve ab")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
+        print("solve ba")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
         return affine_ab,affine_ba
     
@@ -228,7 +230,6 @@ class Solver():
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
         
-
         height = avg_downsample(dems_a,16)
         # check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
