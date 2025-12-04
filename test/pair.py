@@ -206,14 +206,14 @@ class Solver():
     def check_adjust(self):
         ori_rpc = deepcopy(self.rs_image_a.rpc)
         test_diag = self.window_pairs[0].diag[None]
-        test_diag[:,1,:] = test_diag[:,0,:] + [500,500]
+        test_diag[:,1,:] = test_diag[:,0,:] + [500,-500]
         data_ori_a,data_b = self.get_data_by_diags(test_diag,rpc_a=ori_rpc)
         data_a,_ = self.get_data_by_diags(test_diag)
         img_ori,img_a,img_b = data_ori_a[0][0],data_a[0][0],data_b[0][0]
-        checker_ori_a = make_checkerboard(img_ori,img_a,num_tiles=16)
-        checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=16)
-        checker_a_b = make_checkerboard(img_a,img_b,num_tiles=16)
-        return checker_ori_a,checker_ori_b,checker_a_b
+        checker_ori_a = make_checkerboard(img_ori,img_a,num_tiles=8)
+        checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=8)
+        checker_a_b = make_checkerboard(img_a,img_b,num_tiles=8)
+        return checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b
 
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
@@ -222,15 +222,7 @@ class Solver():
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
         self.distribute_feats(feats_a,feats_b)
-        
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a.png"),imgs_a[0])
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_b.png"),imgs_b[0])
-        
-        checker_ori_a,checker_ori_b,checker_a_b = self.check_adjust()
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_a.png"),checker_ori_a)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
-        
+             
         height = avg_downsample(dems_a,16)
         # check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
@@ -293,6 +285,12 @@ class Solver():
         self.rpc_a.Clear_Adjust()
         self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
+        checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b = self.check_adjust()
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a.png"),img_a)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_b.png"),img_b)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_a.png"),checker_ori_a)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_ori_b.png"),checker_ori_b)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{int(self.window_size)}_a_b.png"),checker_a_b)
 
         return affine
     
