@@ -50,6 +50,7 @@ class Pair():
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
         print("solve ab")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
+        exit()
         print("solve ba")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
         return affine_ab,affine_ba
