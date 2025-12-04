@@ -101,7 +101,7 @@ class Solver():
         if self.configs['max_window_num'] > 0 and window_diags.shape[0] > self.configs['max_window_num']:
             idxs = np.random.choice(range(window_diags.shape[0]),self.configs['max_window_num'])
             window_diags = window_diags[idxs]
-        self.window_size = np.abs(window_diags[0,0,1] - window_diags[0,0,0])
+        self.window_size = np.abs(window_diags[0,1,0] - window_diags[0,0,0])
 
         data_a,data_b = self.get_data_by_diags(window_diags)
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
@@ -187,8 +187,8 @@ class Solver():
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
         for i in range(imgs_a.shape[0]):
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{self.window_size}_a.png"),imgs_a[i])
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{self.window_size}_b.png"),imgs_b[i])
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{int(self.window_size)}_a.png"),imgs_a[i])
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{get_current_time()}_{i}_{int(self.window_size)}_b.png"),imgs_b[i])
         height = avg_downsample(dems_a,16)
         check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
