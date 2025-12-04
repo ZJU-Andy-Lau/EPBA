@@ -587,3 +587,27 @@ def get_error_report(pairs:List['Pair']):
         '<5m_percent': float(((all_distances < 5.0).sum() / total_points) * 100),
     }
     return report
+
+def affine_xy_to_rowcol(matrix):
+    """
+    将 (x, y) 坐标系下的仿射变换矩阵转换为 (row, col) 坐标系。
+    
+    Args:
+        matrix (torch.Tensor): 形状为 (N, 2, 3) 或 (2, 3) 的 tensor。
+                               原矩阵形式为 [[sx, shy, tx], [shx, sy, ty]] (对应 x, y)
+    
+    Returns:
+        torch.Tensor: 转换后的矩阵，形状与输入相同。
+                      新矩阵形式为 [[sy, shx, ty], [shy, sx, tx]] (对应 row, col)
+    """
+    is_batch = matrix.dim() == 3
+    if not is_batch:
+        matrix = matrix.unsqueeze(0)
+
+    permuted_rows = matrix[:, [1, 0], :]
+    result = permuted_rows[:, :, [1, 0, 2]]
+
+    if not is_batch:
+        result = result.squeeze(0)
+        
+    return result

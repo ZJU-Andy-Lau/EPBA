@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample,affine_xy_to_rowcol
 from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
 from criterion.utils import invert_affine_matrix
@@ -273,8 +273,8 @@ class Solver():
 
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
-
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
+        merged_affine = affine_xy_to_rowcol(merged_affine)
         print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
         # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
