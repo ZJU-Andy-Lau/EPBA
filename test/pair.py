@@ -239,6 +239,7 @@ class Solver():
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         preds,scores = self.get_window_affines(encoder,gru)
+        check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
         print(f"\n{affine}\n")
         self.rpc_a.Update_Adjust(affine)
