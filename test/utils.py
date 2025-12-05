@@ -512,41 +512,6 @@ def convert_pair_dicts_to_solver_inputs(
 
     return edge_src, edge_dst, A_ij, t_ij, w_ij
 
-def avg_downsample(tensor:torch.Tensor, k: int) -> torch.Tensor:
-    if tensor.ndim < 3:
-        raise ValueError(f"输入张量的维度必须 >= 3，当前维度为 {tensor.ndim}")
-        
-    H, W = tensor.shape[1:3]
-    if H % k != 0 or W % k != 0:
-        raise ValueError(
-            f"张量的 H ({H}) 和 W ({W}) 维度必须能被下采样倍数 K ({k}) 整除。"
-        )
-
-    rest_dims = tensor.shape[3:]
-    num_channels = torch.prod(torch.tensor(rest_dims)).item() if len(rest_dims) > 0 else 1
-    if len(rest_dims) == 0:
-        reshaped_tensor = tensor.unsqueeze(-1) # 形状变为 (B, H, W, 1)
-    else:
-        reshaped_tensor = tensor.view(tensor.shape[0], H, W, num_channels)
-
-    transposed_tensor = reshaped_tensor.permute(0, 3, 1, 2)
-    downsampled_transposed = F.avg_pool2d(
-        input=transposed_tensor,
-        kernel_size=k,
-        stride=k
-    ) # 形状：(B, C, H//K, W//K)
-
-    final_tensor_flat = downsampled_transposed.permute(0, 2, 3, 1)
-    output_shape = (
-        tensor.shape[0], 
-        H // k, 
-        W // k
-    ) + rest_dims
-    
-    final_tensor = final_tensor_flat.view(output_shape)
-    
-    return final_tensor
-
 def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
     """计算两组 (lat, lon) 坐标之间的 Haversine 距离 (米)"""
     R = 6371000 

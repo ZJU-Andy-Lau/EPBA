@@ -9,7 +9,7 @@ from model.encoder import Encoder
 from model.gru import GRUBlock
 from model.cost_volume import CostVolume
 from shared.rpc import RPCModelParameterTorch,project_linesamp
-from shared.utils import debug_print,check_invalid_tensors
+from shared.utils import debug_print,check_invalid_tensors,avg_downsample
 from shared.visualize import vis_pyramid_correlation
 from criterion.utils import merge_affine
 
@@ -20,6 +20,7 @@ class WindowSolver():
                  H_as:torch.Tensor,H_bs:torch.Tensor,
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
                  height:torch.Tensor = None,
+                 test_imgs_a = None, test_imgs_b = None,
                  gru_max_iter:int = 10):
         self.gru = gru
         self.gru_access = gru.module if hasattr(gru,'module') else gru
@@ -32,11 +33,15 @@ class WindowSolver():
         self.rpc_a = rpc_a
         self.rpc_b = rpc_b
         self.height = height # B,h,w
+        self.height_ds = avg_downsample(height,16) if not height is None else None
 
         self.gru_max_iter = gru_max_iter
         self.B,self.H,self.W = B,H,W
         self.h,self.w = self.ctx_feats_a.shape[-2:]
         self.device = self.ctx_feats_a.device
+
+        self.test_imgs_a = test_imgs_a
+        self.test_imgs_b = test_imgs_b
 
         self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b,num_levels=self.gru_access.corr_levels)
         self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a,num_levels=self.gru_access.corr_levels)
@@ -125,6 +130,10 @@ class WindowSolver():
         return samples
 
     def _get_coord_mat(self,h,w,b = 0,ds = 1,device = 'cpu'):
+        """
+        Return:
+            coords: torch.Tensor (B,H,W,2) (row,col)
+        """
         grid_row, grid_col = torch.meshgrid(torch.arange(h, device=device, dtype=torch.float32), torch.arange(w, device=device, dtype=torch.float32), indexing='ij')
         coords_row = grid_row * ds + ds / 2.0
         coords_col = grid_col * ds + ds / 2.0
@@ -194,9 +203,52 @@ class WindowSolver():
         C = C_hom[:, :2, :]
 
         return C
+    
+    def test(self,Ms:torch.Tensor):
+        """
+        Ms: torch.Tensor (B,2,3)
+        
+        Return:
+            imgs_a: np.ndarray (B,H,W,3)
+            sampled_imgs_b: np.ndarray (B,H,W,3)
+        """
+        if self.test_imgs_a is None or self.test_imgs_b is None:
+            return None
+        imgs_a,imgs_b = self.test_imgs_a,self.test_imgs_b
+        B,H,W = imgs_a.shape[:3]
+        coords_in_a = self._get_coord_mat(H,W,B,ds=1,device=self.device) # B,H,W,2
+        coords_in_a_flat = coords_in_a.flatten(1,2) # B,H*W,2
+        coords_in_big_a_flat = self.apply_H(coords_in_a_flat,torch.linalg.inv(self.H_as),device=self.device)
+        coords_in_big_a_flat_af = self.apply_M(coords_in_big_a_flat,Ms,device=self.device) # B,H*W,2
+        if not self.rpc_a is None and not self.rpc_b is None and not self.height is None:
+            lines_in_big_a_af = coords_in_big_a_flat_af[...,0].ravel() # B*H*W
+            samps_in_big_a_af = coords_in_big_a_flat_af[...,1].ravel()
+            lines_in_big_b,samps_in_big_b = project_linesamp(self.rpc_a,self.rpc_b,lines_in_big_a_af,samps_in_big_a_af,self.height.ravel())
+            coords_in_big_b_flat = torch.stack([lines_in_big_b,samps_in_big_b],dim=-1).reshape(B,-1,2).to(torch.float32) # B,H*W,2
+        else:
+            coords_in_big_b_flat = coords_in_big_a_flat_af
+        
+        coords_in_b_flat = self.apply_H(coords_in_big_b_flat,self.H_bs,device=self.device)
+        coords_in_b = coords_in_b_flat.reshape(B,H,W,2)
+        sample_coords = coords_in_b[...,[1,0]] # (row,col) -> (x,y)
+        sample_coords[...,0] = 2.0 * sample_coords[...,0] / (W - 1) - 1.0 # 缩放到 -1 ~ 1
+        sample_coords[...,1] = 2.0 * sample_coords[...,1] / (H - 1) - 1.0
+        input_imgs = torch.from_numpy(imgs_b).to(device=self.device,dtype=torch.float32).permute(0,3,1,2)
+        sampled_img = F.grid_sample(input_imgs,sample_coords,mode='bilinear',
+                                    padding_mode='zeros',align_corners=True)
+        sampled_img = sampled_img.permute(0,2,3,1).cpu().numpy()
+
+        return imgs_a,sampled_img     
+
+            
+
+
+
+
 
     def prepare_data(self,cost_volume:CostVolume,Hs_1:torch.Tensor,Hs_2:torch.Tensor,Ms:torch.Tensor,norm_factor:torch.Tensor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None,height:torch.Tensor = None):
         """
+
         height: B,h,w
         """
         anchor_coords_in_1 = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=self.device) # (B,h,w,2)
@@ -255,7 +307,7 @@ class WindowSolver():
         for iter in range(self.gru_max_iter):
             # 计算a->b的仿射
             if flag == 'ab':
-                corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b,self.height)
+                corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b,self.height_ds)
                 if return_vis and iter == 0:
                     vis_dict = vis_pyramid_correlation(
                         corr_simi_ab, 
@@ -279,7 +331,7 @@ class WindowSolver():
 
             # 计算b->a的仿射
             if flag == 'ba':
-                corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a,self.height)
+                corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a,self.height_ds)
                 delta_affines_ba, hidden_state = self.gru(corr_simi_ba,
                                                           corr_offset_ba,
                                                           self.ctx_feats_b,
@@ -303,6 +355,13 @@ class WindowSolver():
                 pred = preds[:,t]
                 final = self.merge_M(final,pred)
             preds = final
+
+            if return_vis:
+                imgs_a,imgs_b = self.test(preds)
+                vis_dict['test'] = {
+                    'imgs_a':imgs_a,
+                    'imgs_b':imgs_b
+                }
         
         if return_vis:
             return preds, vis_dict # [修改] 返回元组

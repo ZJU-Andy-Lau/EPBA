@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,avg_downsample,affine_xy_to_rowcol
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,affine_xy_to_rowcol
 from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
 import shared.visualize as visualizer
@@ -247,20 +247,21 @@ class Solver():
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
         self.distribute_feats(feats_a,feats_b)
-             
-        height = avg_downsample(dems_a,16)
         # check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
                               gru=gru,
                               feats_a=feats_a,feats_b=feats_b,
                               H_as=Hs_a,H_bs=Hs_b,
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
-                              height=height)
+                              height=dems_a)
         
-        preds,pyr_vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
+        preds,vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
         
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl0.png"),pyr_vis['level_0'])
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl1.png"),pyr_vis['level_1'])
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl0.png"),vis['level_0'])
+        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl1.png"),vis['level_1'])
+        for i in range(vis['test']['imgs_a'].shape[0]):
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_a.png"),vis['test']['imgs_a'][i])
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_b.png"),vis['test']['imgs_b'][i])
         rpc_a_test = deepcopy(self.rpc_a)
         rpc_a_test.Update_Adjust(invert_affine_matrix(preds[0]))
         output_path = os.path.join(self.configs['output_path'],f"check_rpc_level_{self.window_size}")
@@ -406,7 +407,7 @@ class WindowPair():
         img_a,img_b = self.window_a.img,self.window_b.img
         match_feats_vis = visualizer.feats_pca(torch.stack([match_feat_a,match_feat_b],dim=0).cpu().numpy())
         ctx_feats_vis = visualizer.feats_pca(torch.stack([ctx_feat_a,ctx_feat_b],dim=0).cpu().numpy())
-        img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.cpu().numpy(),match_feat_b.cpu().numpy(),conf_a.squeeze().cpu().numpy())
+        img_match_vis = visualizer.vis_sparse_match(img_a,img_b,match_feat_a.permute(2,0,1).cpu().numpy(),match_feat_b.permute(2,0,1).cpu().numpy(),conf_a.squeeze().cpu().numpy())
         pyr_res_vis = visualizer.vis_pyramid_response(match_feat_a.permute(2,0,1).cpu().numpy(),match_feat_b.permute(2,0,1).cpu().numpy(),level_num=2)
         conf_vis = visualizer.vis_confidence_overlay(img_a,conf_a.squeeze().cpu().numpy())
         os.makedirs(output_path,exist_ok=True)

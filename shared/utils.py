@@ -12,6 +12,7 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.init as init
+import torch.nn.functional as F
 import torch.distributed as dist
 import random
 import argparse
@@ -101,7 +102,7 @@ def check_invalid_tensors(tensor_list: List[torch.Tensor],note = ""):
         print("✅ 检查完毕：所有张量均未发现 NaN 或 Inf 值。")
     else:
         print(f"⚠️ 检查完毕：共发现 {abnormal_count} 个异常张量。")
-        
+
 def load_model_state_dict(model:nn.Module,state_dict_path:str):
     state_dict = torch.load(state_dict_path,map_location='cpu')
     state_dict = {k.replace("module.",""):v for k,v in state_dict.items()}
@@ -314,6 +315,41 @@ def average_downsample_matrix(matrix:np.ndarray, n):
             downsampled_matrix[r, c] = matrix[r * n:(r + 1) * n, c * n:(c + 1) * n].mean(axis=(0,1))
 
     return downsampled_matrix
+
+def avg_downsample(tensor:torch.Tensor, k: int) -> torch.Tensor:
+    if tensor.ndim < 3:
+        raise ValueError(f"输入张量的维度必须 >= 3，当前维度为 {tensor.ndim}")
+        
+    H, W = tensor.shape[1:3]
+    if H % k != 0 or W % k != 0:
+        raise ValueError(
+            f"张量的 H ({H}) 和 W ({W}) 维度必须能被下采样倍数 K ({k}) 整除。"
+        )
+
+    rest_dims = tensor.shape[3:]
+    num_channels = torch.prod(torch.tensor(rest_dims)).item() if len(rest_dims) > 0 else 1
+    if len(rest_dims) == 0:
+        reshaped_tensor = tensor.unsqueeze(-1) # 形状变为 (B, H, W, 1)
+    else:
+        reshaped_tensor = tensor.view(tensor.shape[0], H, W, num_channels)
+
+    transposed_tensor = reshaped_tensor.permute(0, 3, 1, 2)
+    downsampled_transposed = F.avg_pool2d(
+        input=transposed_tensor,
+        kernel_size=k,
+        stride=k
+    ) # 形状：(B, C, H//K, W//K)
+
+    final_tensor_flat = downsampled_transposed.permute(0, 2, 3, 1)
+    output_shape = (
+        tensor.shape[0], 
+        H // k, 
+        W // k
+    ) + rest_dims
+    
+    final_tensor = final_tensor_flat.view(output_shape)
+    
+    return final_tensor
 
 def get_coord_mat(H,W,downsample:int = 0):
     """
