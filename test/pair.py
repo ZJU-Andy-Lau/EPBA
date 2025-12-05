@@ -65,7 +65,6 @@ class Pair():
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
         print("solve ba")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
-        exit()
         return affine_ab,affine_ba
     
     
