@@ -269,7 +269,7 @@ class Solver():
         scores_b = confs_b.reshape(B,-1).mean(dim=1)
         scores = torch.sqrt(scores_a * scores_b) # B,
         
-        return preds,scores
+        return preds,scores,solver
     
     def merge_affines(self,affines:torch.Tensor,Hs:torch.Tensor,scores:torch.Tensor):
         """
@@ -312,10 +312,13 @@ class Solver():
             affine: torch.Tensor, (2,3)
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
-        preds,scores = self.get_window_affines(encoder,gru)
-        # check_invalid_tensors([preds,scores],"[solve level affine]: ")
+        preds,scores,solver = self.get_window_affines(encoder,gru)
         affine = self.merge_affines(preds,Hs_a,scores)
+
         self.test_affine(affine)
+        window_imgs_a,window_imgs_b = solver.test(affine[None].expand(preds.shape[0],1,1)) # TODO：需删除
+
+
         self.rpc_a.Clear_Adjust()
         self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
@@ -328,6 +331,11 @@ class Solver():
         cv2.imwrite(os.path.join(output_path,f"ori_a.png"),checker_ori_a)
         cv2.imwrite(os.path.join(output_path,f"ori_b.png"),checker_ori_b)
         cv2.imwrite(os.path.join(output_path,f"a_b.png"),checker_a_b)
+        for i in range(window_imgs_a.shape[0]):
+            cv2.imwrite(os.path.join(output_path,f"window_{i}_a.png"),window_imgs_a[i])
+            cv2.imwrite(os.path.join(output_path,f"window_{i}_b.png"),window_imgs_b[i])
+            cv2.imwrite(os.path.join(output_path,f"window_{i}_ab.png"),make_checkerboard(window_imgs_a[i],
+                                                                                         window_imgs_b[i]))
         self.window_pairs[0].visualize(os.path.join(output_path,f'feats_vis_{self.window_size}'))
 
         return affine
