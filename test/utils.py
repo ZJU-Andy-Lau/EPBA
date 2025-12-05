@@ -467,7 +467,7 @@ def convert_pair_dicts_to_solver_inputs(
 
         # 例如 d = {i: M_i_j, j: M_j_i}
         ids = list(d.keys())
-        i, j = ids[0], ids[1]
+        i, j = int(ids[0]), int(ids[1])
 
         M_i_j = d[i]
         M_j_i = d[j]
