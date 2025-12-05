@@ -356,7 +356,7 @@ class Solver():
         M: torch.Tensor (2,3)
         """
         # 在rs_image_a中裁切中间的一块512
-        H,W = 512,512
+        H,W = 2048,2048
         M = M[None]
         rpc_a = deepcopy(self.rs_image_a.rpc)
         rpc_b = deepcopy(self.rs_image_b.rpc)
