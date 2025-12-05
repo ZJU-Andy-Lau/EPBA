@@ -356,7 +356,7 @@ class WindowSolver():
                 final = self.merge_M(final,pred)
             preds = final
 
-            if return_vis:
+            if return_vis and flag == 'ab':
                 imgs_a,imgs_b = self.test(preds)
                 vis_dict['test'] = {
                     'imgs_a':imgs_a,
