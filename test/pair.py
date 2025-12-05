@@ -346,11 +346,13 @@ class Solver():
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
+            print("\n===============================================")
             print(f"Solve level {self.window_size} m")
             start_time = time.perf_counter()
             self.solve_level_affine(encoder,gru)
             end_time = time.perf_counter()
             print(f"Time Cost:{end_time - start_time} s")
+            print("===============================================\n")
             self.quadsplit_windows()
         return self.rpc_a.adjust_params
     
