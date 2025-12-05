@@ -300,6 +300,11 @@ class Solver():
         coords_mat_flat = coords_mat.flatten(1,2) # (B,1024,2)
         coords_src = apply_H(coords=coords_mat_flat,Hs=torch.linalg.inv(Hs),device=self.device) # (B,1024,2) 大图坐标系下的坐标
         coords_dst = apply_M(coords=coords_src,Ms=affines,device=self.device) # (B,1024,2) 对每个窗口应用其仿射变换
+
+        for i in range(coords_src.shape[0]):
+            Mt,_ = cv2.estimateAffine2D(coords_src[i].cpu().numpy(),coords_dst[i].cpu().numpy())
+            print(f"affine_test_{i}:\n{Mt}\n")
+
         coords_src = coords_src.reshape(-1,2) # B*1024,2
         coords_dst = coords_dst.reshape(-1,2) # B*1024,2
 
