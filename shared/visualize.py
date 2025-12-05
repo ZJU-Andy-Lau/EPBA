@@ -704,9 +704,6 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
     src_af_flat = (src_flat @ rot.T) + trans
     coords_src_af = src_af_flat.reshape(B, N, 2)
 
-    print(f"[Info] Data Processed. Windows: {B}, Points per window: {N}")
-    print(f"[Info] Global Affine Matrix:\n{merged_affine}")
-
     # 3. 生成第一张图：局部偏移 (Local Shifts)
     img_local_shifts = _render_plot_to_array(
         title="Validation 1: Local Shifts (Source -> Destination)",
