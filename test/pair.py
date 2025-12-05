@@ -253,7 +253,8 @@ class Solver():
                               feats_a=feats_a,feats_b=feats_b,
                               H_as=Hs_a,H_bs=Hs_b,
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
-                              height=dems_a)
+                              height=dems_a,
+                              test_imgs_a=imgs_a,test_imgs_b=imgs_b)
         
         preds,vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
         
@@ -262,6 +263,8 @@ class Solver():
         for i in range(vis['test']['imgs_a'].shape[0]):
             cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_a.png"),vis['test']['imgs_a'][i])
             cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_b.png"),vis['test']['imgs_b'][i])
+            cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_ab.png"),make_checkerboard(vis['test']['imgs_a'][i],
+                                                                                                                              vis['test']['imgs_b'][i]))
         rpc_a_test = deepcopy(self.rpc_a)
         rpc_a_test.Update_Adjust(invert_affine_matrix(preds[0]))
         output_path = os.path.join(self.configs['output_path'],f"check_rpc_level_{self.window_size}")
