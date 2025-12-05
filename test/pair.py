@@ -284,14 +284,14 @@ class Solver():
             Mt,_ = cv2.estimateAffine2D(coords_src[i].cpu().numpy(),coords_dst[i].cpu().numpy())
             print(f"affine_test_{i}:\n{Mt}\n")
 
-        coords_src = coords_src.reshape(-1,2) # B*1024,2
-        coords_dst = coords_dst.reshape(-1,2) # B*1024,2
+        coords_src_flat = coords_src.reshape(-1,2) # B*1024,2
+        coords_dst_flat = coords_dst.reshape(-1,2) # B*1024,2
 
         scores_norm = scores / scores.mean()
 
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
-        merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
+        merged_affine = solve_weighted_affine(coords_src_flat,coords_dst_flat,scores_norm)
 
         print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
 
