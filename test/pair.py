@@ -382,7 +382,7 @@ class Solver():
         coords_flat_in_a_af = apply_M(coords_flat_in_a,M,device=self.device).squeeze() # 512*512,2
 
         #将坐标投影到b上        
-        lines_in_b,samps_in_b = project_linesamp(self.rs_image_a.rpc,self.rs_image_b.rpc,
+        lines_in_b,samps_in_b = project_linesamp(rpc_a,rpc_b,
                                                  coords_flat_in_a_af[:,0],coords_flat_in_a_af[:,1],heights_flat)
         
         #采样
@@ -427,7 +427,7 @@ class Solver():
         coords_flat_in_a = coords.reshape(-1,2)
 
         #将坐标投影到b上        
-        lines_in_b,samps_in_b = project_linesamp(self.rs_image_a.rpc,self.rs_image_b.rpc,
+        lines_in_b,samps_in_b = project_linesamp(rpc_a,rpc_b,
                                                  coords_flat_in_a[:,0],coords_flat_in_a[:,1],heights_flat)
         
         #采样
