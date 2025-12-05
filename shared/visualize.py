@@ -714,7 +714,7 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
         color_a='blue', label_a='Src (Start)',
         color_b='red',  label_b='Dst (Target)',
         draw_arrows=True,
-        calc_error=False # 第一张图展示位移，不需要计算误差
+        calc_error=True 
     )
 
     # 4. 生成第二张图：全局配准精度 (Global Registration Error)
