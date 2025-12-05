@@ -308,9 +308,9 @@ class Solver():
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
-        merge_cv2 = cv2.estimateAffine2D(coords_src.cpu().numpy(),coords_dst.cpu().numpy(),ransacReprojThreshold=100)
+        merge_cv2,inliers = cv2.estimateAffine2D(coords_src.cpu().numpy(),coords_dst.cpu().numpy(),ransacReprojThreshold=10)
         print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
-        print(f"merge_cv:\n{merge_cv2}\n")
+        print(f"merge_cv:\n{merge_cv2}\ninliers:{inliers.ravel().sum()}/{len(inliers.ravel())}")
         # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
         return merged_affine
