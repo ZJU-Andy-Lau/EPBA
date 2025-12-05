@@ -233,10 +233,10 @@ class WindowSolver():
         sample_coords = coords_in_b[...,[1,0]] # (row,col) -> (x,y)
         sample_coords[...,0] = 2.0 * sample_coords[...,0] / (W - 1) - 1.0 # 缩放到 -1 ~ 1
         sample_coords[...,1] = 2.0 * sample_coords[...,1] / (H - 1) - 1.0
-        input_imgs = torch.from_numpy(imgs_b).to(device=self.device,dtype=torch.float32).permute(0,3,1,2)
+        input_imgs = torch.from_numpy(imgs_b).to(device=self.device,dtype=torch.float32).permute(0,3,1,2) # B,3,H,W
         sampled_img = F.grid_sample(input_imgs,sample_coords,mode='bilinear',
                                     padding_mode='zeros',align_corners=True)
-        sampled_img = sampled_img.permute(0,2,3,1).cpu().numpy()
+        sampled_img = sampled_img.permute(0,2,3,1).cpu().numpy() # B,H,W,3
 
         return imgs_a,sampled_img     
 

@@ -8,7 +8,7 @@ import os
 from typing import List
 from copy import deepcopy
 
-from shared.rpc import RPCModelParameterTorch
+from shared.rpc import RPCModelParameterTorch,project_linesamp
 from rs_image import RSImage
 from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,affine_xy_to_rowcol
 from shared.utils import get_current_time,check_invalid_tensors
@@ -312,6 +312,7 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         # check_invalid_tensors([preds,scores],"[solve level affine]: ")
         affine = self.merge_affines(preds,Hs_a,scores)
+        self.test_affine(affine)
         self.rpc_a.Clear_Adjust()
         self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
@@ -338,6 +339,52 @@ class Solver():
             self.solve_level_affine(encoder,gru)
             self.quadsplit_windows()
         return self.rpc_a.adjust_params
+    
+    def test_affine(self,M:torch.Tensor):
+        """
+        M: torch.Tensor (2,3)
+        """
+        # 在rs_image_a中裁切中间的一块512
+        H,W = 512,512
+        M = M[None]
+
+        center_line,center_samp = self.rs_image_a.H // 2,self.rs_image_a.W // 2
+        diag = np.array([
+            [center_line - H // 2, center_samp - W // 2],
+            [center_line + H // 2, center_samp + W // 2]
+        ])
+        img_a = self.rs_image_a.image[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
+        heights = self.rs_image_a.dem[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
+        heights_flat = heights.reshape(-1) # 512*512
+
+        #生成img_a每个像素点的像素坐标
+        rows,cols = np.arange(diag[0,0],diag[1,0]),np.arange(diag[0,1],diag[1,1])
+        coords = np.stack(np.meshgrid(rows,cols,indexing='ij'),axis=-1) # 512,512,2
+
+        #将坐标进行仿射变换
+        coords_flat_in_a = torch.from_numpy(coords.reshape(1,-1,2)).to(dtype=torch.float32,device=self.device) # 1,512*512,2
+        coords_flat_in_a_af = apply_M(coords_flat_in_a,M).squeeze() # 512*512,2
+
+        #将坐标投影到b上        
+        lines_in_b,samps_in_b = project_linesamp(self.rs_image_a.rpc,self.rs_image_b.rpc,
+                                                 coords_flat_in_a_af[:,0],coords_flat_in_a_af[:,1],heights_flat)
+        
+        #采样
+        lines_in_b_norm = 2.0 * lines_in_b.to(torch.float32) / (self.rs_image_b.H - 1) - 1.0
+        samps_in_b_norm = 2.0 * samps_in_b.to(torch.float32) / (self.rs_image_b.W - 1) - 1.0
+        sample_coords = torch.stack([samps_in_b_norm,lines_in_b_norm],dim=-1).reshape(1,H,W,2)
+        input_img = torch.from_numpy(self.rs_image_b).to(dtype=torch.float32,device=self.device)[None].permute(0,3,1,2) # 1,3,H,W
+        sampled_img = F.grid_sample(input_img,sample_coords,mode='bilinear',padding_mode='zeros',align_corners=True) # 1,3,H,W
+        img_b = sampled_img[0].permute(1,2,0).cpu().numpy()
+
+        #棋盘格
+        img_a_b = make_checkerboard(img_a,img_b)
+
+        cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_affine_a.png'),img_a)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_affine_b.png'),img_b)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_affine_a_b.png'),img_a_b)
+
+
 
         
 class WindowPair():
