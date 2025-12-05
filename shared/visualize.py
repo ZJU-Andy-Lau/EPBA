@@ -548,3 +548,171 @@ def create_checkerboard(img1: np.ndarray,
         checkerboard_img_bgr = checkerboard_img
 
     cv2.imwrite(output_path, checkerboard_img_bgr)
+
+def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6, dpi=120):
+    """
+    可视化验证局部到全局的仿射变换求解结果。
+    该函数不直接显示图像，而是返回两张渲染好的图像数组。
+
+    Args:
+        coords_src (torch.Tensor): (B, N, 2), 窗口网格点的大图原始坐标
+        coords_dst (torch.Tensor): (B, N, 2), 窗口网格点经过局部变换后的目标坐标
+        merged_affine (torch.Tensor): (2, 3), 求解得到的全局仿射变换矩阵
+        num_samples (int): 在特写图中展示的窗口数量
+        dpi (int): 绘图清晰度，影响返回图片的像素尺寸
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: 
+            - img_local_shifts: 记录了局部偏移的可视化结果 (H, W, 3) uint8 数组
+            - img_global_error: 记录了全局配准精度的可视化结果 (H, W, 3) uint8 数组
+    """
+
+    # =========================================================
+    # 定义嵌套函数：用于绘制单个图表并转化为 Numpy 数组
+    # =========================================================
+    def _render_plot_to_array(title, pts_a, pts_b, color_a, label_a, color_b, label_b, draw_arrows):
+        B, N, _ = pts_a.shape
+        # 随机或固定采样窗口索引
+        sample_indices = np.linspace(0, B-1, num_samples, dtype=int)
+        
+        # 创建画布
+        fig = plt.figure(figsize=(16, 8), dpi=dpi)
+        fig.suptitle(title, fontsize=16, fontweight='bold')
+        
+        # 使用 GridSpec 布局: 左边 1 列 (概览), 右边多列 (特写)
+        cols_detail = 3 # 特写图的列数
+        rows_detail = int(np.ceil(num_samples / cols_detail))
+        gs = GridSpec(rows_detail, cols_detail + 2, figure=fig) # +2 给概览图留空间
+
+        # --- 1. 绘制全局概览图 (占据左侧 2/5 的空间) ---
+        ax_global = fig.add_subplot(gs[:, :2])
+        ax_global.set_title("Global Overview (Window Distribution)")
+        
+        # 绘制所有窗口的中心点
+        all_centers = pts_a.mean(axis=1) # (B, 2)
+        ax_global.scatter(all_centers[:, 0], all_centers[:, 1], c='lightgray', s=10, alpha=0.5, label='All Windows')
+        
+        # 高亮选中的样本窗口
+        sample_centers = all_centers[sample_indices]
+        ax_global.scatter(sample_centers[:, 0], sample_centers[:, 1], c='orange', s=50, edgecolors='black', label='Selected Samples', zorder=5)
+        
+        # 为选中的窗口添加编号
+        for i, idx in enumerate(sample_indices):
+            cx, cy = all_centers[idx]
+            ax_global.text(cx, cy, str(i+1), fontsize=12, fontweight='bold', color='black')
+
+        ax_global.legend()
+        ax_global.set_aspect('equal')
+        ax_global.set_xlabel("Global X (px)")
+        ax_global.set_ylabel("Global Y (px)")
+        ax_global.invert_yaxis() # 图像坐标系 Y 轴通常向下
+        ax_global.grid(True, linestyle='--', alpha=0.3)
+
+        # --- 2. 绘制局部特写子图 ---
+        for i, idx in enumerate(sample_indices):
+            # 计算子图位置
+            r = i // cols_detail
+            c = i % cols_detail + 2 # +2 是因为前两列给了概览图
+            
+            ax = fig.add_subplot(gs[r, c])
+            
+            # 获取当前窗口的点
+            pa = pts_a[idx] # (N, 2)
+            pb = pts_b[idx] # (N, 2)
+            
+            # 计算当前窗口的局部范围，用于设置坐标轴
+            all_local_pts = np.vstack([pa, pb])
+            min_x, max_x = all_local_pts[:, 0].min(), all_local_pts[:, 0].max()
+            min_y, max_y = all_local_pts[:, 1].min(), all_local_pts[:, 1].max()
+            margin = max(1.0, (max_x - min_x) * 0.2) # 留白
+            
+            # 绘制点 A
+            ax.scatter(pa[:, 0], pa[:, 1], c=color_a, marker='o', s=20, alpha=0.7, label=label_a if i==0 else "")
+            # 绘制点 B
+            ax.scatter(pb[:, 0], pb[:, 1], c=color_b, marker='x', s=20, alpha=0.7, label=label_b if i==0 else "")
+            
+            # 绘制连接线或箭头
+            if draw_arrows:
+                # 绘制箭头: A -> B
+                ax.quiver(pa[:, 0], pa[:, 1], pb[:, 0]-pa[:, 0], pb[:, 1]-pa[:, 1], 
+                          angles='xy', scale_units='xy', scale=1, color='gray', alpha=0.5, width=0.005)
+            else:
+                # 绘制线段: A - B (表示误差)
+                for j in range(len(pa)):
+                    ax.plot([pa[j, 0], pb[j, 0]], [pa[j, 1], pb[j, 1]], color='black', alpha=0.3, linewidth=1)
+
+            ax.set_title(f"Sample {i+1} (ID: {idx})", fontsize=9)
+            ax.set_xlim(min_x - margin, max_x + margin)
+            ax.set_ylim(min_y - margin, max_y + margin)
+            ax.invert_yaxis()
+            
+            if i == 0:
+                ax.legend(fontsize=8, loc='upper right')
+
+        plt.tight_layout()
+        
+        # --- 3. 将 Figure 渲染为 Numpy Array ---
+        fig.canvas.draw()
+        
+        # 兼容不同版本的 Matplotlib 获取 buffer
+        try:
+            # 尝试直接获取 RGB buffer (Matplotlib < 3.8)
+            buf = fig.canvas.tostring_rgb()
+            w, h = fig.canvas.get_width_height()
+            img_arr = np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 3)
+        except AttributeError:
+            # 兼容 Matplotlib >= 3.8 或其他后端
+            # buffer_rgba 返回 (H, W, 4)
+            buf = fig.canvas.buffer_rgba()
+            img_arr = np.asarray(buf)[:, :, :3] # 取 RGB 通道，丢弃 Alpha
+            
+        # 确保是深拷贝，因为关闭 fig 后 buffer 可能失效
+        img_arr = img_arr.copy()
+        
+        plt.close(fig) # 极其重要：关闭 figure 释放内存
+        return img_arr
+
+    # =========================================================
+    # 主逻辑开始
+    # =========================================================
+    
+    # 1. 数据预处理：转为 Numpy
+    if isinstance(coords_src, torch.Tensor):
+        coords_src = coords_src.detach().cpu().numpy()
+        coords_dst = coords_dst.detach().cpu().numpy()
+        merged_affine = merged_affine.detach().cpu().numpy()
+
+    B, N, _ = coords_src.shape
+    
+    # 2. 计算 src 通过全局仿射变换后的坐标 (coords_src_af)
+    src_flat = coords_src.reshape(-1, 2)
+    rot = merged_affine[:, :2]
+    trans = merged_affine[:, 2]
+    
+    src_af_flat = (src_flat @ rot.T) + trans
+    coords_src_af = src_af_flat.reshape(B, N, 2)
+
+    print(f"[Info] Data Processed. Windows: {B}, Points per window: {N}")
+    print(f"[Info] Global Affine Matrix:\n{merged_affine}")
+
+    # 3. 生成第一张图：局部偏移 (Local Shifts)
+    img_local_shifts = _render_plot_to_array(
+        title="Validation 1: Local Shifts (Source -> Destination)",
+        pts_a=coords_src, 
+        pts_b=coords_dst, 
+        color_a='blue', label_a='Src (Start)',
+        color_b='red',  label_b='Dst (Target)',
+        draw_arrows=True
+    )
+
+    # 4. 生成第二张图：全局配准精度 (Global Registration Error)
+    img_global_error = _render_plot_to_array(
+        title="Validation 2: Global Registration Error (Global Transformed -> Local Target)",
+        pts_a=coords_src_af, 
+        pts_b=coords_dst, 
+        color_a='green', label_a='Global_AF (Fit)',
+        color_b='red',   label_b='Dst (Target)',
+        draw_arrows=False
+    )
+    
+    return img_local_shifts, img_global_error

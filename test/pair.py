@@ -229,17 +229,6 @@ class Solver():
         checker_a_b = make_checkerboard(img_a,img_b,num_tiles=8)
         return checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b
     
-    def check_rpc(self,rpc:RPCModelParameterTorch):
-        ori_rpc = deepcopy(self.rs_image_a.rpc)
-        test_diag = self.window_pairs[0].diag[None].copy()
-        data_ori_a,data_b = self.get_data_by_diags(test_diag,rpc_a=ori_rpc)
-        data_a,_ = self.get_data_by_diags(test_diag,rpc_a=rpc)
-        img_ori,img_a,img_b = data_ori_a[0][0],data_a[0][0],data_b[0][0]
-        checker_ori_a = make_checkerboard(img_ori,img_a,num_tiles=8)
-        checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=8)
-        checker_a_b = make_checkerboard(img_a,img_b,num_tiles=8)
-        return checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b
-
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
         imgs_a,imgs_b = self.collect_imgs()
         dems_a,dems_b = self.collect_dems(to_tensor=True)
@@ -257,25 +246,15 @@ class Solver():
                               test_imgs_a=imgs_a,test_imgs_b=imgs_b)
         
         preds,vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
-        
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl0.png"),vis['level_0'])
-        cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_pyr_lvl1.png"),vis['level_1'])
-        for i in range(vis['test']['imgs_a'].shape[0]):
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_a.png"),vis['test']['imgs_a'][i])
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_b.png"),vis['test']['imgs_b'][i])
-            cv2.imwrite(os.path.join(self.configs['output_path'],f"{self.window_size}_test_img_{i}_ab.png"),make_checkerboard(vis['test']['imgs_a'][i],
-                                                                                                                              vis['test']['imgs_b'][i]))
-        rpc_a_test = deepcopy(self.rpc_a)
-        rpc_a_test.Update_Adjust(invert_affine_matrix(preds[0]))
-        output_path = os.path.join(self.configs['output_path'],f"check_rpc_level_{self.window_size}")
-        os.makedirs(output_path,exist_ok=True)
-        checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b = self.check_rpc(rpc_a_test)
-        cv2.imwrite(os.path.join(output_path,f"a.png"),img_a)
-        cv2.imwrite(os.path.join(output_path,f"b.png"),img_b)
-        cv2.imwrite(os.path.join(output_path,f"ori_a.png"),checker_ori_a)
-        cv2.imwrite(os.path.join(output_path,f"ori_b.png"),checker_ori_b)
-        cv2.imwrite(os.path.join(output_path,f"a_b.png"),checker_a_b)
 
+        vis_output_path = os.path.join(self.configs['output_path'],'solve_test_vis',f'{self.window_size}')
+        cv2.imwrite(os.path.join(vis_output_path,f"pyr_lvl0.png"),vis['level_0'])
+        cv2.imwrite(os.path.join(vis_output_path,f"pyr_lvl1.png"),vis['level_1'])
+        for i in range(vis['test']['imgs_a'].shape[0]):
+            cv2.imwrite(os.path.join(vis_output_path,f"test_{i}_a.png"),vis['test']['imgs_a'][i])
+            cv2.imwrite(os.path.join(vis_output_path,f"test_{i}_b.png"),vis['test']['imgs_b'][i])
+            cv2.imwrite(os.path.join(vis_output_path,f"test_{i}_ab.png"),make_checkerboard(vis['test']['imgs_a'][i],
+                                                                                           vis['test']['imgs_b'][i]))
 
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
@@ -313,9 +292,13 @@ class Solver():
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
         merged_affine = solve_weighted_affine(coords_src,coords_dst,scores_norm)
-        merge_cv2,inliers = cv2.estimateAffine2D(coords_src.cpu().numpy(),coords_dst.cpu().numpy(),ransacReprojThreshold=10)
+
         print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
-        print(f"merge_cv:\n{merge_cv2}\ninliers:{inliers.ravel().sum()}/{len(inliers.ravel())}")
+
+        vis_shift,vis_error = visualizer.validate_affine_solver(coords_src[:,[0,31,31*32,31*33]],coords_dst[:,[0,31,31*32,31*33]],merged_affine,min(coords_src.shape[0],8))
+        cv2.imwrite(os.path.join(self.configs['output_path'],f'vis_shift_{self.window_size}.png'),vis_shift)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f'vis_error_{self.window_size}.png'),vis_error)
+
         # check_invalid_tensors([affines,coords_mat_flat,coords_src,coords_dst,scores_norm,merged_affine],"[merge affines]: ")
 
         return merged_affine
