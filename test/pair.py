@@ -254,6 +254,7 @@ class Solver():
         preds,vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
 
         vis_output_path = os.path.join(self.configs['output_path'],'solve_test_vis',f'{self.window_size}')
+        os.makedirs(vis_output_path,exist_ok=True)
         cv2.imwrite(os.path.join(vis_output_path,f"pyr_lvl0.png"),vis['level_0'])
         cv2.imwrite(os.path.join(vis_output_path,f"pyr_lvl1.png"),vis['level_1'])
         for i in range(vis['test']['imgs_a'].shape[0]):
@@ -279,16 +280,12 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
-        for affine in affines:
-            print(f"{affine.detach().cpu().numpy()}\n")
+        # for affine in affines:
+        #     print(f"{affine.detach().cpu().numpy()}\n")
         coords_mat = get_coord_mat(32,32,Hs.shape[0],16,self.device) # (B,32,32,2)
         coords_mat_flat = coords_mat.flatten(1,2) # (B,1024,2)
         coords_src = apply_H(coords=coords_mat_flat,Hs=torch.linalg.inv(Hs),device=self.device) # (B,1024,2) 大图坐标系下的坐标
         coords_dst = apply_M(coords=coords_src,Ms=affines,device=self.device) # (B,1024,2) 对每个窗口应用其仿射变换
-
-        for i in range(coords_src.shape[0]):
-            Mt,_ = cv2.estimateAffine2D(coords_src[i].cpu().numpy(),coords_dst[i].cpu().numpy())
-            print(f"affine_test_{i}:\n{Mt}\n")
 
         coords_src_flat = coords_src.reshape(-1,2) # B*1024,2
         coords_dst_flat = coords_dst.reshape(-1,2) # B*1024,2
