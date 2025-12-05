@@ -347,6 +347,10 @@ class Solver():
         # 在rs_image_a中裁切中间的一块512
         H,W = 512,512
         M = M[None]
+        rpc_a = deepcopy(self.rs_image_a.rpc)
+        rpc_b = deepcopy(self.rs_image_b.rpc)
+        rpc_a.Clear_Adjust()
+        rpc_b.Clear_Adjust()
 
         center_line,center_samp = self.rs_image_a.H // 2,self.rs_image_a.W // 2
         diag = np.array([
