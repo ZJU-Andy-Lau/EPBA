@@ -303,10 +303,7 @@ class Solver():
         coords_src = coords_src.reshape(-1,2) # B*1024,2
         coords_dst = coords_dst.reshape(-1,2) # B*1024,2
 
-        if torch.abs(scores.max() - scores.min()) < 1e-4:
-            scores_norm = torch.ones(size=scores.shape,device=scores.device,dtype=scores.dtype)
-        else:
-            scores_norm = (scores - scores.min()) / (scores.max() - scores.min())
+        scores_norm = scores / scores.mean()
 
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
