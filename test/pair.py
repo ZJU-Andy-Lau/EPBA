@@ -316,7 +316,7 @@ class Solver():
         affine = self.merge_affines(preds,Hs_a,scores)
 
         self.test_affine(affine)
-        window_imgs_a,window_imgs_b = solver.test(affine[None].expand(preds.shape[0],1,1)) # TODO：需删除
+        window_imgs_a,window_imgs_b = solver.test(affine[None].expand(preds.shape[0],-1,-1)) # TODO：需删除
 
 
         self.rpc_a.Clear_Adjust()
