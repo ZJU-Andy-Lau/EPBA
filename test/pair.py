@@ -64,6 +64,7 @@ class Pair():
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
         print("solve ba")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
+        exit()
         return affine_ab,affine_ba
     
     
@@ -128,6 +129,11 @@ class Solver():
                 sorted_idxs = np.argsort(-scores)[:self.configs['max_window_num']] #从大到小
                 window_diags = window_diags[sorted_idxs]
         self.window_size = np.abs(window_diags[0,1,0] - window_diags[0,0,0])
+
+        window_vis = visualizer.vis_windows_distribution(self.rs_image_a.corner_xys,window_diags)
+        cv2.imwrite(os.path.join(self.configs['output_path'],f'window_vis_{self.window_size}m.png'),window_vis)
+
+        
 
         data_a,data_b = self.get_data_by_diags(window_diags)
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
@@ -440,6 +446,11 @@ class WindowPair():
             self._get_score([mid_row,0],[H,mid_col]),
             self._get_score([mid_row,mid_col],[H,W]),
         ])
+        scores_rank = np.argsort(-scores)
+        weight = 1.0
+        for i in scores_rank:
+            scores[i] *= weight
+            weight *= 0.5
         return new_diags,scores
     
     def visualize(self,output_path:str):

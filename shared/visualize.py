@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.patches import Polygon, Rectangle
 from matplotlib.gridspec import GridSpec # [新增] 用于分块布局
 import cv2
 import io
@@ -729,3 +730,137 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
     )
     
     return img_local_shifts, img_global_error
+
+def vis_windows_distribution(quad_A, rects_Rs, dpi=200):
+    """
+    绘制矩形 Rs 相对于四边形 A 的位置关系图，并将 A 的质心置于原点。
+    返回绘制结果的 RGB 图片数组。
+
+    参数:
+    quad_A: numpy array, shape (4, 2)
+        四边形 A 的四个顶点坐标 (x, y)。
+    rects_Rs: numpy array, shape (N, 2, 2)
+        N 个矩形的坐标。
+        rects_Rs[i, 0, :] 是左上角 (x, y)，
+        rects_Rs[i, 1, :] 是右下角 (x, y)。
+    dpi: int
+        输出图片的 DPI (每英寸点数)，控制分辨率。默认为 100。
+
+    返回:
+    image_array: numpy array, shape (H, W, 3)
+        绘制好的图片数据 (RGB格式)。
+    """
+    
+    # 1. 计算四边形 A 的质心 (Centroid)
+    centroid = np.mean(quad_A, axis=0)
+    # print(f"计算得到的质心坐标 (原坐标系): {centroid}")
+
+    # 2. 坐标平移 (Broadcasting)
+    # 将 A 和 Rs 的所有点都减去质心坐标，使得 A 的质心位于 (0,0)
+    A_centered = quad_A - centroid
+    Rs_centered = rects_Rs - centroid
+
+    # 3. 开始绘图
+    # 注意：这里创建 figure 但不立即显示
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=dpi)
+
+    # --- 绘制四边形 A ---
+    poly_patch = Polygon(
+        A_centered, 
+        closed=True, 
+        edgecolor='blue', 
+        facecolor='skyblue', 
+        alpha=0.6, 
+        linewidth=2, 
+        label='Quadrilateral A (Centered)'
+    )
+    ax.add_patch(poly_patch)
+    
+
+    # --- 绘制 N 个矩形 Rs ---
+    for i in range(len(Rs_centered)):
+        top_left = Rs_centered[i, 0]      # [x_tl, y_tl]
+        bottom_right = Rs_centered[i, 1]  # [x_br, y_br]
+        
+        x_tl, y_tl = top_left
+        x_br, y_br = bottom_right
+
+        anchor_x = x_tl
+        anchor_y = y_br
+        width = x_br - x_tl
+        height = y_tl - y_br 
+
+        rect_patch = Rectangle(
+            (anchor_x, anchor_y), 
+            width, 
+            height,
+            linewidth=1,
+            edgecolor='red',
+            facecolor='none', 
+            linestyle='--'
+        )
+        ax.add_patch(rect_patch)
+        
+        # 在矩形中心标上序号
+        rect_center_x = anchor_x + width / 2
+        rect_center_y = anchor_y + height / 2
+        ax.text(rect_center_x, rect_center_y, str(i), color='red', fontsize=8, ha='center', va='center')
+
+    # --- 设置图形属性 ---
+    
+    # 收集所有点以自动调整坐标轴范围
+    all_x = list(A_centered[:, 0])
+    all_y = list(A_centered[:, 1])
+    all_x.extend(Rs_centered[:, :, 0].flatten())
+    all_y.extend(Rs_centered[:, :, 1].flatten())
+    
+    pad = 5.0
+    min_x, max_x = min(all_x) - pad, max(all_x) + pad
+    min_y, max_y = min(all_y) - pad, max(all_y) + pad
+    
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_y, max_y)
+    
+    # 关键：设置横纵坐标比例一致
+    ax.set_aspect('equal')
+    
+    ax.grid(True, linestyle=':', alpha=0.6)
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.axvline(0, color='black', linewidth=0.5)
+    ax.legend(loc='upper right')
+    
+    plt.title(f"Relative Position Visualization (N={len(rects_Rs)} Rectangles)")
+    plt.xlabel("Relative X")
+    plt.ylabel("Relative Y")
+    plt.tight_layout()
+
+    # --- 4. 转换为 Numpy 数组 ---
+    
+    # 绘制画布内容
+    fig.canvas.draw()
+    
+    # 获取图像尺寸
+    w, h = fig.canvas.get_width_height()
+    
+    # 从缓冲区读取 RGB 数据
+    # tostring_rgb() 在较新版本可能是 tobytes() 或 buffer_rgba()，但 tostring_rgb 兼容性较好
+    try:
+        buf = fig.canvas.tostring_rgb()
+    except AttributeError:
+        # 兼容不同版本的 Matplotlib
+        buf = fig.canvas.buffer_rgba()
+        
+    # 将字符串/字节流转换为 uint8 数组
+    image_array = np.frombuffer(buf, dtype=np.uint8)
+    
+    # 如果使用的是 buffer_rgba，可能会得到 RGBA，需要根据长度 reshape
+    if len(image_array) == w * h * 4:
+        image_array = image_array.reshape((h, w, 4))
+        image_array = image_array[:, :, :3] # 只保留 RGB
+    else:
+        image_array = image_array.reshape((h, w, 3))
+    
+    # 关闭图形以释放内存，避免在循环调用时内存泄漏
+    plt.close(fig)
+    
+    return image_array
