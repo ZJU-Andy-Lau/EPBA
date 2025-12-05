@@ -363,7 +363,7 @@ class Solver():
 
         #将坐标进行仿射变换
         coords_flat_in_a = torch.from_numpy(coords.reshape(1,-1,2)).to(dtype=torch.float32,device=self.device) # 1,512*512,2
-        coords_flat_in_a_af = apply_M(coords_flat_in_a,M).squeeze() # 512*512,2
+        coords_flat_in_a_af = apply_M(coords_flat_in_a,M,device=self.device).squeeze() # 512*512,2
 
         #将坐标投影到b上        
         lines_in_b,samps_in_b = project_linesamp(self.rs_image_a.rpc,self.rs_image_b.rpc,
