@@ -570,7 +570,7 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
     # =========================================================
     # 定义嵌套函数：用于绘制单个图表并转化为 Numpy 数组
     # =========================================================
-    def _render_plot_to_array(title, pts_a, pts_b, color_a, label_a, color_b, label_b, draw_arrows):
+    def _render_plot_to_array(title, pts_a, pts_b, color_a, label_a, color_b, label_b, draw_arrows, calc_error=False):
         B, N, _ = pts_a.shape
         # 随机或固定采样窗口索引
         sample_indices = np.linspace(0, B-1, num_samples, dtype=int)
@@ -642,6 +642,17 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
                     ax.plot([pa[j, 0], pb[j, 0]], [pa[j, 1], pb[j, 1]], color='black', alpha=0.3, linewidth=1)
 
             ax.set_title(f"Sample {i+1} (ID: {idx})", fontsize=9)
+            
+            # --- 新增功能：计算并显示误差 ---
+            if calc_error:
+                # 计算两组点之间的欧式距离 (N,)
+                errors = np.linalg.norm(pa - pb, axis=1)
+                mean_err = np.mean(errors)
+                # 在左上角显示误差文本
+                ax.text(0.05, 0.95, f"Mean Err:\n{mean_err:.2f} px", 
+                        transform=ax.transAxes, fontsize=8, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
+
             ax.set_xlim(min_x - margin, max_x + margin)
             ax.set_ylim(min_y - margin, max_y + margin)
             ax.invert_yaxis()
@@ -702,7 +713,8 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
         pts_b=coords_dst, 
         color_a='blue', label_a='Src (Start)',
         color_b='red',  label_b='Dst (Target)',
-        draw_arrows=True
+        draw_arrows=True,
+        calc_error=False # 第一张图展示位移，不需要计算误差
     )
 
     # 4. 生成第二张图：全局配准精度 (Global Registration Error)
@@ -712,7 +724,8 @@ def validate_affine_solver(coords_src, coords_dst, merged_affine, num_samples=6,
         pts_b=coords_dst, 
         color_a='green', label_a='Global_AF (Fit)',
         color_b='red',   label_b='Dst (Target)',
-        draw_arrows=False
+        draw_arrows=False,
+        calc_error=True # 第二张图开启误差计算显示
     )
     
     return img_local_shifts, img_global_error
