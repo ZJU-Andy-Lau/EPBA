@@ -373,7 +373,7 @@ class Solver():
         lines_in_b_norm = 2.0 * lines_in_b.to(torch.float32) / (self.rs_image_b.H - 1) - 1.0
         samps_in_b_norm = 2.0 * samps_in_b.to(torch.float32) / (self.rs_image_b.W - 1) - 1.0
         sample_coords = torch.stack([samps_in_b_norm,lines_in_b_norm],dim=-1).reshape(1,H,W,2)
-        input_img = torch.from_numpy(self.rs_image_b).to(dtype=torch.float32,device=self.device)[None].permute(0,3,1,2) # 1,3,H,W
+        input_img = torch.from_numpy(self.rs_image_b.image).to(dtype=torch.float32,device=self.device)[None].permute(0,3,1,2) # 1,3,H,W
         sampled_img = F.grid_sample(input_img,sample_coords,mode='bilinear',padding_mode='zeros',align_corners=True) # 1,3,H,W
         img_b = sampled_img[0].permute(1,2,0).cpu().numpy()
 
