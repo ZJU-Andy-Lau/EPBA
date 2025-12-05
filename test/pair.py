@@ -315,12 +315,12 @@ class Solver():
         preds,scores,solver = self.get_window_affines(encoder,gru)
         affine = self.merge_affines(preds,Hs_a,scores)
 
-        self.test_affine(affine)
-        self.test_rpc(affine)
+        # self.test_affine(affine)
+        self.test_rpc()
         window_imgs_a,window_imgs_b = solver.test(affine[None].expand(preds.shape[0],-1,-1)) # TODO：需删除
 
 
-        self.rpc_a.Clear_Adjust()
+        # self.rpc_a.Clear_Adjust()
         self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
@@ -400,17 +400,14 @@ class Solver():
         cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_affine_b.png'),img_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_affine_a_b.png'),img_a_b)
     
-    def test_rpc(self,M:torch.Tensor):
+    def test_rpc(self):
         """
         M: torch.Tensor (2,3)
         """
         # 在rs_image_a中裁切中间的一块512
         H,W = 2048,2048
-        rpc_a = deepcopy(self.rs_image_a.rpc)
-        rpc_b = deepcopy(self.rs_image_b.rpc)
-        rpc_a.Clear_Adjust()
-        rpc_b.Clear_Adjust()
-        rpc_a.Update_Adjust(M)
+        rpc_a = deepcopy(self.rpc_a)
+        rpc_b = deepcopy(self.rpc_b)
 
         center_line,center_samp = self.rs_image_a.H // 2,self.rs_image_a.W // 2
         diag = np.array([
