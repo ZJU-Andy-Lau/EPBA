@@ -29,13 +29,17 @@ def main(args):
 
     conf_head = ConfHead(args.dino_weight_path)
     conf_head.load_head(args.conf_head_path)
+    print("Model Loaded")    
 
     conf_head = conf_head.cuda().eval()
     imgs = imgs.cuda()
 
-    confs = conf_head(imgs)
-    confs = confs.detach().cpu().numpy()
+    print("Predicting")
 
+    confs = conf_head(imgs)
+    confs = confs.squeeze().detach().cpu().numpy()
+
+    print("Drawing Images")
 
     for i in range(img_num):
         vis_conf = vis_confidence_overlay(dataset[keys[i]]['images']['image_0'][:],confs[i])
