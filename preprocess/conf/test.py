@@ -44,7 +44,7 @@ def main(args):
     for i in range(img_num):
         img = np.stack([dataset[keys[i]]['images']['image_0'][:]] * 3,axis=-1)
         vis_conf = vis_confidence_overlay(img,confs[i])
-        cv2.imwrite(os.path.join(args.output_path,f'{keys[i]}.png'),vis_conf)
+        cv2.imwrite(os.path.join(args.output_path,f'{keys[i]}.png'),cv2.cvtColor(vis_conf,cv2.COLOR_BGR2RGB))
 
     
 
