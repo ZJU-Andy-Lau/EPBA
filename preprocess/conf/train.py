@@ -105,12 +105,14 @@ class TrainDataset(Dataset):
         img_idx = np.random.choice(img_num,1)[0]
         img_full = self.database[key]['images'][f"image_{img_idx}"][:]
         res_full = self.database[key]['residuals'][f"residual_{img_idx}"][:]
-        if img_full.shape[0] != res_full.shape[0] and img_full.shape[1] != res_full.shape[1]:
-            print("SHAPE ERROR!!!")
-            print(key,img_idx)
-            print(img_full.shape)
-            print(res_full.shape)
-            exit()
+        while img_full.shape[0] != res_full.shape[0] and img_full.shape[1] != res_full.shape[1]:
+            index = (index + 1) % len(self.database_keys)
+            key = self.database_keys[index]
+            img_num = len(self.database[key]['images'])
+            img_idx = np.random.choice(img_num,1)[0]
+            img_full = self.database[key]['images'][f"image_{img_idx}"][:]
+            res_full = self.database[key]['residuals'][f"residual_{img_idx}"][:]
+
         imgs = []
         residuals = []
         for k in range(self.batch_size):
