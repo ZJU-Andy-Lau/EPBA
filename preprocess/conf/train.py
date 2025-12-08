@@ -105,7 +105,7 @@ class TrainDataset(Dataset):
         img_idx = np.random.choice(img_num,1)[0]
         img_full = self.database[key]['images'][f"image_{img_idx}"][:]
         res_full = self.database[key]['residuals'][f"residual_{img_idx}"][:]
-        if not img_full.shape[0] == res_full.shape[0] and img_full.shape[1] == res_full.shape[1]:
+        if img_full.shape[0] != res_full.shape[0] and img_full.shape[1] != res_full.shape[1]:
             print("SHAPE ERROR!!!")
             print(key,img_idx)
             print(img_full.shape)
