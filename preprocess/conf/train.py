@@ -19,7 +19,7 @@ import random
 from functools import partial
 
 from preprocess.conf.model import ConfHead
-from train.scheduler import MultiStageOneCycleLR
+from scheduler import MultiStageOneCycleLR
 from shared.utils import get_current_time
 
 def print_on_main(msg, rank):
