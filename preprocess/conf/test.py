@@ -42,7 +42,8 @@ def main(args):
     print("Drawing Images")
 
     for i in range(img_num):
-        vis_conf = vis_confidence_overlay(dataset[keys[i]]['images']['image_0'][:],confs[i])
+        img = np.stack([dataset[keys[i]]['images']['image_0'][:]] * 3,axis=-1)
+        vis_conf = vis_confidence_overlay(img,confs[i])
         cv2.imwrite(os.path.join(args.output_path,f'{keys[i]}.png'),vis_conf)
 
     
