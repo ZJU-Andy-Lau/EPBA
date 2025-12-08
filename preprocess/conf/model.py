@@ -3,6 +3,7 @@ import torch.nn as nn
 
 class ConfHead(nn.Module):
     def __init__(self,dino_weight_path:str):
+        super().__init__()
         self.backbone = torch.hub.load('./dinov3', 'dinov3_vitl16', source='local', weights=dino_weight_path)
         self.backbone.eval()
         self.backbone.requires_grad_(False)
