@@ -18,7 +18,7 @@ import numpy as np
 import random
 from functools import partial
 
-from .model import ConfHead
+from preprocess.conf.model import ConfHead
 from train.scheduler import MultiStageOneCycleLR
 from shared.utils import get_current_time
 
