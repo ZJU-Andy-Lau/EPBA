@@ -203,8 +203,10 @@ def vis_sparse_match(img_a, img_b, feat_a, feat_b, conf_a, num_points=10):
 
 def vis_confidence_overlay(img, conf_map):
     """
-    面板 C1: 置信度热力图叠加 (红绿)
-    [修改] 提高置信度色彩比重
+    置信度热力图叠加 (红绿)
+
+    Returns: img_overlay (H,W,3) np.ndarray
+    
     """
     H, W = img.shape[:2]
     

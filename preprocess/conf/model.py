@@ -26,3 +26,7 @@ class ConfHead(nn.Module):
     def save_head(self,path):
         state_dict = {k: v.detach().cpu() for k, v in self.head.state_dict().items()}
         torch.save(state_dict, path)
+
+    def load_head(self,path):
+        state_dict = {k: v.detach().cpu() for k, v in torch.load(path).items()}
+        self.head.load_state_dict(state_dict)
