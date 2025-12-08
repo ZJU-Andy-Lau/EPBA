@@ -108,7 +108,7 @@ class TrainDataset(Dataset):
         imgs = []
         residuals = []
         for k in range(self.batch_size):
-            tlr,tlc,brr,brc = self.get_random_crop_box(self.img_size,self.img_size,128,2048)
+            tlr,tlc,brr,brc = self.get_random_crop_box(self.img_size,self.img_size,128,min(2048,self.img_size))
             img_crop = cv2.resize(img_full[tlr:brr,tlc:brc],(self.input_size,self.input_size),interpolation=cv2.INTER_LINEAR)
             img_crop = np.stack([img_crop]*3,axis=-1)
             res_crop = cv2.resize(res_full[tlr:brr,tlc:brc],(self.input_size,self.input_size),
