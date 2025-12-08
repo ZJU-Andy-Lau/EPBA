@@ -24,7 +24,7 @@ def main(args):
                 transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
             ])
     
-    imgs = torch.stack([transform(dataset[key]['images']['image_0'][:]) for key in keys],dim=0)
+    imgs = torch.stack([transform(np.stack([dataset[key]['images']['image_0'][:]] * 3,axis=-1)) for key in keys],dim=0)
     img_num = imgs.shape[0]
 
     conf_head = ConfHead(args.dino_weight_path)
