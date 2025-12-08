@@ -159,7 +159,7 @@ def main(args):
         for k, v in state.items():
             if isinstance(v, torch.Tensor):
                 state[k] = v.to(args.device)
-    conf_head = distibute_model(conf_head,args.locak_rank)
+    conf_head = distibute_model(conf_head,args.local_rank)
     
     scheduler = MultiStageOneCycleLR(optimizer = optimizer,
                                      total_steps = args.max_epoch * batch_num,
