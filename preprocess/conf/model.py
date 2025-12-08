@@ -18,7 +18,8 @@ class ConfHead(nn.Module):
     
     def forward(self,x):
         B, _, H, W = x.shape
-        feat_backbone = self.backbone.get_intermediate_layers(x)
+        feat_backbone = self.backbone.get_intermediate_layers(x)[0]
+        print(feat_backbone.shape)
         feat_backbone = feat_backbone.reshape(B, H // 16, W // 16, -1).permute(0, 3, 1, 2)
         conf = self.head(feat_backbone)
         return conf
