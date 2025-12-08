@@ -16,7 +16,8 @@ def main(args):
     if not args.img_select is None:
         keys = args.img_select.split(',')
     else:
-        keys = list(dataset.keys())[np.random.choice(len(dataset.keys()),10)]
+        keys = list(dataset.keys())
+        keys = [keys[i] for i in np.random.choice(len(dataset.keys()),10)]
 
     transform = transforms.Compose([
                 transforms.ToTensor(),
