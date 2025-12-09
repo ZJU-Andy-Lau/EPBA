@@ -109,9 +109,7 @@ class ParallaxVisualizer:
         
         # 计算中位数，忽略 NaN
         # axis=(1, 3) 聚合每个窗口
-        with np.warnings.catch_warnings():
-            np.warnings.filterwarnings('ignore', r'All-NaN (slice|axis) encountered')
-            downsampled = np.nanmedian(reshaped, axis=(1, 3))
+        downsampled = np.nanmedian(reshaped, axis=(1, 3))
         
         # --- 步骤 3: 填充 NaN 值 ---
         # 需求：将所有为 nan 的 patch 赋值为下采样视差图中非 nan 的最大值
@@ -148,7 +146,7 @@ class ParallaxVisualizer:
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize Parallax Maps from HDF5")
-    parser.add_argument("--h5_path", type=str, required=True, help="Path to the HDF5 dataset file")
+    parser.add_argument("--dataset_path", type=str, required=True, help="Path to the HDF5 dataset file")
     parser.add_argument("--dataset_key", type=str, required=True, help="The dataset key to visualize (e.g., 'area1/2020')")
     parser.add_argument("--output_dir", type=str, default="vis_results", help="Directory to save visualization results")
     parser.add_argument("--window_size", type=int, default=50, help="Sliding window size K (stride is also K)")
