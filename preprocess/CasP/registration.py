@@ -305,8 +305,11 @@ class ImageRegistrar:
             print(ref[:10,:10])
             print(warped_img.shape,warped_img.dtype)
             print(warped_img[:10,:10])
-            exit()
+            
             checkerboard_img = make_checkerboard(ref, warped_img, 15)
+            print(checkerboard_img.shape,checkerboard_img.dtype)
+            print(checkerboard_img[:10,:10])
+            exit()
             checkerboard_filename = f"checkerboard_{i}.jpg"
             checkerboard_path = os.path.join(output_dir, checkerboard_filename)
             cv2.imwrite(checkerboard_path, checkerboard_img)
