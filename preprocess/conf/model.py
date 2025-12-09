@@ -48,7 +48,7 @@ class ConfHead(nn.Module):
 
         B,_,H,W = imgs.shape
         input_data = torch.stack([self.transform(img) for img in imgs],dim=0)
-        input_data = input_data.to(self.device)
+        input_data = input_data.to(self.head.device)
 
         conf = self.forward(input_data)
         conf = conf.squeeze().detach().cpu().numpy() # B,h,W
