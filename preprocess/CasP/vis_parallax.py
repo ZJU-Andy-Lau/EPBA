@@ -7,7 +7,7 @@ import cv2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-def apply_colormap_to_parallax(parallax_map, cmap_name='RdYlGn_r'):
+def apply_colormap_to_parallax(parallax_map:np.ndarray, cmap_name='RdYlGn_r'):
     """
     将视差图转换为伪彩色热力图
     Args:
@@ -22,14 +22,15 @@ def apply_colormap_to_parallax(parallax_map, cmap_name='RdYlGn_r'):
     if np.all(np.isnan(parallax_map)):
         return np.zeros((*parallax_map.shape, 3), dtype=np.uint8)
     
-    vmin = np.nanmin(parallax_map)
-    vmax = np.nanmax(parallax_map)
+    vmin = parallax_map.min()
+    med = np.median(parallax_map)
+    vmax = 2 * med - vmin
     
     # 2. 归一化到 [0, 1]
     if vmax - vmin < 1e-6:
         norm_map = np.zeros_like(parallax_map)
     else:
-        norm_map = (parallax_map - vmin) / (vmax - vmin)
+        norm_map = np.clip((parallax_map - vmin) / (vmax - vmin),a_max=1.0,a_min=0.0)
     
     # 3. 应用 Colormap
     cmap = plt.get_cmap(cmap_name)
