@@ -340,7 +340,7 @@ def main():
     if key is None:
         key = str(np.random.randint(0, len(database.keys())))
     
-    args.output_path = os.path.join(args.output_path,f"{key}_{args.conf_threshold}_{args.ransac_threshold}")
+    args.output_path = os.path.join(args.output_path,f"{key}_{args.transform_type}_{args.conf_threshold}_{args.ransac_threshold}")
     
     img_num = len(database[key]['images'])
     imgs = [database[key]['images'][f"image_{i}"][:] for i in range(img_num)]
