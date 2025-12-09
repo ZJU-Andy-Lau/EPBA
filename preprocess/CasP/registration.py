@@ -9,6 +9,7 @@ import numpy as np
 from omegaconf import OmegaConf
 from typing import List, Tuple, Dict, Any
 import h5py
+from tqdm import tqdm
 
 # 引入 CasP 工程中的模块
 # 确保在工程根目录下运行，以便 python 能找到 src 包
@@ -205,7 +206,7 @@ class ImageRegistrar:
 
         return np.concatenate(all_pts0, axis=0), np.concatenate(all_pts1, axis=0)
 
-    def process_registration(self, imgs: List[np.ndarray], output_dir: str):
+    def process_registration(self, imgs: List[np.ndarray], output_dir: str, key: str):
         """执行完整的 N 张图像配准流程"""
         if len(imgs) < 2:
             print("Need at least 2 images to run registration.")
@@ -221,11 +222,16 @@ class ImageRegistrar:
         ref_orig, ref_resampled, ref_conf = self.preprocess_image(ref_img)
         
         # 保存基准图像作为参考
-        cv2.imwrite(os.path.join(output_dir, "registered_0.jpg"), cv2.cvtColor(ref_orig, cv2.COLOR_RGB2BGR))
+        # cv2.imwrite(os.path.join(output_dir, "registered_0.jpg"), cv2.cvtColor(ref_orig, cv2.COLOR_RGB2BGR))
+
+        warped_imgs = []
 
         # ---------------------------
         # Step 2: 遍历 img_1 到 img_N
         # ---------------------------
+
+        check_idx = np.random.randint(1,len(imgs))
+
         for i in range(1, len(imgs)):
             tgt_img = imgs[i]
             print(f"\nRegistering Image {i}/{len(imgs)-1}...")
@@ -286,42 +292,46 @@ class ImageRegistrar:
                 H, mask = cv2.estimateAffine2D(pts1_3000, pts0_3000, method=cv2.RANSAC, ransacReprojThreshold=self.args.ransac_threshold)
                 if H is not None:
                     warped_img = cv2.warpAffine(tgt_orig, H, (self.original_w, self.original_h))
+                
+            warped_imgs.append(warped_img)
 
-            # ---------------------------
-            # [新增功能] 1. 保存变换后的图像
-            # ---------------------------
-            out_filename = f"registered_{i}.jpg"
-            out_path = os.path.join(output_dir, out_filename)
-            cv2.imwrite(out_path, warped_img)
-            print(f"  > Saved registered image: {out_path}")
+            # # ---------------------------
+            # # [新增功能] 1. 保存变换后的图像
+            # # ---------------------------
+            # out_filename = f"registered_{i}.jpg"
+            # out_path = os.path.join(output_dir, out_filename)
+            # cv2.imwrite(out_path, warped_img)
+            # print(f"  > Saved registered image: {out_path}")
 
-            # ---------------------------
-            # [新增功能] 2. 保存变换矩阵 H
-            # ---------------------------
-            matrix_filename = f"transform_matrix_{i}.txt"
-            matrix_path = os.path.join(output_dir, matrix_filename)
-            # 使用 fmt='%.8f' 保证精度
-            np.savetxt(matrix_path, H, fmt='%.3e', header=f"Homography Matrix for Image {i} -> Ref Image", footer="")
-            print(f"  > Saved transformation matrix: {matrix_path}")
+            # # ---------------------------
+            # # [新增功能] 2. 保存变换矩阵 H
+            # # ---------------------------
+            # matrix_filename = f"transform_matrix_{i}.txt"
+            # matrix_path = os.path.join(output_dir, matrix_filename)
+            # # 使用 fmt='%.8f' 保证精度
+            # np.savetxt(matrix_path, H, fmt='%.3e', header=f"Homography Matrix for Image {i} -> Ref Image", footer="")
+            # print(f"  > Saved transformation matrix: {matrix_path}")
 
             # ---------------------------
             # [新增功能] 3. 生成并保存棋盘格对比图
             # ---------------------------
-            ref = ref_orig[:,:,0]            
-            checkerboard_img = make_checkerboard(ref, warped_img, 15)
-            checkerboard_filename = f"checkerboard_{i}.jpg"
-            checkerboard_path = os.path.join(output_dir, checkerboard_filename)
-            cv2.imwrite(checkerboard_path, checkerboard_img)
-            print(f"  > Saved checkerboard overlay: {checkerboard_path}")
+            if i == check_idx:
+                ref = ref_orig[:,:,0]            
+                checkerboard_img = make_checkerboard(ref, warped_img, 15)
+                checkerboard_filename = f"{key}_{i}.jpg"
+                checkerboard_path = os.path.join(output_dir, checkerboard_filename)
+                cv2.imwrite(checkerboard_path, checkerboard_img)
+            # print(f"  > Saved checkerboard overlay: {checkerboard_path}")
 
-
+        return warped_imgs
+    
 # ==========================================
 # 3. 主程序入口
 # ==========================================
 def main():
     parser = argparse.ArgumentParser(description="CasP Image Registration Pipeline")
     parser.add_argument("--dataset_path", type=str, required=True)
-    parser.add_argument("--key", type=str, default=None)
+    # parser.add_argument("--key", type=str, default=None)
     parser.add_argument("--output_path", type=str, default="tmp/output_registration", help="结果输出路径")
     parser.add_argument("--config_path", type=str, default="preprocess/CasP/configs/model/net/casp.yaml", help="CasP 配置文件路径")
     parser.add_argument("--casp_weights", type=str, default="preprocess/CasP/weights/casp_outdoor.pth", help="CasP 权重文件路径")
@@ -335,19 +345,23 @@ def main():
 
     args = parser.parse_args()
 
-    database = h5py.File(args.dataset_path, 'r')
-    key = args.key
-    if key is None:
-        key = str(np.random.randint(0, len(database.keys())))
+    database = h5py.File(args.dataset_path, 'r+')
+    # key = args.key
+    # if key is None:
+    #     key = str(np.random.randint(0, len(database.keys())))
     
-    args.output_path = os.path.join(args.output_path,f"{key}_{args.transform_type}_{args.conf_threshold}_{args.ransac_threshold}")
+    args.output_path = os.path.join(args.output_path,f"{args.transform_type}_{args.conf_threshold}_{args.ransac_threshold}")
     
-    img_num = len(database[key]['images'])
-    imgs = [database[key]['images'][f"{i}"][:] for i in range(img_num)]
+    for key in tqdm(database.keys()):
+        img_num = len(database[key]['images'])
+        imgs = [database[key]['images'][f"{i}"][:] for i in range(img_num)]
 
-    # 初始化配准器并运行
-    registrar = ImageRegistrar(args)
-    registrar.process_registration(imgs, args.output_path)
+        # 初始化配准器并运行
+        registrar = ImageRegistrar(args)
+        warped_imgs = registrar.process_registration(imgs, args.output_path, key)
+
+        for i in range(1,img_num):
+            database[key]['images'][str(i)][:] = warped_imgs[i]
 
 if __name__ == "__main__":
     main()
