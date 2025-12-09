@@ -285,7 +285,7 @@ class ImageRegistrar:
             # ---------------------------
             out_filename = f"registered_{i}.jpg"
             out_path = os.path.join(output_dir, out_filename)
-            cv2.imwrite(out_path, cv2.cvtColor(warped_img, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(out_path, warped_img)
             print(f"  > Saved registered image: {out_path}")
 
             # ---------------------------
@@ -300,10 +300,16 @@ class ImageRegistrar:
             # ---------------------------
             # [新增功能] 3. 生成并保存棋盘格对比图
             # ---------------------------
-            checkerboard_img = make_checkerboard(ref_orig[:,:,0], warped_img, 15)
+            ref = ref_orig[:,:,0]
+            print(ref.shape,ref.dtype)
+            print(ref[:10,:10])
+            print(warped_img.shape,warped_img.dtype)
+            print(warped_img[:10,:10])
+            exit()
+            checkerboard_img = make_checkerboard(ref, warped_img, 15)
             checkerboard_filename = f"checkerboard_{i}.jpg"
             checkerboard_path = os.path.join(output_dir, checkerboard_filename)
-            cv2.imwrite(checkerboard_path, cv2.cvtColor(checkerboard_img, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(checkerboard_path, checkerboard_img)
             print(f"  > Saved checkerboard overlay: {checkerboard_path}")
 
 
