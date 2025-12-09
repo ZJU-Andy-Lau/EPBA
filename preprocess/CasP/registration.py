@@ -14,46 +14,7 @@ import h5py
 # 确保在工程根目录下运行，以便 python 能找到 src 包
 from src.models.nets import CasP
 from preprocess.conf.model import ConfHead
-
-# ==========================================
-# 0. 辅助工具函数
-# ==========================================
-def create_checkerboard_overlay(image1: np.ndarray, image2: np.ndarray, grid_size: int = 200) -> np.ndarray:
-    """
-    生成两张图像的棋盘格叠加图，用于直观对比配准效果。
-    
-    Args:
-        image1: 第一张图像 (参考影像)
-        image2: 第二张图像 (配准后影像)
-        grid_size: 棋盘格网格的大小 (像素)
-        
-    Returns:
-        overlay: 棋盘格叠加图像
-    """
-    # 确保尺寸一致
-    if image1.shape != image2.shape:
-        image2 = cv2.resize(image2, (image1.shape[1], image1.shape[0]))
-        
-    h, w = image1.shape[:2]
-    
-    # 生成网格索引
-    # rows: (H, 1), cols: (1, W)
-    rows = np.arange(h).reshape(-1, 1) // grid_size
-    cols = np.arange(w).reshape(1, -1) // grid_size
-    
-    # 生成棋盘掩码: (rows + cols) 为偶数的位置为 True
-    # 结果是一个 (H, W) 的布尔矩阵
-    mask = (rows + cols) % 2 == 0
-    
-    # 如果图像是多通道 (RGB)，需要扩展掩码维度
-    if image1.ndim == 3:
-        mask = mask[..., None]
-    
-    # 根据掩码组合图像
-    overlay = np.where(mask, image1, image2)
-    
-    return overlay
-
+from shared.visualize import make_checkerboard
 
 # ==========================================
 # 1. 置信度预测模型 (用户自定义部分)
@@ -339,7 +300,7 @@ class ImageRegistrar:
             # ---------------------------
             # [新增功能] 3. 生成并保存棋盘格对比图
             # ---------------------------
-            checkerboard_img = create_checkerboard_overlay(ref_orig, warped_img, grid_size=200)
+            checkerboard_img = make_checkerboard(ref_orig, warped_img, 15)
             checkerboard_filename = f"checkerboard_{i}.jpg"
             checkerboard_path = os.path.join(output_dir, checkerboard_filename)
             cv2.imwrite(checkerboard_path, cv2.cvtColor(checkerboard_img, cv2.COLOR_RGB2BGR))
@@ -366,6 +327,8 @@ def main():
     key = args.key
     if key is None:
         key = str(np.random.randint(0, len(database.keys())))
+    
+    args.output_path = os.path.join(args.output_path,key)
     
     img_num = len(database[key]['images'])
     imgs = [database[key]['images'][f"image_{i}"][:] for i in range(img_num)]
