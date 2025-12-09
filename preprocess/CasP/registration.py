@@ -16,10 +16,50 @@ from src.models.nets import CasP
 from preprocess.conf.model import ConfHead
 
 # ==========================================
+# 0. 辅助工具函数
+# ==========================================
+def create_checkerboard_overlay(image1: np.ndarray, image2: np.ndarray, grid_size: int = 200) -> np.ndarray:
+    """
+    生成两张图像的棋盘格叠加图，用于直观对比配准效果。
+    
+    Args:
+        image1: 第一张图像 (参考影像)
+        image2: 第二张图像 (配准后影像)
+        grid_size: 棋盘格网格的大小 (像素)
+        
+    Returns:
+        overlay: 棋盘格叠加图像
+    """
+    # 确保尺寸一致
+    if image1.shape != image2.shape:
+        image2 = cv2.resize(image2, (image1.shape[1], image1.shape[0]))
+        
+    h, w = image1.shape[:2]
+    
+    # 生成网格索引
+    # rows: (H, 1), cols: (1, W)
+    rows = np.arange(h).reshape(-1, 1) // grid_size
+    cols = np.arange(w).reshape(1, -1) // grid_size
+    
+    # 生成棋盘掩码: (rows + cols) 为偶数的位置为 True
+    # 结果是一个 (H, W) 的布尔矩阵
+    mask = (rows + cols) % 2 == 0
+    
+    # 如果图像是多通道 (RGB)，需要扩展掩码维度
+    if image1.ndim == 3:
+        mask = mask[..., None]
+    
+    # 根据掩码组合图像
+    overlay = np.where(mask, image1, image2)
+    
+    return overlay
+
+
+# ==========================================
 # 1. 置信度预测模型 (用户自定义部分)
 # ==========================================
 class ConfPred:
-    def __init__(self,dino_weight_path:str,conf_head_path:str,device = 'cuda'):
+    def __init__(self, dino_weight_path: str, conf_head_path: str, device='cuda'):
         """
         初始化置信度预测模型。
         """
@@ -38,25 +78,24 @@ class ConfPred:
         Returns:
             conf_map: 置信度图，numpy array, 形状 (H, W), 值域 [0, 1]
         """
-        H,W = img.shape[:2]
-        mid_row,mid_col = H // 2, W // 2
+        H, W = img.shape[:2]
+        mid_row, mid_col = H // 2, W // 2
         imgs_quater = np.stack([
-            img[:mid_row,:mid_col], # tl
-            img[:mid_row,mid_col:], # tr
-            img[mid_row:,:mid_col], # bl
-            img[mid_row:,mid_col:], # br
-        ],axis=0)
+            img[:mid_row, :mid_col],  # tl
+            img[:mid_row, mid_col:],  # tr
+            img[mid_row:, :mid_col],  # bl
+            img[mid_row:, mid_col:],  # br
+        ], axis=0)
         
         confs = self.conf_head.pred(imgs_quater)
         
-        conf_full = np.zeros((H,W),dtype=np.float32)
-        conf_full[:mid_row,:mid_col] = confs[0]
-        conf_full[:mid_row,mid_col:] = confs[1]
-        conf_full[mid_row:,:mid_col] = confs[2]
-        conf_full[mid_row:,mid_col:] = confs[3]
+        conf_full = np.zeros((H, W), dtype=np.float32)
+        conf_full[:mid_row, :mid_col] = confs[0]
+        conf_full[:mid_row, mid_col:] = confs[1]
+        conf_full[mid_row:, :mid_col] = confs[2]
+        conf_full[mid_row:, mid_col:] = confs[3]
 
         return conf_full
-
 
 
 # ==========================================
@@ -71,7 +110,7 @@ class ImageRegistrar:
         self.matcher = self._load_casp_model(args.config_path, args.casp_weights)
         
         # 初始化置信度预测模型
-        self.conf_predictor = ConfPred(args.dino_weights,args.conf_head_weights,args.device)
+        self.conf_predictor = ConfPred(args.dino_weights, args.conf_head_weights, args.device)
 
         # 定义尺寸参数
         self.original_h, self.original_w = 3000, 3000
@@ -147,8 +186,8 @@ class ImageRegistrar:
              conf_map = cv2.resize(conf_map, (self.resample_w, self.resample_h), interpolation=cv2.INTER_NEAREST)
         
         if img_orig.ndim == 2:
-            img_orig = img_orig[:,:,None]
-            img_resampled = img_resampled[:,:,None]
+            img_orig = img_orig[:, :, None]
+            img_resampled = img_resampled[:, :, None]
 
         return img_orig, img_resampled, conf_map
 
@@ -280,11 +319,31 @@ class ImageRegistrar:
             # 对原始 3000*3000 图像应用变换
             warped_img = cv2.warpPerspective(tgt_orig, H, (self.original_w, self.original_h))
 
-            # 保存结果
+            # ---------------------------
+            # [新增功能] 1. 保存变换后的图像
+            # ---------------------------
             out_filename = f"registered_{i}.jpg"
             out_path = os.path.join(output_dir, out_filename)
             cv2.imwrite(out_path, cv2.cvtColor(warped_img, cv2.COLOR_RGB2BGR))
             print(f"  > Saved registered image: {out_path}")
+
+            # ---------------------------
+            # [新增功能] 2. 保存变换矩阵 H
+            # ---------------------------
+            matrix_filename = f"transform_matrix_{i}.txt"
+            matrix_path = os.path.join(output_dir, matrix_filename)
+            # 使用 fmt='%.8f' 保证精度
+            np.savetxt(matrix_path, H, fmt='%.3e', header=f"Homography Matrix for Image {i} -> Ref Image", footer="")
+            print(f"  > Saved transformation matrix: {matrix_path}")
+
+            # ---------------------------
+            # [新增功能] 3. 生成并保存棋盘格对比图
+            # ---------------------------
+            checkerboard_img = create_checkerboard_overlay(ref_orig, warped_img, grid_size=200)
+            checkerboard_filename = f"checkerboard_{i}.jpg"
+            checkerboard_path = os.path.join(output_dir, checkerboard_filename)
+            cv2.imwrite(checkerboard_path, cv2.cvtColor(checkerboard_img, cv2.COLOR_RGB2BGR))
+            print(f"  > Saved checkerboard overlay: {checkerboard_path}")
 
 
 # ==========================================
@@ -293,21 +352,20 @@ class ImageRegistrar:
 def main():
     parser = argparse.ArgumentParser(description="CasP Image Registration Pipeline")
     parser.add_argument("--dataset_path", type=str, required=True)
-    parser.add_argument("--key",type=str,default=None)
+    parser.add_argument("--key", type=str, default=None)
     parser.add_argument("--output_path", type=str, default="tmp/output_registration", help="结果输出路径")
     parser.add_argument("--config_path", type=str, default="preprocess/CasP/configs/model/net/casp.yaml", help="CasP 配置文件路径")
     parser.add_argument("--casp_weights", type=str, default="preprocess/CasP/weights/casp_outdoor.pth", help="CasP 权重文件路径")
     parser.add_argument("--dino_weights", type=str, default="weights")
     parser.add_argument("--conf_head_weights", type=str, default="weights")
-    parser.add_argument("--device",type=str,default='cuda')
+    parser.add_argument("--device", type=str, default='cuda')
 
     args = parser.parse_args()
 
-
-    database = h5py.File(args.dataset_path,'r')
+    database = h5py.File(args.dataset_path, 'r')
     key = args.key
     if key is None:
-        key = str(np.random.randint(0,len(database.keys())))
+        key = str(np.random.randint(0, len(database.keys())))
     
     img_num = len(database[key]['images'])
     imgs = [database[key]['images'][f"image_{i}"][:] for i in range(img_num)]
