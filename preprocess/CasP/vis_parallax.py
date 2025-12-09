@@ -44,6 +44,34 @@ def apply_colormap_to_parallax(parallax_map:np.ndarray, cmap_name='RdYlGn_r'):
     
     return heatmap
 
+def apply_binary_colormap_to_parallax(parallax_map):
+    """
+    将视差图转换为二值可视化图
+    Args:
+        parallax_map: (H, W) float32
+    Returns:
+        heatmap: (H, W, 3) uint8 BGR (for OpenCV)
+    """
+    # 1. 处理全 NaN 情况
+    if np.all(np.isnan(parallax_map)):
+        return np.zeros((*parallax_map.shape, 3), dtype=np.uint8)
+    
+    # 2. 计算中位数 (忽略 NaN)
+    median_val = np.nanmedian(parallax_map)
+    
+    # 3. 初始化输出图像 (默认黑色/背景色)
+    heatmap = np.zeros((*parallax_map.shape, 3), dtype=np.uint8)
+    
+    # 4. 赋值颜色 (BGR 格式)
+    # 大于中位数 -> 红色 (0, 0, 255)
+    # 小于等于中位数 -> 绿色 (0, 255, 0)
+    # 注意：比较时会自动处理 NaN (结果为 False)，所以 NaN 会保持黑色(如果未填充)
+    # 在当前 pipeline 中，NaN 通常已被填充为最大值，因此会变为红色
+    heatmap[parallax_map > median_val] = [0, 0, 255]      # Red
+    heatmap[parallax_map <= median_val] = [0, 255, 0]     # Green
+    
+    return heatmap
+
 class ParallaxVisualizer:
     def __init__(self, args):
         self.dataset_path = args.dataset_path
@@ -132,7 +160,7 @@ class ParallaxVisualizer:
         upsampled = upsampled_padded[:H, :W]
         
         # --- 步骤 5: 生成热力图并叠加 ---
-        heatmap = apply_colormap_to_parallax(upsampled, cmap_name='RdYlGn_r')
+        heatmap = apply_binary_colormap_to_parallax(upsampled, cmap_name='RdYlGn_r')
         
         # 准备底图 (转为 BGR)
         if img.ndim == 2:
