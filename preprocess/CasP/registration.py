@@ -25,7 +25,7 @@ class ConfPred:
         """
         初始化置信度预测模型。
         """
-        print("[ConfPred] Initializing Confidence Prediction Model...")
+        # print("[ConfPred] Initializing Confidence Prediction Model...")
         self.conf_head = ConfHead(dino_weight_path)
         self.conf_head.load_head(conf_head_path)
         self.conf_head = self.conf_head.to(device)
@@ -67,10 +67,10 @@ class ImageRegistrar:
     def __init__(self, args):
         self.args = args
         self.device = args.device if torch.cuda.is_available() else 'cpu'
-        print(f"[Registrar] Using device: {self.device}")
+        # print(f"[Registrar] Using device: {self.device}")
 
         self.transform_type = args.transform_type
-        print(f"[Registrar] Transformation Type: {self.transform_type}")
+        # print(f"[Registrar] Transformation Type: {self.transform_type}")
 
         # 加载 CasP 模型
         self.matcher = self._load_casp_model(args.config_path, args.casp_weights)
@@ -138,7 +138,7 @@ class ImageRegistrar:
 
         # 确保原始尺寸一致 (容错处理)
         if img_orig.shape[0] != self.original_h or img_orig.shape[1] != self.original_w:
-            print(f"  [Warn] Image size {img_orig.shape[:2]} != (3000, 3000). Resizing original.")
+            # print(f"  [Warn] Image size {img_orig.shape[:2]} != (3000, 3000). Resizing original.")
             img_orig = cv2.resize(img_orig, (self.original_w, self.original_h))
 
         # 1. 重采样为 3456*3456
@@ -218,7 +218,7 @@ class ImageRegistrar:
         # Step 1: 处理基准图像 (img_0)
         # ---------------------------
         ref_img = imgs[0]
-        print(f"Processing Reference Image (index 0)")
+        # print(f"Processing Reference Image (index 0)")
         ref_orig, ref_resampled, ref_conf = self.preprocess_image(ref_img)
         
         # 保存基准图像作为参考
@@ -234,15 +234,15 @@ class ImageRegistrar:
 
         for i in range(1, len(imgs)):
             tgt_img = imgs[i]
-            print(f"\nRegistering Image {i}/{len(imgs)-1}...")
+            # print(f"\nRegistering Image {i}/{len(imgs)-1}...")
 
             # 1. 预处理
             tgt_orig, tgt_resampled, tgt_conf = self.preprocess_image(tgt_img)
 
             # 2. 分块 CasP 匹配 (在 3456 尺度下)
-            print("  > Running 3x3 block matching...")
+            # print("  > Running 3x3 block matching...")
             pts0_3456, pts1_3456 = self.match_blocks(ref_resampled, tgt_resampled)
-            print(f"  > Found {len(pts0_3456)} raw matches.")
+            # print(f"  > Found {len(pts0_3456)} raw matches.")
 
             if len(pts0_3456) == 0:
                 print("  [Error] No matches found. Skipping.")
@@ -266,7 +266,7 @@ class ImageRegistrar:
             
             pts0_filtered = pts0_3456[valid_mask]
             pts1_filtered = pts1_3456[valid_mask]
-            print(f"  > {len(pts0_filtered)} matches remaining after confidence filtering.")
+            # print(f"  > {len(pts0_filtered)} matches remaining after confidence filtering.")
 
             if len(pts0_filtered) < 4:
                 print("  [Error] Not enough matches to estimate transformation. Skipping.")
