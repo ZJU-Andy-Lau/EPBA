@@ -145,6 +145,10 @@ class ImageRegistrar:
         # 确保置信度图尺寸正确
         if conf_map.shape[:2] != (self.resample_h, self.resample_w):
              conf_map = cv2.resize(conf_map, (self.resample_w, self.resample_h), interpolation=cv2.INTER_NEAREST)
+        
+        if img_orig.ndim == 2:
+            img_orig = img_orig[:,:,None]
+            img_resampled = img_resampled[:,:,None]
 
         return img_orig, img_resampled, conf_map
 
