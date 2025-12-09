@@ -277,13 +277,13 @@ class ImageRegistrar:
             # 我们需要将 img_i (pts1) 变换到 img_0 (pts0)
             if self.transform_type == 'H':
                 # 单应变换 (3x3 Matrix)
-                H, mask = cv2.findHomography(pts1_3000, pts0_3000, cv2.RANSAC, 2.0)
+                H, mask = cv2.findHomography(pts1_3000, pts0_3000, cv2.RANSAC, ransacReprojThreshold=self.args.ransac_threshold)
                 if H is not None:
                     warped_img = cv2.warpPerspective(tgt_orig, H, (self.original_w, self.original_h))
                     
             elif self.transform_type == 'A':
                 # 仿射变换 (2x3 Matrix)
-                H, mask = cv2.estimateAffine2D(pts1_3000, pts0_3000, method=cv2.RANSAC, ransacReprojThreshold=2.0)
+                H, mask = cv2.estimateAffine2D(pts1_3000, pts0_3000, method=cv2.RANSAC, ransacReprojThreshold=self.args.ransac_threshold)
                 if H is not None:
                     warped_img = cv2.warpAffine(tgt_orig, H, (self.original_w, self.original_h))
 
@@ -331,6 +331,7 @@ def main():
     parser.add_argument("--transform_type", type=str, default='H', choices=['H', 'A'],
                         help="Transformation model to use: 'homography' (3x3) or 'affine' (2x3)")
     parser.add_argument("--conf_threshold",type=float,default=0.5)
+    parser.add_argument("--ransac_threshold",type=int,default=1)
 
     args = parser.parse_args()
 
@@ -339,7 +340,7 @@ def main():
     if key is None:
         key = str(np.random.randint(0, len(database.keys())))
     
-    args.output_path = os.path.join(args.output_path,key)
+    args.output_path = os.path.join(args.output_path,f"{key}_{args.conf_threshold}_{args.ransac_threshold}")
     
     img_num = len(database[key]['images'])
     imgs = [database[key]['images'][f"image_{i}"][:] for i in range(img_num)]
