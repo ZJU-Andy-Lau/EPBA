@@ -64,6 +64,7 @@ class ConfPred:
 # ==========================================
 class ImageRegistrar:
     def __init__(self, args):
+        self.args = args
         self.device = args.device if torch.cuda.is_available() else 'cpu'
         print(f"[Registrar] Using device: {self.device}")
 
@@ -252,7 +253,7 @@ class ImageRegistrar:
                 x1, y1 = np.clip(pts1_3456[k], [0, 0], [w_conf-1, h_conf-1]).astype(int)
                 
                 # 检查两个对应点的置信度是否都 > 0.5
-                if ref_conf[y0, x0] > 0.5 and tgt_conf[y1, x1] > 0.5:
+                if ref_conf[y0, x0] > self.args.conf_threshold and tgt_conf[y1, x1] > self.args.conf_threshold:
                     valid_mask.append(True)
                 else:
                     valid_mask.append(False)
@@ -329,6 +330,7 @@ def main():
     parser.add_argument("--device", type=str, default='cuda')
     parser.add_argument("--transform_type", type=str, default='H', choices=['H', 'A'],
                         help="Transformation model to use: 'homography' (3x3) or 'affine' (2x3)")
+    parser.add_argument("--conf_threshold",type=float,default=0.5)
 
     args = parser.parse_args()
 
