@@ -45,7 +45,7 @@ def apply_colormap_to_parallax(parallax_map, cmap_name='RdYlGn_r'):
 
 class ParallaxVisualizer:
     def __init__(self, args):
-        self.h5_path = args.h5_path
+        self.dataset_path = args.dataset_path
         self.dataset_key = args.dataset_key
         self.output_dir = args.output_dir
         self.k = args.window_size
@@ -56,10 +56,10 @@ class ParallaxVisualizer:
 
     def process_dataset(self):
         """主处理循环"""
-        if not os.path.exists(self.h5_path):
-            raise FileNotFoundError(f"H5 file not found: {self.h5_path}")
+        if not os.path.exists(self.dataset_path):
+            raise FileNotFoundError(f"H5 file not found: {self.dataset_path}")
 
-        with h5py.File(self.h5_path, 'r') as f:
+        with h5py.File(self.dataset_path, 'r') as f:
             if self.dataset_key not in f:
                 raise KeyError(f"Dataset key '{self.dataset_key}' not found in H5 file.")
             
