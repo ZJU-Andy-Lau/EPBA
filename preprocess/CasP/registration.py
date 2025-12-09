@@ -361,7 +361,7 @@ def main():
         warped_imgs = registrar.process_registration(imgs, args.output_path, key)
 
         for i in range(1,img_num):
-            database[key]['images'][str(i)][:] = warped_imgs[i]
+            database[key]['images'][str(i)][:] = warped_imgs[i-1]
 
 if __name__ == "__main__":
     main()
