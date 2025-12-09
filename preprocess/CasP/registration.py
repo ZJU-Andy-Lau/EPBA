@@ -306,15 +306,8 @@ class ImageRegistrar:
             # ---------------------------
             # [新增功能] 3. 生成并保存棋盘格对比图
             # ---------------------------
-            ref = ref_orig[:,:,0]
-            print(ref.shape,ref.dtype)
-            print(ref[:10,:10])
-            print(warped_img.shape,warped_img.dtype)
-            print(warped_img[:10,:10])
-            
+            ref = ref_orig[:,:,0]            
             checkerboard_img = make_checkerboard(ref, warped_img, 15)
-            print(checkerboard_img.shape,checkerboard_img.dtype)
-            print(checkerboard_img[:10,:10])
             checkerboard_filename = f"checkerboard_{i}.jpg"
             checkerboard_path = os.path.join(output_dir, checkerboard_filename)
             cv2.imwrite(checkerboard_path, checkerboard_img)
