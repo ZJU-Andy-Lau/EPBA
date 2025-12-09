@@ -40,7 +40,7 @@ class ConfHead(nn.Module):
 
     @torch.no_grad()
     def pred(self,imgs:np.ndarray):
-        if imgs.ndim == 2:
+        if imgs.shape[-1] != 3:
             imgs = np.stack([imgs] * 3,axis=-1)
 
         if imgs.ndim == 3:

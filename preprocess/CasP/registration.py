@@ -306,7 +306,7 @@ def main():
         key = str(np.random.randint(0,len(database.keys())))
     
     img_num = len(database[key]['images'])
-    imgs = [np.stack([database[key]['images'][f"image_{i}"][:]] * 3,axis=-1) for i in range(img_num)]
+    imgs = [database[key]['images'][f"image_{i}"][:] for i in range(img_num)]
 
     # 初始化配准器并运行
     registrar = ImageRegistrar(args)
