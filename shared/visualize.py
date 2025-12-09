@@ -70,6 +70,10 @@ def make_checkerboard(img1, img2, num_tiles=8):
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (W, H))
     
+    if img1.ndim == 2:
+        img1 = np.stack([img1] * 3,axis=-1)
+        img2 = np.stack([img2] * 3,axis=-1)
+
     h_step = H // num_tiles
     w_step = W // num_tiles
     mask = np.zeros((H, W), dtype=np.uint8)
