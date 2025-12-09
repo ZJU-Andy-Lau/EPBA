@@ -67,6 +67,9 @@ class ImageRegistrar:
         self.device = args.device if torch.cuda.is_available() else 'cpu'
         print(f"[Registrar] Using device: {self.device}")
 
+        self.transform_type = args.transform_type
+        print(f"[Registrar] Transformation Type: {self.transform_type}")
+
         # 加载 CasP 模型
         self.matcher = self._load_casp_model(args.config_path, args.casp_weights)
         
@@ -271,14 +274,17 @@ class ImageRegistrar:
 
             # 5. 估计变换矩阵 (Homography) 并变换
             # 我们需要将 img_i (pts1) 变换到 img_0 (pts0)
-            H, mask = cv2.findHomography(pts1_3000, pts0_3000, cv2.RANSAC, 5.0)
-
-            if H is None:
-                print("  [Error] Homography estimation failed.")
-                continue
-
-            # 对原始 3000*3000 图像应用变换
-            warped_img = cv2.warpPerspective(tgt_orig, H, (self.original_w, self.original_h))
+            if self.transform_type == 'H':
+                # 单应变换 (3x3 Matrix)
+                H, mask = cv2.findHomography(pts1_3000, pts0_3000, cv2.RANSAC, 2.0)
+                if H is not None:
+                    warped_img = cv2.warpPerspective(tgt_orig, H, (self.original_w, self.original_h))
+                    
+            elif self.transform_type == 'A':
+                # 仿射变换 (2x3 Matrix)
+                H, mask = cv2.estimateAffine2D(pts1_3000, pts0_3000, method=cv2.RANSAC, ransacReprojThreshold=2.0)
+                if H is not None:
+                    warped_img = cv2.warpAffine(tgt_orig, H, (self.original_w, self.original_h))
 
             # ---------------------------
             # [新增功能] 1. 保存变换后的图像
@@ -328,6 +334,8 @@ def main():
     parser.add_argument("--dino_weights", type=str, default="weights")
     parser.add_argument("--conf_head_weights", type=str, default="weights")
     parser.add_argument("--device", type=str, default='cuda')
+    parser.add_argument("--transform_type", type=str, default='H', choices=['H', 'A'],
+                        help="Transformation model to use: 'homography' (3x3) or 'affine' (2x3)")
 
     args = parser.parse_args()
 
