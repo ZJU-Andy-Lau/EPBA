@@ -343,7 +343,7 @@ def main():
     args.output_path = os.path.join(args.output_path,f"{key}_{args.transform_type}_{args.conf_threshold}_{args.ransac_threshold}")
     
     img_num = len(database[key]['images'])
-    imgs = [database[key]['images'][f"image_{i}"][:] for i in range(img_num)]
+    imgs = [database[key]['images'][f"{i}"][:] for i in range(img_num)]
 
     # 初始化配准器并运行
     registrar = ImageRegistrar(args)
