@@ -160,7 +160,8 @@ class ParallaxVisualizer:
         upsampled = upsampled_padded[:H, :W]
         
         # --- 步骤 5: 生成热力图并叠加 ---
-        heatmap = apply_binary_colormap_to_parallax(upsampled, cmap_name='RdYlGn_r')
+        # heatmap = apply_colormap_to_parallax(upsampled, cmap_name='RdYlGn_r')
+        heatmap = apply_binary_colormap_to_parallax(upsampled)
         
         # 准备底图 (转为 BGR)
         if img.ndim == 2:
