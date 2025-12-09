@@ -289,7 +289,7 @@ def main():
     parser.add_argument("--dataset_path", type=str, required=True)
     parser.add_argument("--key",type=str,default=None)
     parser.add_argument("--output_path", type=str, default="tmp/output_registration", help="结果输出路径")
-    parser.add_argument("--config", type=str, default="preprocess/CasP/configs/model/net/casp.yaml", help="CasP 配置文件路径")
+    parser.add_argument("--config_path", type=str, default="preprocess/CasP/configs/model/net/casp.yaml", help="CasP 配置文件路径")
     parser.add_argument("--casp_weights", type=str, default="preprocess/CasP/weights/casp_outdoor.pth", help="CasP 权重文件路径")
     parser.add_argument("--dino_weights", type=str, default="weights")
     parser.add_argument("--conf_head_weights", type=str, default="weights")
