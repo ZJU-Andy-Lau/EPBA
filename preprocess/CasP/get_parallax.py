@@ -362,8 +362,8 @@ def main():
     
     parser = argparse.ArgumentParser(description="Multi-GPU Parallax Generation for HDF5")
     parser.add_argument("--dataset_path", type=str, required=True, help="Path to HDF5 file")
-    parser.add_argument("--config_path", type=str, default="configs/model/net/casp.yaml")
-    parser.add_argument("--weights_path", type=str, default="weights/casp_outdoor.pth")
+    parser.add_argument("--config_path", type=str, default="preprocess/CasP/configs/model/net/casp.yaml")
+    parser.add_argument("--weights_path", type=str, default="preprocess/CasP/weights/casp_outdoor.pth")
     parser.add_argument("--window_size", type=int, default=1152)
     
     args = parser.parse_args()
