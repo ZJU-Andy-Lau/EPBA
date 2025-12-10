@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import merge_affine
+from .utils import merge_affine
 
 class ConsistLoss(nn.Module):
     def __init__(self, img_size, grid_stride=32, decay_rate=0.8, device='cuda'):

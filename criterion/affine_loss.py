@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import merge_affine
+from .utils import merge_affine
 
 class AffineLoss(nn.Module):
     def __init__(self, img_size, grid_stride=64, decay_rate=0.8, reg_weight=1e-3, device='cuda'):
