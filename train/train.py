@@ -375,7 +375,7 @@ def main(args):
                     # 2. Training Input (Misaligned)
                     # 这里的 "Training Input" 展示原始的小图
                     img_a_misaligned = visualizer.warp_image_by_global_affine(
-                        img_a_np, H_a_rc, H_b_rc, np.array([1.0,0.0,0.0],[0.0,1.0,0.0]), target_wh
+                        img_a_np, H_a_rc, H_b_rc, np.array([[1.0,0.0,0.0],[0.0,1.0,0.0]]), target_wh
                     )
                     strip_input = visualizer.vis_registration_strip(img_a_misaligned, img_b_np, "Training Input (Raw Crops)")
                     logger.add_image('Visual_Adv/A2_Training_Input', strip_input, epoch, dataformats='HWC')
