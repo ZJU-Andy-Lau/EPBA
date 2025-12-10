@@ -26,6 +26,10 @@ class Loss(nn.Module):
         self.ctx_loss = CtxLoss()
     
     def forward(self,input, return_details=False): # [修改] 增加 return_details 参数
+        epoch = input['epoch']
+        max_epoch = min(input['max_epoch'],100.)
+        progress = 1.0 * epoch / max_epoch
+
         match_feats_1, _, confs_1 = input['feats_1']
         match_feats_2, _, confs_2 = input['feats_2']
 
@@ -73,7 +77,7 @@ class Loss(nn.Module):
         loss_ctx_2 = self.ctx_loss(input['imgs_pred_2'],input['imgs_2'])
         loss_ctx = .5 * loss_ctx_1 + .5 * loss_ctx_2
         
-        loss = loss_sim + loss_conf + loss_affine + loss_consist * 0. + loss_ctx
+        loss = loss_sim + loss_conf + loss_affine + loss_consist * progress + loss_ctx
         loss_details = {
             'loss':loss.clone().detach(),
             'loss_sim':loss_sim.clone().detach(),

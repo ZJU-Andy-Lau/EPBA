@@ -145,6 +145,8 @@ def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,l
     preds_ba = windowsolver.solve(flag = 'ba')
 
     loss_input = {
+        'epoch':epoch,
+        'max_epoch':args.max_epoch,
         'imgs_1':imgs1_label,
         'imgs_2':imgs2_label,
         'feats_1':feats_1,
