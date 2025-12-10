@@ -90,23 +90,119 @@ class WindowSolver():
         max_extent = torch.maximum(row_span, col_span)
 
         return max_extent
+    
+    def calculate_current_centroid(self, B, H, W, Hs, Ms) -> torch.Tensor:
+        """
+        [新增] 计算当前仿射状态下，小图对应的大图四边形的质心 (O_loc)。
+        
+        Args:
+            Hs: (B, 3, 3) 初始单应性矩阵 (Img -> Big) 的逆矩阵?
+                correct logic: P_big = Hs^{-1} * P_img
+                所以 Hs 应该是 Img -> Big? 
+                如果是 calculate_original_extent 中的逻辑，Hs_inv 用于 Img -> Big
+        Returns:
+            centroid: (B, 2) [row, col]
+        """
+        device = self.device
+        dtype = Ms.dtype
+        
+        Hs_inv = torch.linalg.inv(Hs)
+        
+        # 1. 原始小图的四个角点
+        corners_row = [0.0, 0.0, float(H), float(H)]
+        corners_col = [0.0, float(W), float(W), 0.0]
+        ones = torch.ones(4, dtype=dtype, device=device)
+        rows = torch.tensor(corners_row, dtype=dtype, device=device)
+        cols = torch.tensor(corners_col, dtype=dtype, device=device)
+        corners_homo = torch.stack([rows, cols, ones], dim=0) # (3, 4)
+        corners_batch = corners_homo.unsqueeze(0).expand(B, -1, -1) # (B, 3, 4)
+        
+        # 2. 变换到大图坐标系 (Reference Domain)
+        # P_big = Hs^{-1} * P_img
+        p_big_homo = torch.bmm(Hs_inv, corners_batch) # (B, 3, 4)
+        
+        # [修改] 显式处理齐次坐标，转换为 (B, N, 2) 格式供 apply_M 使用
+        eps = 1e-7
+        w = p_big_homo[:, 2:3, :]
+        p_big = p_big_homo[:, :2, :] / (w + eps) # (B, 2, 4)
+        p_big = p_big.permute(0, 2, 1) # (B, 4, 2)
+        
+        # 3. 应用当前的仿射变换 M
+        p_curr = self.apply_M(p_big, Ms, device=device) # (B, 4, 2)
+        
+        # 4. 计算质心
+        centroid = p_curr.mean(dim=1) # (B, 2)
+        
+        return centroid
+
+    def get_position_features(self, coords, centroid, norm_factor):
+        """
+        [新增] 生成相对位置编码特征。
+        
+        Args:
+            coords: (B, h, w, 2) 当前特征图网格点在大图中的坐标
+            centroid: (B, 2) 当前局部原点 O_loc
+            norm_factor: (B,) 归一化因子
+        Returns:
+            pos_features: (B, 2, h, w)
+        """
+        B, h, w, _ = coords.shape
+        
+        # 扩展 centroid: (B, 2) -> (B, 1, 1, 2)
+        centroid_expanded = centroid.view(B, 1, 1, 2)
+        
+        # 计算相对位移
+        diff = coords - centroid_expanded
+        
+        # 归一化
+        norm_factor_expanded = norm_factor.view(B, 1, 1, 1)
+        pos_norm = diff / (norm_factor_expanded + 1e-7)
+        
+        # 调整维度 (B, h, w, 2) -> (B, 2, h, w)
+        pos_features = pos_norm.permute(0, 3, 1, 2)
+        
+        return pos_features
+
+    def convert_local_to_global(self, delta_local, centroid, norm_factor):
+        """
+        [新增] 将 GRU 预测的局部仿射增量转换为全局仿射增量。
+        
+        Args:
+            delta_local: (B, 2, 3) GRU 输出 [A_loc | t_loc_norm]
+            centroid: (B, 2) 局部原点 O_loc
+            norm_factor: (B,)
+        Returns:
+            delta_global: (B, 2, 3) [A_glob | t_glob]
+        """
+        B = delta_local.shape[0]
+        device = delta_local.device
+        
+        # 1. 分解局部参数
+        A_loc = delta_local[:, :, :2] # (B, 2, 2)
+        
+        # 注意：GRU 输出的 t 是经过 coord_norm_inv 处理后的物理尺度吗？
+        # 在 solve 循环里，我们在调用此函数前，会先执行 coord_norm_inv。
+        # 所以这里的 t_loc 应该是物理尺度的。
+        t_loc = delta_local[:, :, 2] # (B, 2)
+        
+        # 2. 计算全局平移补偿
+        # 公式: t_glob = t_loc + (I - A_loc) * O_loc
+        I = torch.eye(2, device=device).unsqueeze(0).expand(B, -1, -1)
+        
+        # (B, 2, 2) @ (B, 2, 1) -> (B, 2, 1)
+        diff_term = torch.bmm(I - A_loc, centroid.unsqueeze(-1)).squeeze(-1)
+        
+        t_glob = t_loc + diff_term # (B, 2)
+        
+        # 3. 组装全局增量
+        # A_glob = A_loc
+        delta_global = torch.cat([A_loc, t_glob.unsqueeze(-1)], dim=-1) # (B, 2, 3)
+        
+        return delta_global
         
     def sample_from_coords(self, Coords, Values, H, W, align_corners=True):
         """
         根据像素坐标从特征图中采样数值。
-        
-        参数:
-            Coords: (B, N, 2) tensor, 记录了 (row, col) 格式的坐标。
-                    坐标是相对于原始尺寸 (H, W) 的。
-            Values: (B, h, w) tensor, 被采样的特征图/数值图。
-            H: int, 原始图像高度。
-            W: int, 原始图像宽度。
-            align_corners: bool, grid_sample 的参数。
-                        默认为 True，意味着坐标会被归一化使得 -1 指向像素中心还是边缘。
-                        通常对于像素精确坐标，使用 True (映射 0 -> -1, size-1 -> 1)。
-        
-        返回:
-            Samples: (B, N) tensor, 采样后的结果。
         """
         features = Values.unsqueeze(1) #(B, h, w) -> (B, 1, h, w)
 
@@ -241,15 +337,9 @@ class WindowSolver():
         return imgs_a,sampled_img     
 
             
-
-
-
-
-
     def prepare_data(self,cost_volume:CostVolume,Hs_1:torch.Tensor,Hs_2:torch.Tensor,Ms:torch.Tensor,norm_factor:torch.Tensor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None,height:torch.Tensor = None):
         """
-
-        height: B,h,w
+        [修改] 返回值增加 anchor_coords_in_big_1_af (用于位置编码)
         """
         anchor_coords_in_1 = self._get_coord_mat(self.h,self.w,self.B,ds=16,device=self.device) # (B,h,w,2)
         anchor_coords_in_1_flat = anchor_coords_in_1.flatten(1,2) # B,h*w,2
@@ -291,10 +381,8 @@ class WindowSolver():
         corr_offset = corr_offset.flatten(3,4).permute(0,3,1,2) # (B,N*2,h,w)
         corr_offset = self.coord_norm(corr_offset,norm_factor) # 将offset进行归一化
 
-        # check_invalid_tensors([anchor_coords_in_1,anchor_coords_in_big_1_flat,anchor_coords_in_big_1_flat_af,anchor_coords_in_big_1_af,anchor_lines_in_big_2,anchor_coords_in_big_2_flat,anchor_coords_in_2_flat,
-        #                        corr_simi,corr_coords,corr_coords_in_big_2_flat,corr_heights,corr_coords_in_big_1_flat,corr_offset],"[prepare data]: ")
-
-        return corr_simi,corr_offset
+        # [修改] 返回 anchor_coords_in_big_1_af
+        return corr_simi, corr_offset, anchor_coords_in_big_1_af
 
     def solve(self,flag = 'ab',final_only = False, return_vis=False):
         """
@@ -307,7 +395,18 @@ class WindowSolver():
         for iter in range(self.gru_max_iter):
             # 计算a->b的仿射
             if flag == 'ab':
-                corr_simi_ab,corr_offset_ab = self.prepare_data(self.cost_volume_ab,self.H_as,self.H_bs,self.Ms_a_b,self.norm_factors_a,self.rpc_a,self.rpc_b,self.height_ds)
+                # 1. 准备数据 (接收新增的 anchor_coords)
+                corr_simi_ab, corr_offset_ab, anchor_coords_ab = self.prepare_data(
+                    self.cost_volume_ab, self.H_as, self.H_bs, self.Ms_a_b, 
+                    self.norm_factors_a, self.rpc_a, self.rpc_b, self.height_ds
+                )
+                
+                # 2. 计算当前局部原点 (O_loc)
+                centroid_ab = self.calculate_current_centroid(self.B, self.H, self.W, self.H_as, self.Ms_a_b)
+                
+                # 3. 生成位置特征
+                pos_features_ab = self.get_position_features(anchor_coords_ab, centroid_ab, self.norm_factors_a)
+
                 if return_vis and iter == 0:
                     vis_dict = vis_pyramid_correlation(
                         corr_simi_ab, 
@@ -317,30 +416,62 @@ class WindowSolver():
                         radius=self.gru_access.corr_radius
                     )
 
-                delta_affines_ab, hidden_state = self.gru(corr_simi_ab,
-                                                          corr_offset_ab,
-                                                          self.ctx_feats_a,
-                                                          self.confs_a.detach(),
-                                                          hidden_state)
+                # 4. GRU 预测局部仿射 (输入新增 pos_features)
+                delta_affines_local, hidden_state = self.gru(
+                    corr_simi_ab,
+                    corr_offset_ab,
+                    self.ctx_feats_a,
+                    pos_features_ab, # [新增]
+                    self.confs_a.detach(),
+                    hidden_state
+                )
                 
-                delta_affines_ab[...,2] = self.coord_norm_inv(delta_affines_ab[...,2] , self.norm_factors_a)
-                preds.append(delta_affines_ab)
-                self.Ms_a_b = self.merge_M(self.Ms_a_b,delta_affines_ab)
-                # check_invalid_tensors([corr_simi_ab,corr_offset_ab,self.norm_factors_a,delta_affines_ab,hidden_state,self.Ms_a_b],f"[solve gru iter {iter}]: ")
+                # 5. 反归一化局部平移 (恢复物理尺度)
+                delta_affines_local[...,2] = self.coord_norm_inv(delta_affines_local[...,2] , self.norm_factors_a)
+                
+                # 6. 将局部仿射增量转换为全局增量
+                delta_affines_global = self.convert_local_to_global(delta_affines_local, centroid_ab, self.norm_factors_a)
+                
+                preds.append(delta_affines_global)
+                
+                # 7. 更新全局状态
+                self.Ms_a_b = self.merge_M(self.Ms_a_b, delta_affines_global)
 
 
             # 计算b->a的仿射
             if flag == 'ba':
-                corr_simi_ba,corr_offset_ba = self.prepare_data(self.cost_volume_ba,self.H_bs,self.H_as,self.Ms_b_a,self.norm_factors_b,self.rpc_b,self.rpc_a,self.height_ds)
-                delta_affines_ba, hidden_state = self.gru(corr_simi_ba,
-                                                          corr_offset_ba,
-                                                          self.ctx_feats_b,
-                                                          self.confs_b.detach(),
-                                                          hidden_state)
+                # 1. 准备数据
+                corr_simi_ba, corr_offset_ba, anchor_coords_ba = self.prepare_data(
+                    self.cost_volume_ba, self.H_bs, self.H_as, self.Ms_b_a, 
+                    self.norm_factors_b, self.rpc_b, self.rpc_a, self.height_ds
+                )
                 
-                delta_affines_ba[...,2] = self.coord_norm_inv(delta_affines_ba[...,2] , self.norm_factors_b)
-                preds.append(delta_affines_ba)
-                self.Ms_b_a = self.merge_M(self.Ms_b_a,delta_affines_ba)
+                # 2. 计算当前局部原点
+                centroid_ba = self.calculate_current_centroid(self.B, self.H, self.W, self.H_bs, self.Ms_b_a)
+                
+                # 3. 生成位置特征
+                pos_features_ba = self.get_position_features(anchor_coords_ba, centroid_ba, self.norm_factors_b)
+
+                # 4. GRU 预测
+                delta_affines_local, hidden_state = self.gru(
+                    corr_simi_ba,
+                    corr_offset_ba,
+                    self.ctx_feats_b,
+                    pos_features_ba, # [新增]
+                    self.confs_b.detach(),
+                    hidden_state
+                )
+                
+                # 5. 反归一化
+                delta_affines_local[...,2] = self.coord_norm_inv(delta_affines_local[...,2] , self.norm_factors_b)
+                
+                # 6. 转换全局
+                delta_affines_global = self.convert_local_to_global(delta_affines_local, centroid_ba, self.norm_factors_b)
+                
+                preds.append(delta_affines_global)
+                
+                # 7. 更新全局状态
+                self.Ms_b_a = self.merge_M(self.Ms_b_a, delta_affines_global)
 
         preds = torch.stack(preds,dim=1)
 
@@ -364,6 +495,6 @@ class WindowSolver():
                 }
         
         if return_vis:
-            return preds, vis_dict # [修改] 返回元组
+            return preds, vis_dict
         else:
-            return preds        
+            return preds

@@ -28,14 +28,14 @@ class GRUBlock(nn.Module):
         # Correlation channels = levels * (2*r + 1)^2
         self.corr_dim = corr_levels * (2 * corr_radius + 1)**2
         
-        # [新增] Offset channels = Correlation channels * 2 (每个查表点对应 dy, dx)
+        # Offset channels = Correlation channels * 2 (每个查表点对应 dy, dx)
         self.offset_dim = self.corr_dim * 2
         
-        # self.flow_dim = 2  # u, v
+        # [修改] 新增 2 个通道用于位置编码 (d_row, d_col)
+        self.pos_dim = 2
         
-        # [修改] 总输入通道数: Corr + Offsets + Context + Flow
-        # 例如: 324 + 648 + 128 = 1100
-        input_dim = self.corr_dim + self.offset_dim + self.context_dim #+ self.flow_dim
+        # [修改] 总输入通道数: Corr + Offsets + Context + Pos
+        input_dim = self.corr_dim + self.offset_dim + self.context_dim + self.pos_dim
         
         # 2. 运动编码器 (Motion Encoder)
         # 将空间误差特征图压缩为全局误差向量
@@ -90,7 +90,7 @@ class GRUBlock(nn.Module):
         nn.init.normal_(self.head_linear.weight, mean=0.0, std=1e-3)
         nn.init.constant_(self.head_linear.bias, 0.0)
 
-    def forward(self, corr_features, corr_offsets, context_features, confidence_map, hidden_state):
+    def forward(self, corr_features, corr_offsets, context_features, pos_features, confidence_map, hidden_state):
         """
         前向传播
         
@@ -98,6 +98,7 @@ class GRUBlock(nn.Module):
             corr_features: [B, C_corr, H, W] - 相关性查表特征 (Values)
             corr_offsets:  [B, C_offset, H, W] - 相关性查表偏移 (Geometry)
             context_features: [B, 128, H, W] - 上下文特征
+            pos_features: [B, 2, H, W] - [新增] 相对局部原点的归一化位置特征 (d_row, d_col)
             confidence_map: [B, 1, H, W] - 置信度图 (0~1)
             hidden_state: [B, 128] - 上一时刻的 GRU 状态
             
@@ -109,14 +110,14 @@ class GRUBlock(nn.Module):
         
         # 1. 显式置信度门控 (Explicit Confidence Gating)
         # 利用置信度图抑制噪声区域的特征
-        # Flow 和 Offsets 代表客观几何信息，通常不进行 Masking，保留结构感知
+        # Flow, Offsets 和 Pos 代表客观几何信息，通常不进行 Masking，保留结构感知
         masked_corr = corr_features * confidence_map
         masked_ctx = context_features * confidence_map
         
         # 2. 特征拼接
-        # Input: [B, C_corr + C_offset + C_ctx, H, W]
-        # 将 masked_corr, corr_offsets, masked_ctx 在通道维度拼接
-        x = torch.cat([masked_corr, corr_offsets, masked_ctx], dim=1)
+        # Input: [B, C_corr + C_offset + C_ctx + C_pos, H, W]
+        # [修改] 加入 pos_features
+        x = torch.cat([masked_corr, corr_offsets, masked_ctx, pos_features], dim=1)
         
         # 3. 运动编码 (Motion Encoding)
         # CNN 下采样: [B, input_dim, H, W] -> [B, 128, H/8, W/8]
