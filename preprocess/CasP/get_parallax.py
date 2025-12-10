@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 import argparse
 import itertools
 import math
@@ -161,7 +163,7 @@ def worker_process(gpu_id, task_queue, args, temp_dir):
             except Empty:
                 break
             
-            # print(f"[GPU {gpu_id}] Processing: {dataset_key}")
+            print(f"[GPU {gpu_id}] Processing: {dataset_key}")
             
             # 2. 读取数据 (只读模式，支持并发)
             with h5py.File(args.dataset_path, 'r') as f:
