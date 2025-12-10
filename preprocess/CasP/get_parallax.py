@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 import argparse
 import itertools
 import math
@@ -16,6 +18,7 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 from tqdm import tqdm
+from shared.utils import get_current_time
 
 # 确保可以导入 src 模块
 sys.path.append(os.getcwd())
@@ -160,7 +163,7 @@ def worker_process(gpu_id, task_queue, args, temp_dir):
             except Empty:
                 break
             
-            # print(f"[GPU {gpu_id}] Processing: {dataset_key}")
+            print(f"[GPU {gpu_id}] Processing: {dataset_key}")
             
             # 2. 读取数据 (只读模式，支持并发)
             with h5py.File(args.dataset_path, 'r') as f:
@@ -259,7 +262,7 @@ def run_pipeline(args):
         print(f"Error: Dataset not found at {args.dataset_path}")
         return
 
-    temp_dir = os.path.join(os.path.dirname(args.dataset_path), "_temp_parallax_npy")
+    temp_dir = os.path.join(os.path.dirname(args.dataset_path), f"_temp_parallax_npy_{get_current_time()}")
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)

@@ -300,7 +300,7 @@ class TrainDataset(Dataset):
 
         self.database_keys = [list(self.database.keys())[i] for i in dataset_idxs]
         self.DOWNSAMPLE=downsample
-        self.img_size = self.database[self.database_keys[0]]['images']['image_0'][:].shape[0]
+        self.img_size = self.database[self.database_keys[0]]['images']['0'][:].shape[0]
         self.input_size = input_size
         self.batch_size = batch_size
         self.red_mids = []
@@ -327,7 +327,7 @@ class TrainDataset(Dataset):
         
 
     def get_train_images(self):
-        return [np.stack([self.database[key]['images']['image_0'][:]] * 3,axis=-1) for key in self.database_keys]
+        return [np.stack([self.database[key]['images']['0'][:]] * 3,axis=-1) for key in self.database_keys]
     
     def set_epoch(self, epoch):
         self.epoch = epoch
@@ -347,10 +347,10 @@ class TrainDataset(Dataset):
         # if idx1 == idx2:
         #     idx2 = (idx1 + 1) % img_num
 
-        image_1_full = self.database[key]['images'][f"image_{idx1}"][:]
-        image_2_full = self.database[key]['images'][f"image_{idx2}"][:]
-        residual_1_full = self.database[key]['residuals'][f"residual_{idx1}"][:]
-        residual_2_full = self.database[key]['residuals'][f"residual_{idx2}"][:]
+        image_1_full = self.database[key]['images'][f"{idx1}"][:]
+        image_2_full = self.database[key]['images'][f"{idx2}"][:]
+        residual_1_full = self.database[key]['parallax'][f"{idx1}"][:]
+        residual_2_full = self.database[key]['parallax'][f"{idx2}"][:]
 
         image_1_full = np.stack([image_1_full] * 3,axis=-1)
         image_2_full = np.stack([image_2_full] * 3,axis=-1)
