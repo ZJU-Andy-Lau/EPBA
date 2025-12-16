@@ -212,9 +212,9 @@ def report(args,Ms_pred:torch.Tensor,data):
         
         # 2.4 生成棋盘格 (Checkerboard)
         # 将 Warp 后的图 A 与 图 B 进行棋盘格混合
-        vis_raw = visualizer.make_checkerboard(img_a_raw_warp, img_b_vis, box_size=32)
-        vis_gt = visualizer.make_checkerboard(img_a_gt_warp, img_b_vis, box_size=32)
-        vis_pred = visualizer.make_checkerboard(img_a_pred_warp, img_b_vis, box_size=32)
+        vis_raw = visualizer.make_checkerboard(img_a_raw_warp, img_b_vis, num_tiles=8)
+        vis_gt = visualizer.make_checkerboard(img_a_gt_warp, img_b_vis, num_tiles=8)
+        vis_pred = visualizer.make_checkerboard(img_a_pred_warp, img_b_vis, num_tiles=8)
         
         # 2.5 保存图像
         # 路径结构: output_path/sample_{batch}_{i}/
