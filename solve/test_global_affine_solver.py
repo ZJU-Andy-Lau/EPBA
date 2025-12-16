@@ -165,7 +165,7 @@ if __name__ == "__main__":
     root = './datasets/wv_test_error_5/adjust_images'
     img_paths = os.listdir(root)
     images = [RSImage({},os.path.join(root,img_paths[i]),i,device='cuda') for i in range(len(img_paths))]
-    pair_results = {
+    pair_results = [
         {
             0:torch.tensor([
                 [1.0,-4.1168e-4,1.1089e+1],
@@ -195,6 +195,6 @@ if __name__ == "__main__":
                 [7.7898e-5,1.0002,-8.6371]
             ],device='cuda'),
         }
-    }
+    ]
     # print("Test script loaded. Use 'run_test_with_provided_data(images, pair_results)' to execute.")
     run_test_with_provided_data(images,pair_results)
