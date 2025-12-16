@@ -80,12 +80,14 @@ def load_data(args):
     Hs_b = torch.from_numpy(np.stack(Hs_b,axis=0)).to(device=args.device,dtype=torch.float32)
     Ms = torch.from_numpy(np.stack(Ms,axis=0)).to(device=args.device,dtype=torch.float32)
 
+    print("Data Loaded")
+
     return imgs_a,imgs_b,Hs_a,Hs_b,Ms
 
 def load_models(args):
     model_configs = load_config(args.model_config_path)
 
-    encoder = Encoder(dino_weight_path=args.dino_path,
+    encoder = Encoder(dino_weight_path=args.dino_weight_path,
                       embed_dim=model_configs['encoder']['embed_dim'],
                       ctx_dim=model_configs['encoder']['ctx_dim'])
     
