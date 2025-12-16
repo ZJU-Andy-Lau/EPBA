@@ -63,7 +63,8 @@ def evaluate_and_visualize(images: List[RSImage], Ms: torch.Tensor):
         '<3m_percent': float(((all_distances < 3.0).sum() / total_points) * 100),
         '<5m_percent': float(((all_distances < 5.0).sum() / total_points) * 100),
     }
-    print(report)
+    for key in report.keys():
+        print(f"{key}:{report[key]}")
     
 
 def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict]):
@@ -81,7 +82,7 @@ def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict])
     device = images[0].device
     
     # 实例化求解器
-    solver = GlobalAffineSolver(images, device=device)
+    solver = GlobalAffineSolver(images, device=device,anchor_indices=[1])
     
     # 求解
     Ms = solver.solve(pair_results)
