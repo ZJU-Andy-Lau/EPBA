@@ -69,11 +69,11 @@ def build_pairs(args,images:List[RSImage]) -> List[Pair]:
         'min_window_size':args.min_window_size,
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
-        'output_path':args.output_path,
     }
     pairs = []
     for i,j in itertools.combinations(range(images_num),2):
         if is_overlap(images[i],images[j],args.min_window_size ** 2):
+            configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
             pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
             pairs.append(pair)
     print(f"Totally {len(pairs)} Pairs")
