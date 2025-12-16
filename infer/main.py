@@ -146,6 +146,7 @@ def main(args):
     Ms = solve(args,pairs,encoder,gru)
     for image in images:
         M = Ms[image.id]
+        print(f"Affine Matrix of Image {image.id}\n{M}\n")
         image.rpc.Update_Adjust(M)
         image.rpc.Merge_Adjust()
     
