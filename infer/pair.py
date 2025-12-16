@@ -70,7 +70,7 @@ class Pair():
     
     def check_error(self):
         lines_i = self.rs_image_a.tie_points[:,0]
-        samps_i = self.rs_image_b.tie_points[:,1]
+        samps_i = self.rs_image_a.tie_points[:,1]
         heights_i = self.rs_image_a.dem[lines_i,samps_i]
         lats_i, lons_i = self.rs_image_a.rpc.RPC_PHOTO2OBJ(samps_i, lines_i, heights_i, 'numpy')
         coords_i = np.stack([lats_i, lons_i], axis=-1)
