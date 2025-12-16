@@ -5,12 +5,13 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from typing import List
-
+import itertools
 
 from global_affine_solver import GlobalAffineSolver
 
 # 为了测试方便，我们在这里定义辅助函数，实际运行时请确保您的环境中可以访问 RSImage 等类
 from infer.rs_image import RSImage
+from infer.utils import haversine_distance
 
 def apply_affine_torch(M, pts):
     # pts: (N, 2)
@@ -24,117 +25,46 @@ def get_heights_torch(img, pts):
     pts_np = pts.detach().cpu().numpy()
     return torch.from_numpy(img.dem_interp(pts_np)).float().to(pts.device)
 
-def evaluate_and_visualize(images: List[RSImage], pair_results: List[dict], Ms: torch.Tensor, output_dir: str):
-    """
-    对求解结果进行定量评估和可视化
-    """
-    os.makedirs(output_dir, exist_ok=True)
+def check_error(rs_image_a:RSImage,rs_image_b:RSImage):
+    lines_i = rs_image_a.tie_points[:,0]
+    samps_i = rs_image_a.tie_points[:,1]
+    heights_i = rs_image_a.dem[lines_i,samps_i]
+    lats_i, lons_i = rs_image_a.rpc.RPC_PHOTO2OBJ(samps_i, lines_i, heights_i, 'numpy')
+    coords_i = np.stack([lats_i, lons_i], axis=-1)
     
-    errors_before = []
-    errors_after = []
-    
-    print("Evaluating results...")
-    
-    # 随机选择一些锚点进行验证
-    grid_size = 5
-    
-    for pair_idx, pair in enumerate(pair_results):
-        ids = list(pair.keys())
-        id_i, id_j = int(ids[0]), int(ids[1])
-        
-        M_ij_net = pair[id_i] # 网络预测的相对变换 (i->j)
-        
-        M_i_opt = Ms[id_i] # 优化后的全局变换 i
-        M_j_opt = Ms[id_j] # 优化后的全局变换 j
-        
-        img_i = images[id_i]
-        img_j = images[id_j]
-        
-        # 生成测试点 (img_i 上的像素)
-        h, w = img_i.H, img_i.W
-        x = np.linspace(0, w-1, grid_size)
-        y = np.linspace(0, h-1, grid_size)
-        xx, yy = np.meshgrid(x, y)
-        pts_i = np.stack([xx.flatten(), yy.flatten()], axis=-1)
-        pts_i_tensor = torch.from_numpy(pts_i).float().to(img_i.device)
-        
-        # --- 计算误差 ---
-        
-        # 1. 目标真值 (Target): 基于网络预测的相对关系
-        # Target = Project(M_ij_net * P_i) -> projected to j
-        pts_i_prime_net = apply_affine_torch(M_ij_net, pts_i_tensor)
-        # 获取高程用于投影
-        heights = get_heights_torch(img_i, pts_i_tensor)
-        # 投影到 J
-        lats, lons = img_i.rpc.RPC_PHOTO2OBJ(pts_i_prime_net[:,0], pts_i_prime_net[:,1], heights)
-        samps_j_target, lines_j_target = img_j.rpc.RPC_OBJ2PHOTO(lats, lons, heights)
-        pts_j_target = torch.stack([samps_j_target, lines_j_target], dim=-1)
-        
-        # 2. 优化前 (Before): 直接投影 P_i 到 j (假设初始M=Identity)
-        lats_raw, lons_raw = img_i.rpc.RPC_PHOTO2OBJ(pts_i_tensor[:,0], pts_i_tensor[:,1], heights)
-        samps_j_raw, lines_j_raw = img_j.rpc.RPC_OBJ2PHOTO(lats_raw, lons_raw, heights)
-        pts_j_raw = torch.stack([samps_j_raw, lines_j_raw], dim=-1)
-        
-        # 3. 优化后 (After): 
-        # 我们验证方程的一致性: M_j_opt * Ideal_Target_in_J 是否接近 Project(M_i_opt * P_i)
-        # 这里的 Ideal_Target_in_J 实际上就是 P_j_target (未经过 M_j 修正的观测值)
-        # 我们的方程是 M_j * P_j_hat = Project(M_i * P_i)
-        
-        # Term 1: M_j_opt * pts_j_target
-        term1 = apply_affine_torch(M_j_opt, pts_j_target)
-        
-        # Term 2: Project(M_i_opt * P_i)
-        pts_i_opt = apply_affine_torch(M_i_opt, pts_i_tensor)
-        heights_opt = get_heights_torch(img_i, pts_i_opt) # 高程应该查新的位置
-        lats_opt, lons_opt = img_i.rpc.RPC_PHOTO2OBJ(pts_i_opt[:,0], pts_i_opt[:,1], heights_opt)
-        samps_j_opt, lines_j_opt = img_j.rpc.RPC_OBJ2PHOTO(lats_opt, lons_opt, heights_opt)
-        term2 = torch.stack([samps_j_opt, lines_j_opt], dim=-1)
-        
-        # 残差 (Pixels)
-        diff_after = torch.norm(term1 - term2, dim=1).detach().cpu().numpy()
-        # 初始残差 (假设 M=I)
-        diff_before = torch.norm(pts_j_target - pts_j_raw, dim=1).detach().cpu().numpy()
-        
-        errors_before.extend(diff_before)
-        errors_after.extend(diff_after)
-        
-        # --- 可视化 ---
-        if pair_idx < 5: # 只画前5对
-            fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-            
-            # 图1：初始误差
-            # 箭头起点：pts_j_target (理想目标点)
-            # 箭头指向：pts_j_raw (未修正的原始投影点)
-            # 红色箭头表示：由于未修正导致的偏差
-            ax[0].set_title(f"Pair {id_i}->{id_j}: Initial Discrepancy\nMean: {np.mean(diff_before):.2f} px")
-            ax[0].quiver(pts_j_target[:,0].cpu(), pts_j_target[:,1].cpu(), 
-                         (pts_j_raw - pts_j_target)[:,0].cpu(), (pts_j_raw - pts_j_target)[:,1].cpu(),
-                         color='r', angles='xy', scale_units='xy', scale=0.1)
-            ax[0].invert_yaxis()
-            ax[0].set_aspect('equal')
-            
-            # 图2：优化后残差
-            # 箭头起点：term1 (M_j 修正后的目标点)
-            # 箭头指向：term2 (M_i 修正后投影过来的点)
-            # 绿色箭头表示：优化后的一致性误差 (应该很小)
-            ax[1].set_title(f"Optimized Residual\nMean: {np.mean(diff_after):.2f} px")
-            ax[1].quiver(term1[:,0].cpu(), term1[:,1].cpu(), 
-                         (term2 - term1)[:,0].cpu(), (term2 - term1)[:,1].cpu(),
-                         color='g', angles='xy', scale_units='xy', scale=1) # scale=1 means exact pixel error
-            ax[1].invert_yaxis()
-            ax[1].set_aspect('equal')
-            
-            plt.tight_layout()
-            plt.savefig(os.path.join(output_dir, f"pair_{id_i}_{id_j}_error.png"))
-            plt.close()
+    lines_j = rs_image_b.tie_points[:,0]
+    samps_j = rs_image_b.tie_points[:,1]
+    heights_j = rs_image_b.dem[lines_j,samps_j]
+    lats_j, lons_j = rs_image_b.rpc.RPC_PHOTO2OBJ(samps_j, lines_j, heights_j, 'numpy')
+    coords_j = np.stack([lats_j, lons_j], axis=-1)
 
-    print("\n=== Global Solver Evaluation ===")
-    print(f"Mean Residual Before: {np.mean(errors_before):.4f} pixels")
-    print(f"Mean Residual After:  {np.mean(errors_after):.4f} pixels")
-    if np.mean(errors_before) > 0:
-        print(f"Error Reduction: {(1 - np.mean(errors_after)/np.mean(errors_before))*100:.2f}%")
-    else:
-        print("Initial error is zero.")
+    distances = haversine_distance(coords_i, coords_j)
+    return distances
+
+def evaluate_and_visualize(images: List[RSImage], Ms: torch.Tensor):
+    for i,image in enumerate(images):
+        image.rpc.Update_Adjust(Ms[i])
+        image.rpc.Merge_Adjust()
+    all_distances = []
+    for i,j in itertools.combinations(range(len(images)),2):
+        image_a = images[i]
+        image_b = images[j]
+        distance = check_error(image_a,image_b)
+        all_distances.append(distance)
+    all_distances = np.concatenate(all_distances)
+    total_points = len(all_distances)
+    report = {
+        'mean': float(np.mean(all_distances)),
+        'median': float(np.median(all_distances)),
+        'max': float(np.max(all_distances)),
+        'rmse': float(np.sqrt(np.mean(all_distances**2))),
+        'count': int(total_points),
+        '<1m_percent': float(((all_distances < 1.0).sum() / total_points) * 100),
+        '<3m_percent': float(((all_distances < 3.0).sum() / total_points) * 100),
+        '<5m_percent': float(((all_distances < 5.0).sum() / total_points) * 100),
+    }
+    print(report)
+    
 
 def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict]):
     """
