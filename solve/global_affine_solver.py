@@ -431,9 +431,13 @@ class TopologicalAffineSolver:
                 parent_count = 0
                 
                 # 4.2 遍历所有邻居，寻找“父节点”（已解算的节点）
-                # 注意：不仅限于 level-1，任何已解算的邻居都可以提供约束
+                # 修改：仅允许上一层（或更早）的节点作为父节点，排除同层节点
                 neighbors = graph[node_j]
                 for node_k, M_jk in neighbors:
+                    # 只有层级严格小于当前层级的节点才能作为父节点
+                    if levels.get(node_k, float('inf')) >= lvl:
+                        continue
+
                     if not solved_mask[node_k]:
                         continue
                     
@@ -457,9 +461,6 @@ class TopologicalAffineSolver:
                     
                     # Step 4: 投影回子节点 j (RPC_kj) -> 得到在 j 坐标系下的“理想全局坐标”
                     # P_final = Project(k -> j, P'_in_k)
-                    # 注意：这里需要从 k 投影回 j。输入是 k 的像素坐标。
-                    # 为了保证 RPC 高程查询正确，这里实际上假设 P_in_k_corrected 对应的地面点
-                    # 与 P_in_k 对应的地面点是同一个 (只是像素坐标修正了)。
                     # 我们直接使用 P_in_k_corrected 进行投影。
                     P_target_candidate = self._project_batch(img_k.rpc, img_j.rpc, P_in_k_corrected, img_k.dem)
                     
@@ -478,7 +479,7 @@ class TopologicalAffineSolver:
                     Ms_global[node_j] = M_j_global
                     solved_mask[node_j] = True
                 else:
-                    print(f"Warning: Node {node_j} at level {lvl} has no solved parents! Keeping Identity.")
+                    print(f"Warning: Node {node_j} at level {lvl} has no solved parents (strictly from previous levels)! Keeping Identity.")
                     Ms_global[node_j] = np.eye(2, 3)
                     # 依然标记为 solved 以免断链，尽管这可能是个错误
                     solved_mask[node_j] = True
