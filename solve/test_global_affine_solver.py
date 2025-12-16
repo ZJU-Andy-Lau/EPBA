@@ -162,8 +162,9 @@ def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict])
     evaluate_and_visualize(images, pair_results, Ms, "./results/test_solver_output")
 
 if __name__ == "__main__":
-    img_paths = os.listdir('./datasets/wv_test_error_5')
-    images = [RSImage({},img_paths[i],i,device='cuda') for i in range(len(img_paths))]
+    root = './datasets/wv_test_error_5/adjust_images'
+    img_paths = os.listdir(root)
+    images = [RSImage({},os.path.join(root,img_paths[i]),i,device='cuda') for i in range(len(img_paths))]
     pair_results = {
         {
             0:torch.tensor([
