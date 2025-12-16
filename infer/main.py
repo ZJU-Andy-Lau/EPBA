@@ -39,7 +39,7 @@ from shared.utils import str2bool,get_current_time,load_model_state_dict,load_co
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver
-from rs_image import RSImage
+from rs_image import RSImage,vis_registration
 
 def init_random_seed(args):
     seed = args.random_seed 
@@ -149,6 +149,9 @@ def main(args):
         image.rpc.Update_Adjust(M)
         image.rpc.Merge_Adjust()
     
+    for i,j in itertools.combinations(range(len(images)),2):
+        vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
+    
     report = get_error_report(pairs)
     print("\n" + "--- Global Error Report (Summary) ---")
     print(f"Total tie points checked: {report['count']}")
@@ -230,6 +233,9 @@ if __name__ == '__main__':
 
     if args.experiment_id is None:
         args.experiment_id = get_current_time()
+    
+    if '[time]' in args.experiment_id:
+        args.experiment_id = args.experiment_id.replace('[time]',get_current_time())
     
     args.output_path = os.path.join(args.output_path,args.experiment_id)
     os.makedirs(args.output_path,exist_ok=True)

@@ -3,6 +3,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import argparse
 import torch
+import torch.nn.functional as F
 import numpy as np
 import os
 import cv2
@@ -10,7 +11,8 @@ import cv2
 
 from utils import warp_quads
 from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
-from shared.rpc import RPCModelParameterTorch
+from shared.visualize import make_checkerboard
+from shared.rpc import RPCModelParameterTorch,project_linesamp
 from tqdm import tqdm,trange
 import rasterio
 from typing import Tuple
@@ -143,6 +145,39 @@ class RSImage():
 
 
 
+
+
+def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):
+    H,W = window_size
+    center_line,center_samp = image_a.H // 2,image_a.W // 2
+    diag = np.array([
+            [center_line - H // 2, center_samp - W // 2],
+            [center_line + H // 2, center_samp + W // 2]
+        ])
+    img_a = image_a.image[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
+    heights = image_a.dem[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
+    heights_flat = heights.reshape(-1) # H*W
+
+    #生成img_a每个像素点的像素坐标
+    rows,cols = np.arange(diag[0,0],diag[1,0]),np.arange(diag[0,1],diag[1,1])
+    coords = np.stack(np.meshgrid(rows,cols,indexing='ij'),axis=-1) # 512,512,2
+    coords_flat_in_a = coords.reshape(-1,2)
+
+    #将坐标投影到b上        
+    lines_in_b,samps_in_b = project_linesamp(image_a.rpc,image_b.rpc,
+                                             coords_flat_in_a[:,0],coords_flat_in_a[:,1],heights_flat)
+    
+    #采样
+    lines_in_b_norm = 2.0 * lines_in_b.to(torch.float32) / (image_b.H - 1) - 1.0
+    samps_in_b_norm = 2.0 * samps_in_b.to(torch.float32) / (image_b.W - 1) - 1.0
+    sample_coords = torch.stack([samps_in_b_norm,lines_in_b_norm],dim=-1).reshape(1,H,W,2)
+    input_img = torch.from_numpy(image_b.image).to(dtype=torch.float32,device=device)[None].permute(0,3,1,2) # 1,3,H,W
+    sampled_img = F.grid_sample(input_img,sample_coords,mode='bilinear',padding_mode='zeros',align_corners=True) # 1,3,H,W
+    img_b = sampled_img[0].permute(1,2,0).cpu().numpy()
+
+    img_a_b = make_checkerboard(img_a,img_b)
+
+    cv2.imwrite(os.path.join(output_path,f'registration_{image_a.id}_{image_b.id}.png'),img_a_b)
 
     
     
