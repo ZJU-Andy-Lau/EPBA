@@ -10,17 +10,12 @@ from shapely.geometry import Polygon, box
 import os
 import typing
 from typing import List,Tuple
-import yaml
+
 
 if typing.TYPE_CHECKING:
     from model.encoder import Encoder
     from rs_image import RSImage
     from pair import Pair
-
-def load_config(path):
-    with open(path,'r') as f:
-        config = yaml.safe_load(f)
-    return config
 
 def warp_quads(corners, values:List[np.ndarray], output_size=(512, 512)):
         

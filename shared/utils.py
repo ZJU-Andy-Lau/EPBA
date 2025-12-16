@@ -27,6 +27,7 @@ import io
 from shapely.geometry import Polygon
 import math
 from typing import List
+import yaml
 
 def get_current_time():
     """
@@ -37,6 +38,11 @@ def get_current_time():
 def debug_print(msg,once = True):
     if not once or dist.get_rank() == 0:
         print(f"[rank {dist.get_rank()}]:{msg}")
+
+def load_config(path):
+    with open(path,'r') as f:
+        config = yaml.safe_load(f)
+    return config
 
 def feats_pca(feats:np.ndarray):
     if feats.ndim == 3:
