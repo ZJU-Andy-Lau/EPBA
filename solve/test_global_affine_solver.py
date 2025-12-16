@@ -15,7 +15,8 @@ from infer.rs_image import RSImage
 def apply_affine_torch(M, pts):
     # pts: (N, 2)
     # M: (2, 3)
-    pts_homo = torch.cat([pts, torch.ones(pts.shape[0], 1, device=pts.device)], dim=1)
+    pts_homo = torch.cat([pts, torch.ones(pts.shape[0], 1, device=pts.device)], dim=1).to(torch.float32)
+    M = M.to(torch.float32)
     return (M @ pts_homo.T).T
 
 def get_heights_torch(img, pts):
@@ -169,7 +170,7 @@ if __name__ == "__main__":
         {
             0:torch.tensor([
                 [1.0,-4.1168e-4,1.1089e+1],
-                [4.2412e-5,9.0002e-1,3.16]
+                [4.2412e-5,9.9992e-1,3.16]
             ],device='cuda'),
             1:torch.tensor([
                 [1.0,3.3273e-4,-1.0743e+1],
