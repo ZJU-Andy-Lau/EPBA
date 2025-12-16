@@ -118,8 +118,8 @@ def solve(args,encoder:Encoder,gru:GRUBlock,data):
 
     report(args,M_a_b_pred,Ms,imgs_a,imgs_b)
 
-def report(args,Ms_pred:torch.Tensor,Ms_gt:torch.Tensor,imgs_1:torch.Tensor,imgs_2:torch.Tensor):
-    pass
+def report(args,Ms_pred:torch.Tensor,data):
+    imgs_a,imgs_b,Hs_a,Hs_b,Ms_gt = data
     
 
 def main(args):
