@@ -304,40 +304,63 @@ class TopologicalAffineSolver:
         anchors = np.stack([xx.flatten(), yy.flatten()], axis=-1)
         return anchors
 
-    def _project_batch(self, rpc_src, rpc_dst, pts_uv: np.ndarray, dem_src: np.ndarray) -> np.ndarray:
+    def _project_batch(self, rpc_src, rpc_dst, pts_uv: np.ndarray, 
+                       dem_src: np.ndarray = None, 
+                       override_heights: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         投影: Src Image (Pixels) -> Object Space -> Dst Image (Pixels)
+        
+        Args:
+            pts_uv: 源影像像素坐标 (N, 2)
+            dem_src: 源影像的 DEM 数据 (H, W)。如果提供了 override_heights，此参数可为 None。
+            override_heights: 强制使用的高程数据 (N,)。如果提供，将跳过 DEM 插值。
+            
+        Returns:
+            pts_dst: 目标影像像素坐标 (N, 2)
+            heights: 投影过程中使用的高程数据 (N,)
         """
-        h, w = dem_src.shape
         x = pts_uv[:, 0]
         y = pts_uv[:, 1]
         
-        # 边界截断
-        x = np.clip(x, 0, w - 1.001)
-        y = np.clip(y, 0, h - 1.001)
+        heights = None
         
-        # 双线性插值获取高程
-        x0 = np.floor(x).astype(int)
-        x1 = x0 + 1
-        y0 = np.floor(y).astype(int)
-        y1 = y0 + 1
+        # 1. 确定高程
+        if override_heights is not None:
+            # 方案二核心：直接使用传入的固定高程
+            heights = override_heights
+        else:
+            # 常规逻辑：从 DEM 插值
+            if dem_src is None:
+                raise ValueError("必须提供 dem_src 或者 override_heights")
+                
+            h_map, w_map = dem_src.shape
+            
+            # 边界截断
+            x_safe = np.clip(x, 0, w_map - 1.001)
+            y_safe = np.clip(y, 0, h_map - 1.001)
+            
+            # 双线性插值获取高程
+            x0 = np.floor(x_safe).astype(int)
+            x1 = x0 + 1
+            y0 = np.floor(y_safe).astype(int)
+            y1 = y0 + 1
+            
+            wx = x_safe - x0
+            wy = y_safe - y0
+            
+            h00 = dem_src[y0, x0]
+            h10 = dem_src[y0, x1]
+            h01 = dem_src[y1, x0]
+            h11 = dem_src[y1, x1]
+            heights = (1 - wy) * ((1 - wx) * h00 + wx * h10) + wy * ((1 - wx) * h01 + wx * h11)
         
-        wx = x - x0
-        wy = y - y0
-        
-        h00 = dem_src[y0, x0]
-        h10 = dem_src[y0, x1]
-        h01 = dem_src[y1, x0]
-        h11 = dem_src[y1, x1]
-        heights = (1 - wy) * ((1 - wx) * h00 + wx * h10) + wy * ((1 - wx) * h01 + wx * h11)
-        
-        # RPC 正反投影
+        # 2. RPC 正反投影
         # 注: RPC_PHOTO2OBJ 输入 (x, y, h), 输出 (lat, lon)
         lats, lons = rpc_src.RPC_PHOTO2OBJ(x, y, heights, 'numpy')
         # 注: RPC_OBJ2PHOTO 输入 (lat, lon, h), 输出 (x, y)
         samps_dst, lines_dst = rpc_dst.RPC_OBJ2PHOTO(lats, lons, heights, 'numpy')
         
-        return np.stack([samps_dst, lines_dst], axis=-1)
+        return np.stack([samps_dst, lines_dst], axis=-1), heights
 
     def _apply_affine_np(self, M: np.ndarray, pts: np.ndarray) -> np.ndarray:
         """应用仿射变换 M (2x3) 到点 pts (Nx2)"""
@@ -351,13 +374,9 @@ class TopologicalAffineSolver:
         Returns: 2x3 Matrix
         """
         # 使用 OpenCV 的 estimateAffine2D (RANSAC 关掉，用 LMEDS 或直接最小二乘)
-        # 这里数据是网格点，没有外点，直接用 estimateAffinePartial2D 或手动 lstsq
-        # 为了保证 6 自由度 (Affine)，使用 estimateAffine2D
         M, _ = cv2.estimateAffine2D(src_pts, dst_pts, method=cv2.LMEDS)
         if M is None:
             # 回退到简单的最小二乘
-            # A x = b
-            # x = (A^T A)^-1 A^T b
             N = src_pts.shape[0]
             A = np.concatenate([src_pts, np.ones((N, 1))], axis=1) # (N, 3)
             # Solves X * A^T = B^T -> A * X^T = B
@@ -367,7 +386,7 @@ class TopologicalAffineSolver:
         return M
 
     def solve(self, pair_results: List[Dict]) -> torch.Tensor:
-        print(f"Starting Topological Affine Solver for {len(self.images)} images...")
+        print(f"Starting Topological Affine Solver (Fixed Height Mode) for {len(self.images)} images...")
         
         # 1. 构建图 (Adjacency List)
         # graph[u] = [(v, M_uv), ...]
@@ -375,8 +394,6 @@ class TopologicalAffineSolver:
         for pair in pair_results:
             ids = list(pair.keys())
             u, v = ids[0], ids[1]
-            # pair[u] 是 u->v 的变换 M_uv
-            # pair[v] 是 v->u 的变换 M_vu
             M_uv = pair[u].detach().cpu().numpy().astype(np.float64)
             M_vu = pair[v].detach().cpu().numpy().astype(np.float64)
             
@@ -430,11 +447,10 @@ class TopologicalAffineSolver:
                 weight_accumulator = 0
                 parent_count = 0
                 
-                # 4.2 遍历所有邻居，寻找“父节点”（已解算的节点）
-                # 修改：仅允许上一层（或更早）的节点作为父节点，排除同层节点
+                # 4.2 遍历所有邻居，寻找“父节点”
                 neighbors = graph[node_j]
                 for node_k, M_jk in neighbors:
-                    # 只有层级严格小于当前层级的节点才能作为父节点
+                    # 严格层级约束：只允许上一层（或更早）的节点作为父节点
                     if levels.get(node_k, float('inf')) >= lvl:
                         continue
 
@@ -444,27 +460,30 @@ class TopologicalAffineSolver:
                     img_k = self.images[node_k]
                     M_k_global = Ms_global[node_k] # Parent's Global Affine
                     
-                    # ==== 核心传播公式 ====
+                    # ==== 核心传播公式 (Fixed Height) ====
                     # Path: j -> k (relative) -> k (global) -> j (global target)
                     
                     # Step 1: 相对纠正 (Apply prediction M_jk)
-                    # P'_j = M_jk * P_j
                     P_j_prime = self._apply_affine_np(M_jk, P_j)
                     
                     # Step 2: 投影到父节点 k (RPC_jk)
-                    # P_in_k = Project(j -> k, P'_j)
-                    P_in_k = self._project_batch(img_j.rpc, img_k.rpc, P_j_prime, img_j.dem)
+                    # 关键：获取并保存这一步使用的高程 (heights_step2)，这是基于 img_j 的 DEM 计算的
+                    P_in_k, heights_step2 = self._project_batch(img_j.rpc, img_k.rpc, P_j_prime, dem_src=img_j.dem)
                     
                     # Step 3: 父节点全局纠正 (Apply M_k)
-                    # P'_in_k = M_k * P_in_k
                     P_in_k_corrected = self._apply_affine_np(M_k_global, P_in_k)
                     
-                    # Step 4: 投影回子节点 j (RPC_kj) -> 得到在 j 坐标系下的“理想全局坐标”
-                    # P_final = Project(k -> j, P'_in_k)
-                    # 我们直接使用 P_in_k_corrected 进行投影。
-                    P_target_candidate = self._project_batch(img_k.rpc, img_j.rpc, P_in_k_corrected, img_k.dem)
+                    # Step 4: 投影回子节点 j (RPC_kj)
+                    # 关键：强制使用 Step 2 的高程，不再查询 k 的 DEM
+                    # 这样保证了往返投影在同一个物理表面上进行
+                    P_target_candidate, _ = self._project_batch(
+                        img_k.rpc, img_j.rpc, 
+                        P_in_k_corrected, 
+                        dem_src=None, 
+                        override_heights=heights_step2
+                    )
                     
-                    # 累加 (默认权重为 1.0)
+                    # 累加
                     target_pts_accumulator += P_target_candidate
                     weight_accumulator += 1.0
                     parent_count += 1
@@ -479,12 +498,11 @@ class TopologicalAffineSolver:
                     Ms_global[node_j] = M_j_global
                     solved_mask[node_j] = True
                 else:
-                    print(f"Warning: Node {node_j} at level {lvl} has no solved parents (strictly from previous levels)! Keeping Identity.")
+                    print(f"Warning: Node {node_j} at level {lvl} has no solved parents! Keeping Identity.")
                     Ms_global[node_j] = np.eye(2, 3)
-                    # 依然标记为 solved 以免断链，尽管这可能是个错误
                     solved_mask[node_j] = True
 
-        # 5. 处理未连接的节点 (如果有)
+        # 5. 处理未连接的节点
         unsolved_count = num_images - np.sum(solved_mask)
         if unsolved_count > 0:
             print(f"Warning: {unsolved_count} nodes were not reachable from anchors. They remain Identity.")
