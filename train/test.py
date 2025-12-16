@@ -120,7 +120,9 @@ def solve(args,encoder:Encoder,gru:GRUBlock,data):
 
     M_a_b_pred = solver.solve(flag='ab',final_only=True) # N,2,3
 
-    report(args,M_a_b_pred,Ms,imgs_a,imgs_b)
+    print("Solve Done")
+
+    report(args,M_a_b_pred,data)
 
 def report(args,Ms_pred:torch.Tensor,data):
     imgs_a,imgs_b,Hs_a,Hs_b,Ms_gt = data
