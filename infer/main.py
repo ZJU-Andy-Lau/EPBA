@@ -111,8 +111,8 @@ def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
         print(f"Solving Pair {pair.id_a} - {pair.id_b}")
         affine_ab,affine_ba = pair.solve_affines(encoder,gru)
         result = {
-            str(pair.id_a):affine_ab,
-            str(pair.id_b):affine_ba
+            pair.id_a:affine_ab,
+            pair.id_b:affine_ba
         }
         results.append(result)
     solver_configs = load_config(args.solver_config_path)
