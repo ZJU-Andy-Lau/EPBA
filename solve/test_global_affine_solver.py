@@ -82,7 +82,7 @@ def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict])
     device = images[0].device
     
     # 实例化求解器
-    solver = GlobalAffineSolver(images, device=device,anchor_indices=[1])
+    solver = GlobalAffineSolver(images, device=device,anchor_indices=[2])
     
     # 求解
     Ms = solver.solve(pair_results)
