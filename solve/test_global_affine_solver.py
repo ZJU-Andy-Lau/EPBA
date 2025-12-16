@@ -90,7 +90,7 @@ def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict])
     print(Ms[:3])
     
     # 评估
-    evaluate_and_visualize(images, pair_results, Ms, "./results/test_solver_output")
+    evaluate_and_visualize(images, Ms)
 
 if __name__ == "__main__":
     root = './datasets/wv_test_error_5/adjust_images'
