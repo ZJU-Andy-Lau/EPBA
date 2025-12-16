@@ -221,12 +221,12 @@ if __name__ == '__main__':
 
     parser.add_argument('--random_seed',type=int,default=42)
 
+    parser.add_argument('--device',type=str,default='cuda')
+
     #==============================================================================
 
 
     args = parser.parse_args()
-
-    args.device = 'cuda:1'
 
     if args.experiment_id is None:
         args.experiment_id = get_current_time()
