@@ -115,6 +115,13 @@ def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
             pair.id_b:affine_ba
         }
         results.append(result)
+    
+    print("Pair Results\n")
+    for result in results:
+        ids = list(result.keys())
+        print(f"{ids[0]} ==> {ids[1]}:\n{result[ids[0]]}\n")
+        print(f"{ids[1]} ==> {ids[0]}:\n{result[ids[1]]}\n")
+        
     solver_configs = load_config(args.solver_config_path)
     print(f"Global Solving")
     solver = GlobalAffineSolver(num_nodes=args.image_num,
