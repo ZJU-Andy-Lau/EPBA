@@ -126,7 +126,7 @@ def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBloc
     print(f"Global Solving")
     solver = GlobalAffineSolver(images=images,
                                 device=args.device,
-                                anchor_idx=[0],
+                                anchor_indices=[0],
                                 lambda_anchor=1e8)
     Ms = solver.solve(results)
     Ms_23 = Ms[:,:2,]
