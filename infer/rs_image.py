@@ -9,7 +9,7 @@ import os
 import cv2
 
 
-from utils import warp_quads
+from infer.utils import warp_quads
 from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
 from shared.visualize import make_checkerboard
 from shared.rpc import RPCModelParameterTorch,project_linesamp
