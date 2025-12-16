@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import os
 import argparse
+import json
 import numpy as np
 import h5py
 import cv2
@@ -106,6 +107,7 @@ def load_models(args):
 
     return encoder,gru
 
+@torch.no_grad()
 def solve(args,encoder:Encoder,gru:GRUBlock,data):
     imgs_a,imgs_b,Hs_a,Hs_b,Ms = data
     B,_,H,W = imgs_a.shape
@@ -120,6 +122,112 @@ def solve(args,encoder:Encoder,gru:GRUBlock,data):
 
 def report(args,Ms_pred:torch.Tensor,data):
     imgs_a,imgs_b,Hs_a,Hs_b,Ms_gt = data
+    B, _, H, W = imgs_a.shape
+    device = imgs_a.device
+    N = H * W
+    
+    batch_metrics = []
+
+    # -------------------------------------------------------------------------
+    # Part 1: 定量精度评估 (Quantitative Evaluation)
+    # -------------------------------------------------------------------------
+    y_range = torch.arange(0, H, dtype=torch.float32, device=device)
+    x_range = torch.arange(0, W, dtype=torch.float32, device=device)
+    grid_y, grid_x = torch.meshgrid(y_range, x_range, indexing='ij')
+    
+    # (3, N) -> [row, col, 1]
+    grid_local = torch.stack([
+        grid_y.reshape(-1),
+        grid_x.reshape(-1),
+        torch.ones(N, dtype=torch.float32, device=device)
+    ], dim=0)
+    
+    # 扩展为 Batch 维度: (B, 3, N)
+    grid_local_batch = grid_local.unsqueeze(0).expand(B, -1, -1)
+
+    # Coords_large = H_a^-1 * Grid_local
+    try:
+        Hs_a_inv = torch.linalg.inv(Hs_a)
+    except RuntimeError:
+        Hs_a_inv = torch.inverse(Hs_a)
+        
+    coords_large_homo = torch.bmm(Hs_a_inv, grid_local_batch) # (B, 3, N)
+    
+    # 透视除法 (Perspective Division) 归一化齐次坐标
+    z = coords_large_homo[:, 2:3, :] + 1e-7
+    coords_large = coords_large_homo / z # (B, 3, N) -> [row_g, col_g, 1]
+    # Coords_pred = Ms_pred * Coords_large -> (B, 2, N)
+    coords_pred = torch.bmm(Ms_pred, coords_large)
+    # Coords_gt = Ms_gt * Coords_large -> (B, 2, N)
+    coords_gt = torch.bmm(Ms_gt, coords_large)
+
+    # Euclidean distance per point: (B, N)
+    dist_errors = torch.norm(coords_pred - coords_gt, dim=1)
+    
+    for i in range(B):
+        errors_i = dist_errors[i]
+        metrics = {
+            'mean': f"{errors_i.mean().item():.3f} px",
+            'median': f"{errors_i.median().item():.3f} px",
+            'max': f"{errors_i.max().item():.3f} px"
+        }
+        batch_metrics.append(metrics)
+
+    # -------------------------------------------------------------------------
+    # Part 2: 可视化配准精度 (Visualization)
+    # -------------------------------------------------------------------------    
+    Ms_pred_np = Ms_pred.detach().cpu().numpy()
+    Ms_gt_np = Ms_gt.detach().cpu().numpy()
+    
+    Hs_a_np = Hs_a.detach().cpu().numpy()
+    Hs_b_np = Hs_b.detach().cpu().numpy()
+    
+    # 单位变换矩阵 (2, 3)
+    identity_M = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+    for i in range(B):
+        img_a_vis = visualizer.denormalize_image(imgs_a[i])
+        img_b_vis = visualizer.denormalize_image(imgs_b[i])
+
+        target_wh = (W, H) # 输出尺寸 (Width, Height)
+
+        # (1) Raw: 单位变换 (仅靠 Crop 自身的位置关系)
+        img_a_raw_warp = visualizer.warp_image_by_global_affine(
+            img_a_vis, Hs_a_np[i], Hs_b_np[i], identity_M, target_wh
+        )
+        
+        # (2) GT: 真值变换
+        img_a_gt_warp = visualizer.warp_image_by_global_affine(
+            img_a_vis, Hs_a_np[i], Hs_b_np[i], Ms_gt_np[i], target_wh
+        )
+        
+        # (3) Pred: 预测变换
+        img_a_pred_warp = visualizer.warp_image_by_global_affine(
+            img_a_vis, Hs_a_np[i], Hs_b_np[i], Ms_pred_np[i], target_wh
+        )
+        
+        # 2.4 生成棋盘格 (Checkerboard)
+        # 将 Warp 后的图 A 与 图 B 进行棋盘格混合
+        vis_raw = visualizer.make_checkerboard(img_a_raw_warp, img_b_vis, box_size=32)
+        vis_gt = visualizer.make_checkerboard(img_a_gt_warp, img_b_vis, box_size=32)
+        vis_pred = visualizer.make_checkerboard(img_a_pred_warp, img_b_vis, box_size=32)
+        
+        # 2.5 保存图像
+        # 路径结构: output_path/sample_{batch}_{i}/
+        save_dir = os.path.join(args.output_path, f"sample_{i}")
+        os.makedirs(save_dir, exist_ok=True)
+
+        cv2.imwrite(os.path.join(save_dir, "checkerboard_raw.png"), cv2.cvtColor(vis_raw, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(os.path.join(save_dir, "checkerboard_gt.png"), cv2.cvtColor(vis_gt, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(os.path.join(save_dir, "checkerboard_pred.png"), cv2.cvtColor(vis_pred, cv2.COLOR_RGB2BGR))
+
+        print(f"Data:{i}")
+        print(batch_metrics[i])
+        with open(os.path.join(save_dir,'metrics.json'),'w') as f:
+            json.dump(batch_metrics[i],f)    
+        
+
+    return batch_metrics
     
 
 def main(args):
