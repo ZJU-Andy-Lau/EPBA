@@ -104,7 +104,7 @@ def load_models(args):
 
     return encoder,gru
 
-def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
+def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
     print("Start Solving")
     results = []
     for pair in pairs:
@@ -124,21 +124,10 @@ def solve(args,pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
         
     solver_configs = load_config(args.solver_config_path)
     print(f"Global Solving")
-    solver = GlobalAffineSolver(num_nodes=args.image_num,
-                                lambda_anchor=solver_configs['lambda_anchor'],
-                                lambda_A=solver_configs['lambda_A'],
-                                lambda_t=solver_configs['lambda_t'],
-                                sigma_A=solver_configs['sigma_A'],
-                                sigma_t=solver_configs['sigma_t'],
+    solver = GlobalAffineSolver(images=images,
                                 device=args.device,
-                                dtype=torch.float32)
-    edge_src, edge_dst, A_ij, t_ij, w_ij = convert_pair_dicts_to_solver_inputs(results,device=args.device,dtype=torch.float32)
-    Ms = solver.solve(edge_src=edge_src,
-                      edge_dst=edge_dst,
-                      A_ij=A_ij,
-                      t_ij=t_ij,
-                      w_ij=w_ij,
-                      anchor_indices=[0])
+                                anchor_idx=0)
+    Ms = solver.solve(results)
     Ms_23 = Ms[:,:2,]
     return Ms_23
 
@@ -150,7 +139,7 @@ def main(args):
     pairs = build_pairs(args,images)
     encoder,gru = load_models(args)
 
-    Ms = solve(args,pairs,encoder,gru)
+    Ms = solve(args,images,pairs,encoder,gru)
     for image in images:
         M = Ms[image.id]
         print(f"Affine Matrix of Image {image.id}\n{M}\n")
