@@ -4,26 +4,32 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import lsqr
 from typing import List, Dict
 from tqdm import tqdm
-from infer.rs_image import RSImage
-from shared.rpc import RPCModelParameterTorch
 
 class GlobalAffineSolver:
-    def __init__(self, images: List[RSImage], device: str = 'cuda', anchor_idx: int = 0, 
+    def __init__(self, images: List, device: str = 'cuda', 
+                 anchor_indices: List[int] = None, 
                  grid_size: int = 5, diff_eps: float = 1.0, lambda_anchor: float = 1e5):
         """
-        基于RPC投影一致性的全局仿射变换求解器。
+        基于RPC投影一致性的全局仿射变换求解器 (支持多Anchor)。
         
         Args:
             images: 包含所有 RSImage 对象的列表，用于访问 RPC 和 DEM。
             device: 输出 Tensor 所在的设备。
-            anchor_idx: 基准影像索引，其仿射变换将被强约束为单位阵。
+            anchor_indices: 基准影像索引列表。列表中的所有影像其仿射变换将被强约束为单位阵。
+                            如果为 None，默认使用 [0]。
             grid_size: 在每张影像上划分的锚点网格大小 (grid_size x grid_size)。
             diff_eps: 计算雅可比矩阵时的差分步长（像素单位）。
             lambda_anchor: 基准影像约束的权重。
         """
         self.images = images
         self.device = device
-        self.anchor_idx = anchor_idx
+        
+        # 处理多 Anchor 逻辑
+        if anchor_indices is None:
+            self.anchor_indices = [0]
+        else:
+            self.anchor_indices = anchor_indices
+            
         self.grid_size = grid_size
         self.diff_eps = diff_eps
         self.lambda_anchor = lambda_anchor
@@ -36,7 +42,7 @@ class GlobalAffineSolver:
         anchors = np.stack([xx.flatten(), yy.flatten()], axis=-1)
         return anchors
 
-    def _project_batch(self, rpc_src:RPCModelParameterTorch, rpc_dst:RPCModelParameterTorch, pts_uv: np.ndarray, dem_src: np.ndarray) -> np.ndarray:
+    def _project_batch(self, rpc_src, rpc_dst, pts_uv: np.ndarray, dem_src: np.ndarray) -> np.ndarray:
         """
         批量投影：Src Image -> Object Space -> Dst Image
         Args:
@@ -95,7 +101,7 @@ class GlobalAffineSolver:
         pts_y_plus = pts_uv + np.array([0, eps])
         
         # 投影
-        # 中心点投影 (注：若性能敏感，此处可复用外部已计算的投影结果)
+        # 中心点投影
         p_center = self._project_batch(rpc_src, rpc_dst, pts_uv, dem_src)
         p_x_plus = self._project_batch(rpc_src, rpc_dst, pts_x_plus, dem_src)
         p_y_plus = self._project_batch(rpc_src, rpc_dst, pts_y_plus, dem_src)
@@ -229,17 +235,23 @@ class GlobalAffineSolver:
                 rhs_list.append(RHS[k, 1])
                 curr_row += 1
 
-        # 5. 添加 Anchor 约束: M_anchor = Identity
+        # 5. 添加 Anchor 约束 (支持多张 Anchor)
         # m0=1, m1=0, m2=0, m3=0, m4=1, m5=0
-        base_idx_anchor = self.anchor_idx * 6
         target_vals = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
         
-        for i in range(6):
-            row_list.append(curr_row)
-            col_list.append(base_idx_anchor + i)
-            val_list.append(self.lambda_anchor) # 强约束权重
-            rhs_list.append(target_vals[i] * self.lambda_anchor)
-            curr_row += 1
+        for anchor_idx in self.anchor_indices:
+            # 安全检查
+            if anchor_idx < 0 or anchor_idx >= num_images:
+                print(f"Warning: Anchor index {anchor_idx} is out of bounds (0-{num_images-1}), skipping.")
+                continue
+                
+            base_idx_anchor = anchor_idx * 6
+            for i in range(6):
+                row_list.append(curr_row)
+                col_list.append(base_idx_anchor + i)
+                val_list.append(self.lambda_anchor) # 强约束权重
+                rhs_list.append(target_vals[i] * self.lambda_anchor)
+                curr_row += 1
             
         # 6. 构建稀疏矩阵
         A = sp.coo_matrix((val_list, (row_list, col_list)), shape=(curr_row, num_vars))
