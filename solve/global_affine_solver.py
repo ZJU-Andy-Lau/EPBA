@@ -2,8 +2,11 @@ import torch
 import numpy as np
 import scipy.sparse as sp
 from scipy.sparse.linalg import lsqr
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Tuple
 from tqdm import tqdm
+import cv2
+import heapq
+from collections import defaultdict, deque
 
 class GlobalAffineSolver:
     def __init__(self, images: List, device: str = 'cuda', 
@@ -268,3 +271,199 @@ class GlobalAffineSolver:
         Ms = torch.from_numpy(Ms_curr).to(device=self.device, dtype=torch.float32)
         print("Global affine solving finished.")
         return Ms
+    
+class TopologyAffineSolver:
+    def __init__(self, images: List, device: str = 'cuda', 
+                 anchor_indices: List[int] = None, 
+                 grid_size: int = 5):
+        """
+        基于拓扑传播的全局仿射变换求解器。
+        
+        Args:
+            images: 影像列表，提供 RPC 和 DEM。
+            device: 计算设备。
+            anchor_indices: 基准影像索引。
+            grid_size: 用于配准计算的网格大小。
+        """
+        self.images = images
+        self.device = device
+        
+        if anchor_indices is None:
+            self.anchor_indices = [0]
+        else:
+            self.anchor_indices = anchor_indices
+            
+        self.anchor_set = set(self.anchor_indices)
+        self.grid_size = grid_size
+
+    def _get_grid(self, H: int, W: int) -> np.ndarray:
+        """生成网格点 (N, 2)"""
+        x = np.linspace(0, W - 1, self.grid_size)
+        y = np.linspace(0, H - 1, self.grid_size)
+        xx, yy = np.meshgrid(x, y)
+        return np.stack([xx.flatten(), yy.flatten()], axis=-1)
+
+    def _project_rpc(self, rpc_src, rpc_dst, pts_uv: np.ndarray, dem_src: np.ndarray) -> np.ndarray:
+        """RPC 投影: Image Src -> Object -> Image Dst"""
+        h_dem, w_dem = dem_src.shape
+        x, y = pts_uv[:, 0], pts_uv[:, 1]
+        
+        # 简单边界限制防止越界
+        x = np.clip(x, 0, w_dem - 1.001)
+        y = np.clip(y, 0, h_dem - 1.001)
+        
+        # DEM 最近邻采样 (为了速度，也可换成双线性)
+        ix, iy = np.round(x).astype(int), np.round(y).astype(int)
+        heights = dem_src[iy, ix]
+        
+        # RPC 变换
+        lats, lons = rpc_src.RPC_PHOTO2OBJ(x, y, heights, 'numpy')
+        samps_dst, lines_dst = rpc_dst.RPC_OBJ2PHOTO(lats, lons, heights, 'numpy')
+        
+        return np.stack([samps_dst, lines_dst], axis=-1)
+
+    def _apply_affine(self, M: np.ndarray, pts: np.ndarray) -> np.ndarray:
+        """应用仿射变换"""
+        N = pts.shape[0]
+        pts_homo = np.concatenate([pts, np.ones((N, 1))], axis=1)
+        return (M @ pts_homo.T).T
+
+    def solve(self, pair_results: List[Dict]) -> torch.Tensor:
+        """
+        执行拓扑求解。
+        """
+        print(f"Starting Topology Propagation Solver for {len(self.images)} images...")
+        num_images = len(self.images)
+        
+        # 1. 构建图 (Adjacency List)
+        # adj[u] = [(v, M_uv, score), ...]
+        adj = defaultdict(list)
+        for pair in pair_results:
+            ids = list(pair.keys())
+            u, v = ids[0], ids[1]
+            M_uv = pair[u].detach().cpu().numpy().astype(np.float64) # u -> v
+            M_vu = pair[v].detach().cpu().numpy().astype(np.float64) # v -> u
+            
+            # 这里的 score 暂时设为 1.0，如果网络输出有 conf 可以用 conf
+            score = 1.0 
+            
+            adj[u].append((v, M_uv, score))
+            adj[v].append((u, M_vu, score))
+
+        # 2. 初始化状态
+        Ms = np.zeros((num_images, 2, 3), dtype=np.float64)
+        solved = [False] * num_images
+        
+        # 优先队列: (-total_weight, node_idx)
+        # 使用负数因为 heapq 是最小堆
+        pq = []
+        
+        # 初始化 Anchors
+        for anchor_idx in self.anchor_indices:
+            Ms[anchor_idx] = np.eye(2, 3) # Anchor 设为单位阵
+            solved[anchor_idx] = True
+            
+            # 将 Anchor 的邻居加入队列
+            for neighbor, _, weight in adj[anchor_idx]:
+                if not solved[neighbor]:
+                    # 初始权重就是边的权重
+                    heapq.heappush(pq, (-weight, neighbor))
+
+        # 记录已经在队列中的节点，防止重复添加及其对应的当前累积权重
+        in_queue_weights = defaultdict(float)
+        for anchor_idx in self.anchor_indices:
+            for neighbor, _, weight in adj[anchor_idx]:
+                if not solved[neighbor]:
+                    in_queue_weights[neighbor] = max(in_queue_weights[neighbor], weight)
+
+        # 3. 传播求解
+        solve_order = []
+        
+        while pq:
+            # 取出与已知区域连接最紧密的节点
+            _, curr_node = heapq.heappop(pq)
+            
+            if solved[curr_node]:
+                continue
+            
+            # --- 核心解算逻辑 ---
+            all_src_pts = [] # 网络预测位置 (Input to affine solve)
+            all_dst_pts = [] # 几何投影位置 (Target of affine solve)
+            
+            # 遍历该节点的所有邻居，只处理已经 Solve 的
+            connected_solved_neighbors = 0
+            
+            for neighbor, M_neighbor_to_curr, _ in adj[curr_node]:
+                if solved[neighbor]:
+                    connected_solved_neighbors += 1
+                    img_neighbor = self.images[neighbor]
+                    img_curr = self.images[curr_node]
+                    
+                    # 1. 在 Neighbor 上生成网格
+                    P_neighbor = self._get_grid(img_neighbor.H, img_neighbor.W)
+                    
+                    # 2. 计算 Source Points (在 Current 图上的位置)
+                    # 含义：Neighbor 上的 P 点，根据网络预测，应该在 Current 图的什么位置？
+                    # M_neighbor_to_curr 是 relative affine
+                    P_curr_visual = self._apply_affine(M_neighbor_to_curr, P_neighbor)
+                    
+                    # 3. 计算 Target Points (在 Current 图上的几何真值)
+                    # 含义：Neighbor 上的 P 点，先经过 Neighbor 的全局矫正，再通过 RPC 投影到 Current 图
+                    # 这是我们希望 P_curr_visual 最终去到的地方
+                    
+                    # A. Apply Global M of neighbor
+                    P_neighbor_global = self._apply_affine(Ms[neighbor], P_neighbor)
+                    
+                    # B. Project to Current using RPC
+                    P_curr_geometric = self._project_rpc(
+                        img_neighbor.rpc, img_curr.rpc, 
+                        P_neighbor_global, img_neighbor.dem
+                    )
+                    
+                    all_src_pts.append(P_curr_visual)
+                    all_dst_pts.append(P_curr_geometric)
+            
+            if connected_solved_neighbors == 0:
+                # 理论上不应发生，除非图不连通
+                print(f"Warning: Node {curr_node} isolated from solved cluster.")
+                continue
+                
+            # 拼接所有点对
+            X = np.concatenate(all_src_pts, axis=0).astype(np.float32) # (N_total, 2)
+            Y = np.concatenate(all_dst_pts, axis=0).astype(np.float32) # (N_total, 2)
+            
+            # 求解 M_curr: M * X = Y
+            # 使用 OpenCV 的 estimateAffine2D (RANSAC 并不是必须的，因为这里都是密集网格，用最小二乘即可)
+            # 这里的 X, Y 需要 reshape 为 (N, 1, 2) 才能给 cv2
+            # cv2.estimateAffine2D 返回 [2, 3]
+            try:
+                # 使用简单的最小二乘解: M = Y * pinv(X_homo)
+                # 这样比 OpenCV RANSAC 更快且符合平差逻辑（平均误差）
+                X_homo = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1) # (N, 3)
+                # M_curr_T = np.linalg.lstsq(X_homo, Y, rcond=None)[0]
+                # M_curr = M_curr_T.T
+                
+                # 或者使用 cv2 (更加鲁棒，处理共线等情况)
+                M_curr, _ = cv2.estimateAffine2D(X, Y, method=cv2.LMEDS)
+                
+                if M_curr is None:
+                     M_curr = np.eye(2, 3) # Fallback
+                     
+            except Exception as e:
+                print(f"Error solving node {curr_node}: {e}")
+                M_curr = np.eye(2, 3)
+
+            Ms[curr_node] = M_curr
+            solved[curr_node] = True
+            solve_order.append(curr_node)
+            
+            # 将 curr_node 的未解算邻居加入/更新队列
+            for neighbor, _, weight in adj[curr_node]:
+                if not solved[neighbor]:
+                    new_weight = in_queue_weights[neighbor] + weight # 简单的累加权重作为优先级
+                    if new_weight > in_queue_weights[neighbor]:
+                        in_queue_weights[neighbor] = new_weight
+                        heapq.heappush(pq, (-new_weight, neighbor))
+        
+        print(f"Solved {len(solve_order)} nodes by propagation.")
+        return torch.from_numpy(Ms).to(device=self.device, dtype=torch.float32)

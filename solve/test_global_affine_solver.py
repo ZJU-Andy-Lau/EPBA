@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from typing import List
 import itertools
 
-from global_affine_solver import GlobalAffineSolver
+from global_affine_solver import GlobalAffineSolver,TopologyAffineSolver
 
 # 为了测试方便，我们在这里定义辅助函数，实际运行时请确保您的环境中可以访问 RSImage 等类
 from infer.rs_image import RSImage
@@ -82,7 +82,8 @@ def run_test_with_provided_data(images: List[RSImage], pair_results: List[dict])
     device = images[0].device
     
     # 实例化求解器
-    solver = GlobalAffineSolver(images, device=device,anchor_indices=[2],converge_tol=1e-8,max_iter=50)
+    # solver = GlobalAffineSolver(images, device=device,anchor_indices=[2],converge_tol=1e-8,max_iter=50)
+    solver = TopologyAffineSolver(images, device=device,anchor_indices=[2])
     
     # 求解
     Ms = solver.solve(pair_results)
