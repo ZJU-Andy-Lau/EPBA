@@ -30,13 +30,14 @@ default_configs = {
 }
 
 class Pair():
-    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,id_a:int,id_b:int,configs = {},device:str = 'cuda'):
+    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,id_a:int,id_b:int,configs = {},device:str = 'cuda', reporter=None):
         self.rs_image_a = rs_image_a
         self.rs_image_b = rs_image_b
         self.id_a = id_a
         self.id_b = id_b
         self.configs = {**default_configs,**configs}
         self.device = device
+        self.reporter = reporter # 接收 reporter
         self.window_pairs:List[WindowPair] = []
         self.window_size = -1
         self.solver_ab = Solver(rs_image_a=rs_image_a,
@@ -48,7 +49,8 @@ class Pair():
                                     },
                                     
                                 },
-                                device=device)
+                                device=device,
+                                reporter=reporter) # 透传 reporter
         self.solver_ba = Solver(rs_image_a=rs_image_b,
                                 rs_image_b=rs_image_a,
                                 configs={
@@ -58,10 +60,17 @@ class Pair():
                                     },
                                     
                                 },
-                                device=device)
+                                device=device,
+                                reporter=reporter) # 透传 reporter
 
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
+        # 可以在这里更新一下状态，表明正在处理 AB 方向
+        if self.reporter:
+            self.reporter.update(current_step="Solving A->B")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
+        
+        if self.reporter:
+            self.reporter.update(current_step="Solving B->A")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
         return affine_ab,affine_ba
     
@@ -84,18 +93,21 @@ class Pair():
     
 
 class Solver():
-    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,configs:dict,device:str = 'cuda'):
+    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,configs:dict,device:str = 'cuda', reporter=None):
         self.rs_image_a = rs_image_a
         self.rs_image_b = rs_image_b
         self.rpc_a = deepcopy(rs_image_a.rpc)
         self.rpc_b = deepcopy(rs_image_b.rpc)
         self.configs = configs
         self.device = device
+        self.reporter = reporter # 保存 reporter
         self.window_pairs:List[WindowPair] = []
         self.window_size = -1
         os.makedirs(self.configs['output_path'],exist_ok=True)
 
     def init_window_pairs(self,a_max = 8000,a_min = 500,area_ratio = 0.5):
+        if self.reporter:
+            self.reporter.update(current_step="Init Window Pairs")
         corners_a = self.rs_image_a.__get_corner_xys__() # (4,2)
         corners_b = self.rs_image_b.__get_corner_xys__()
 
@@ -105,6 +117,8 @@ class Solver():
         self.build_window_pairs(window_diags)
 
     def quadsplit_windows(self):
+        if self.reporter:
+            self.reporter.update(current_step="Quad-Splitting")
         new_diags = []
         scores = []
         for window_pair in self.window_pairs:
@@ -131,6 +145,8 @@ class Solver():
         window_vis = visualizer.vis_windows_distribution(self.rs_image_a.corner_xys,window_diags)
         cv2.imwrite(os.path.join(self.configs['output_path'],f'window_vis_{self.window_size}m.png'),window_vis)
 
+        if self.reporter:
+            self.reporter.update(current_step="Cropping Windows")
         data_a,data_b = self.get_data_by_diags(window_diags)
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
         self.window_pairs_num = len(self.window_pairs)
@@ -220,12 +236,17 @@ class Solver():
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
     
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
+        if self.reporter:
+            self.reporter.update(current_step="Extracting Features")
         imgs_a,imgs_b = self.collect_imgs()
         dems_a,dems_b = self.collect_dems(to_tensor=True)
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
         self.distribute_feats(feats_a,feats_b)
+        
+        if self.reporter:
+            self.reporter.update(current_step="GRU Inference")
         solver = WindowSolver(B,H,W,
                               gru=gru,
                               feats_a=feats_a,feats_b=feats_b,
@@ -243,6 +264,8 @@ class Solver():
         return preds,scores
     
     def merge_affines(self,affines:torch.Tensor,Hs:torch.Tensor,scores:torch.Tensor):
+        if self.reporter:
+            self.reporter.update(current_step="Merging Affines")
         """
         Args:
             affines: torch.Tensor, (B,2,3)
@@ -292,6 +315,9 @@ class Solver():
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
+            # 更新层级信息
+            if self.reporter:
+                self.reporter.update(level=f"{int(self.window_size)}m")
             self.solve_level_affine(encoder,gru)
             self.quadsplit_windows()
         return self.rpc_a.adjust_params

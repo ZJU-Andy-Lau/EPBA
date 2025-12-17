@@ -40,6 +40,7 @@ from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_repor
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver,TopologicalAffineSolver
 from rs_image import RSImage,RSImageMeta,vis_registration
+from infer.monitor import StatusMonitor, StatusReporter # 新增导入
 
 def init_random_seed(args):
     seed = args.random_seed 
@@ -48,7 +49,8 @@ def init_random_seed(args):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def load_images_meta(args) -> List[RSImageMeta]:
+def load_images_meta(args, reporter) -> List[RSImageMeta]:
+    reporter.update(current_step="Loading Meta")
     base_path = os.path.join(args.root, 'adjust_images')
     select_img_idxs = [int(i) for i in args.select_imgs.split(',')]
     img_folders = sorted([d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))])
@@ -57,13 +59,14 @@ def load_images_meta(args) -> List[RSImageMeta]:
     for idx,folder in enumerate(img_folders):
         img_path = os.path.join(base_path,folder)
         metas.append(RSImageMeta(args,img_path,idx,args.device))
-        print(f"[rank{dist.get_rank()}]Loaded Image Meta {idx} from {folder}")
-    print(f"[rank{dist.get_rank()}]Totally {len(metas)} Images' Meta Loaded")
+        reporter.log(f"Loaded Image Meta {idx} from {folder}")
+    reporter.log(f"Totally {len(metas)} Images' Meta Loaded")
     return metas
 
-def load_images(args,metas:List[RSImageMeta]) -> List[RSImage] :
+def load_images(args,metas:List[RSImageMeta], reporter) -> List[RSImage] :
+    reporter.update(current_step="Loading Images")
     images = [RSImage(meta,device=args.device) for meta in metas]
-    print(f"[rank{dist.get_rank()}]Totally {len(images)} Images Loaded")
+    reporter.log(f"Totally {len(images)} Images Loaded")
     args.image_num = len(images)
     return images
 
@@ -74,7 +77,8 @@ def get_pairs(args,metas:List[RSImageMeta]):
             pair_idxs.append((i,j))
     return pair_idxs
 
-def build_pairs(args,images:List[RSImage],pair_ids = None) -> List[Pair]:
+def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pair]:
+    reporter.update(current_step="Building Pairs")
     images_num = len(images)
     configs = {
         'max_window_num':args.max_window_num,
@@ -87,7 +91,8 @@ def build_pairs(args,images:List[RSImage],pair_ids = None) -> List[Pair]:
         for i,j in itertools.combinations(range(images_num),2):
             if is_overlap(images[i],images[j],args.min_window_size ** 2):
                 configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
-                pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
+                # 传递 reporter 给 Pair
+                pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device, reporter=reporter)
                 pairs.append(pair)
     else:
         for i,j in pair_ids:
@@ -97,13 +102,15 @@ def build_pairs(args,images:List[RSImage],pair_ids = None) -> List[Pair]:
             except:
                 raise ValueError(f"pair id {i}-{j} not found in images")
             configs['output_path'] = os.path.join(args.output_path,f"pair_{i}_{j}")
-            pair = Pair(image_i,image_j,i,j,configs,device=args.device)
+            # 传递 reporter 给 Pair
+            pair = Pair(image_i,image_j,i,j,configs,device=args.device, reporter=reporter)
             pairs.append(pair)
 
-    print(f"[rank{dist.get_rank()}]Totally {len(pairs)} Pairs")
+    reporter.log(f"Totally {len(pairs)} Pairs")
     return pairs
 
-def load_models(args):
+def load_models(args, reporter):
+    reporter.update(current_step="Loading Models")
     model_configs = load_config(args.model_config_path)
 
     encoder = Encoder(dino_weight_path=args.dino_path,
@@ -127,7 +134,7 @@ def load_models(args):
     # encoder = torch.compile(encoder,mode='max-autotune')
     # gru = torch.compile(gru,mode="max-autotune")
 
-    print(f"[rank{dist.get_rank()}]Models Loaded")
+    reporter.log(f"Models Loaded")
 
     return encoder,gru
 
@@ -141,99 +148,125 @@ def main(args):
     dist.init_process_group(backend="nccl")
     args.device = f"cuda:{local_rank}"
 
-    init_random_seed(args)
-
-    metas = []
+    # --- Monitor & Reporter Initialization ---
+    experiment_id_clean = str(args.experiment_id).replace(":", "_").replace(" ", "_")
+    monitor = None
     if rank == 0:
-        metas = load_images_meta(args)
-        pairs_ids_all = get_pairs(args,metas)
-        pairs_ids_chunks = partition_pairs(pairs_ids_all,world_size) # TODO:考虑pairs num < world size的情况
+        monitor = StatusMonitor(world_size, experiment_id_clean)
+        monitor.start()
     
-    #ddp同步metas
-    broadcast_container = [metas]
-    dist.broadcast_object_list(broadcast_container,src=0)
-    metas = broadcast_container[0]
+    reporter = StatusReporter(rank, world_size, experiment_id_clean, monitor)
+    # -----------------------------------------
 
-    # ddp分发pair ids
-    scatter_recive = [None]
-    dist.scatter_object_list(scatter_recive,pairs_ids_chunks if rank == 0 else None, src=0)
-    pairs_ids = scatter_recive[0]
-    
-    local_results = []
-    if len(pairs_ids) > 0:
-        image_ids = sorted(set(x for t in pairs_ids for x in t))
+    try:
+        init_random_seed(args)
 
-        print(f"[rank{rank}]: pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
-
-        images = load_images(args,[metas[i] for i in image_ids])
-        pairs = build_pairs(args,images,pairs_ids)
-        encoder,gru = load_models(args)
-
+        metas = []
+        if rank == 0:
+            metas = load_images_meta(args, reporter)
+            pairs_ids_all = get_pairs(args,metas)
+            pairs_ids_chunks = partition_pairs(pairs_ids_all,world_size) # TODO:考虑pairs num < world size的情况
         
-        for pair in pairs:
-            print(f"[rank{rank}]Solving Pair {pair.id_a} - {pair.id_b}")
-            affine_ab,affine_ba = pair.solve_affines(encoder,gru)
-            result = {
-                pair.id_a:affine_ab,
-                pair.id_b:affine_ba
-            }
-            local_results.append(result)
-        
-        del encoder
-        del gru
-        for image in images:
-            del image
-        encoder = None
-        gru = None
-        images = None
+        #ddp同步metas
+        reporter.update(current_step="Syncing Meta")
+        broadcast_container = [metas]
+        dist.broadcast_object_list(broadcast_container,src=0)
+        metas = broadcast_container[0]
 
-    # ddp收集results
-    if rank == 0:
-        all_results = [None for _ in range(world_size)]
-    else:
-        all_results = None
-    dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
-    
-    if rank == 0:
-        all_results = [item for sublist in all_results for item in sublist]
-        image_ids = sorted(set(x for t in pairs_ids_all for x in t))
-        images = load_images(args,[metas[i] for i in image_ids])
-        pairs = build_pairs(args,images)
-        if args.solver == 'global':
-            solver = GlobalAffineSolver(images=images,
-                                    device=args.device,
-                                    anchor_indices=[0],
-                                    max_iter=100,
-                                    converge_tol=1e-6)
+        # ddp分发pair ids
+        scatter_recive = [None]
+        dist.scatter_object_list(scatter_recive,pairs_ids_chunks if rank == 0 else None, src=0)
+        pairs_ids = scatter_recive[0]
+        
+        local_results = []
+        
+        # 初始化进度
+        total_pairs = len(pairs_ids)
+        reporter.update(current_task="Ready", progress=f"0/{total_pairs}", level="-", current_step="Ready")
+
+        if len(pairs_ids) > 0:
+            image_ids = sorted(set(x for t in pairs_ids for x in t))
+
+            reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
+
+            images = load_images(args,[metas[i] for i in image_ids], reporter)
+            pairs = build_pairs(args,images, reporter, pairs_ids)
+            encoder,gru = load_models(args, reporter)
+
+            for idx, pair in enumerate(pairs):
+                # Update Task info
+                reporter.update(current_task=f"{pair.id_a}=>{pair.id_b}", progress=f"{idx+1}/{total_pairs}")
+                reporter.log(f"Solving Pair {pair.id_a} - {pair.id_b}")
+                
+                affine_ab,affine_ba = pair.solve_affines(encoder,gru)
+                result = {
+                    pair.id_a:affine_ab,
+                    pair.id_b:affine_ba
+                }
+                local_results.append(result)
+            
+            # 任务完成，清理状态
+            reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
+            
+            del encoder
+            del gru
+            for image in images:
+                del image
+            encoder = None
+            gru = None
+            images = None
+
+        # ddp收集results
+        reporter.update(current_step="Gathering Results")
+        if rank == 0:
+            all_results = [None for _ in range(world_size)]
         else:
-            solver = TopologicalAffineSolver(images=images,
-                                            device=args.device,
-                                            anchor_indices=[0])
-        Ms = solver.solve(all_results)
-        Ms = Ms[:,:2,]
-
-        for i,image in enumerate(images):
-            M = Ms[i]
-            print(f"Affine Matrix of Image {image.id}\n{M}\n")
-            image.rpc.Update_Adjust(M)
-            image.rpc.Merge_Adjust()
+            all_results = None
+        dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
         
-        for i,j in itertools.combinations(range(len(images)),2):
-            vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
-        
-        report = get_error_report(pairs)
-        print("\n" + "--- Global Error Report (Summary) ---")
-        print(f"Total tie points checked: {report['count']}")
-        print(f"Mean Error:   {report['mean']:.4f} m")
-        print(f"Median Error: {report['median']:.4f} m")
-        print(f"Max Error:    {report['max']:.4f} m")
-        print(f"RMSE:         {report['rmse']:.4f} m")
-        print(f"< 1.0 m: {report['<1m_percent']:.2f} %")
-        print(f"< 3.0 m: {report['<3m_percent']:.2f} %")
-        print(f"< 5.0 m: {report['<5m_percent']:.2f} %")
+        if rank == 0:
+            reporter.update(current_task="Global Solving", current_step="Global Optimization")
+            all_results = [item for sublist in all_results for item in sublist]
+            image_ids = sorted(set(x for t in pairs_ids_all for x in t))
+            images = load_images(args,[metas[i] for i in image_ids], reporter)
+            pairs = build_pairs(args,images, reporter)
+            if args.solver == 'global':
+                solver = GlobalAffineSolver(images=images,
+                                        device=args.device,
+                                        anchor_indices=[0],
+                                        max_iter=100,
+                                        converge_tol=1e-6)
+            else:
+                solver = TopologicalAffineSolver(images=images,
+                                                device=args.device,
+                                                anchor_indices=[0])
+            Ms = solver.solve(all_results)
+            Ms = Ms[:,:2,]
 
-
+            for i,image in enumerate(images):
+                M = Ms[i]
+                reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
+                image.rpc.Update_Adjust(M)
+                image.rpc.Merge_Adjust()
+            
+            reporter.update(current_step="Visualizing")
+            for i,j in itertools.combinations(range(len(images)),2):
+                vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
+            
+            report = get_error_report(pairs)
+            reporter.log("\n" + "--- Global Error Report (Summary) ---")
+            reporter.log(f"Total tie points checked: {report['count']}")
+            reporter.log(f"Mean Error:   {report['mean']:.4f} m")
+            reporter.log(f"Median Error: {report['median']:.4f} m")
+            reporter.log(f"Max Error:    {report['max']:.4f} m")
+            reporter.log(f"RMSE:         {report['rmse']:.4f} m")
+            reporter.log(f"< 1.0 m: {report['<1m_percent']:.2f} %")
+            reporter.log(f"< 3.0 m: {report['<3m_percent']:.2f} %")
+            reporter.log(f"< 5.0 m: {report['<5m_percent']:.2f} %")
     
+    finally:
+        if monitor:
+            monitor.stop()
 
 if __name__ == '__main__':
 
@@ -310,6 +343,3 @@ if __name__ == '__main__':
     os.makedirs(args.output_path,exist_ok=True)
 
     main(args)
-    
-
-
