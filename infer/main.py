@@ -174,7 +174,7 @@ def instantiate_rsimage(meta_dict, device) -> RSImage:
     # 如果会读图，这里会在 Worker 进程发生 IO，这是预期的（分散 IO）
     # 如果 __init__ 只是存路径，那就是完美的懒加载
     # 假设 RSImage.__init__ 会读图，我们就在这里触发它
-    return RSImage(args=None, # RSImage 内部可能不需要 args，或者我们可以 mock 一个
+    return RSImage(options=None, # RSImage 内部可能不需要 args，或者我们可以 mock 一个
                    img_dir=meta_dict['img_path'], 
                    img_id=meta_dict['id'], 
                    device=device)
