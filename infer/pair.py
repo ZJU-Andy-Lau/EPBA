@@ -220,27 +220,19 @@ class Solver():
         for idx, window_pair in enumerate(self.window_pairs):
             window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
-
-    # def check_adjust(self):
-    #     ori_rpc = deepcopy(self.rs_image_a.rpc)
-    #     test_diag = self.window_pairs[0].diag[None].copy()
-    #     test_diag[:,1,:] = test_diag[:,0,:] + [500,-500]
-    #     data_ori_a,data_b = self.get_data_by_diags(test_diag,rpc_a=ori_rpc)
-    #     data_a,_ = self.get_data_by_diags(test_diag)
-    #     img_ori,img_a,img_b = data_ori_a[0][0],data_a[0][0],data_b[0][0]
-    #     checker_ori_a = make_checkerboard(img_ori,img_a,num_tiles=8)
-    #     checker_ori_b = make_checkerboard(img_ori,img_b,num_tiles=8)
-    #     checker_a_b = make_checkerboard(img_a,img_b,num_tiles=8)
-    #     return checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b
     
     def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
+        t0 = time.perf_counter()
         imgs_a,imgs_b = self.collect_imgs()
         dems_a,dems_b = self.collect_dems(to_tensor=True)
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
+        t1 = time.perf_counter()
+        print(f"===collect data time:{t1 - t0}s")
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
+        t2 = time.perf_counter()
+        print(f"===extract feature time:{t2 - t1}s")
         self.distribute_feats(feats_a,feats_b)
-        # check_invalid_tensors([dems_a,Hs_a,Hs_b,feats_a[0],feats_a[1],feats_a[2],height])
         solver = WindowSolver(B,H,W,
                               gru=gru,
                               feats_a=feats_a,feats_b=feats_b,
@@ -248,27 +240,18 @@ class Solver():
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                               height=dems_a,
                               test_imgs_a=imgs_a,test_imgs_b=imgs_b)
-        
+        t3 = time.perf_counter()
+        print(f"===init solver time:{t3 - t2}s")
         preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
-        # preds,vis = solver.solve(flag = 'ab',final_only=True,return_vis=True)
-
-        # vis_output_path = os.path.join(self.configs['output_path'],'solve_test_vis',f'{self.window_size}')
-        # os.makedirs(vis_output_path,exist_ok=True)
-        # cv2.imwrite(os.path.join(vis_output_path,f"pyr_lvl0.png"),vis['level_0'])
-        # cv2.imwrite(os.path.join(vis_output_path,f"pyr_lvl1.png"),vis['level_1'])
-        # for i in range(vis['test']['imgs_a'].shape[0]):
-        #     cv2.imwrite(os.path.join(vis_output_path,f"test_{i}_a.png"),vis['test']['imgs_a'][i])
-        #     cv2.imwrite(os.path.join(vis_output_path,f"test_{i}_b.png"),vis['test']['imgs_b'][i])
-        #     cv2.imwrite(os.path.join(vis_output_path,f"test_{i}_ab.png"),make_checkerboard(vis['test']['imgs_a'][i],
-        #                                                                                    vis['test']['imgs_b'][i]))
-
+        t4 = time.perf_counter()
+        print(f"===solve time:{t4 - t3}s")
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
         scores_a = confs_a.reshape(B,-1).mean(dim=1) # B,
         scores_b = confs_b.reshape(B,-1).mean(dim=1)
         scores = torch.sqrt(scores_a * scores_b) # B,
         
-        return preds,scores,solver
+        return preds,scores
     
     def merge_affines(self,affines:torch.Tensor,Hs:torch.Tensor,scores:torch.Tensor):
         """
@@ -311,32 +294,18 @@ class Solver():
             affine: torch.Tensor, (2,3)
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
-        preds,scores,solver = self.get_window_affines(encoder,gru)
+        t0 = time.perf_counter()
+        preds,scores = self.get_window_affines(encoder,gru)
+        t1 = time.perf_counter()
+        print(f"=get window affines time:{(t1-t0):.2f}s")
         affine = self.merge_affines(preds,Hs_a,scores)
+        t2 = time.perf_counter()
+        print(f"=merge affines time:{(t2-t1):.2f}s")
 
-        # self.test_affine(affine)
         self.test_rpc()
-        # window_imgs_a,window_imgs_b = solver.test(affine[None].expand(preds.shape[0],-1,-1)) # TODO：需删除
 
-
-        # self.rpc_a.Clear_Adjust()
         self.rpc_a.Update_Adjust(affine)
         print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
-
-        # output_path = os.path.join(self.configs['output_path'],f"check_adjust_level_{self.window_size}")
-        # os.makedirs(output_path,exist_ok=True)
-        # checker_ori_a,checker_ori_b,checker_a_b,img_a,img_b = self.check_adjust()
-        # cv2.imwrite(os.path.join(output_path,f"a.png"),img_a)
-        # cv2.imwrite(os.path.join(output_path,f"b.png"),img_b)
-        # cv2.imwrite(os.path.join(output_path,f"ori_a.png"),checker_ori_a)
-        # cv2.imwrite(os.path.join(output_path,f"ori_b.png"),checker_ori_b)
-        # cv2.imwrite(os.path.join(output_path,f"a_b.png"),checker_a_b)
-        # for i in range(window_imgs_a.shape[0]):
-        #     cv2.imwrite(os.path.join(output_path,f"window_{i}_a.png"),window_imgs_a[i])
-        #     cv2.imwrite(os.path.join(output_path,f"window_{i}_b.png"),window_imgs_b[i])
-        #     cv2.imwrite(os.path.join(output_path,f"window_{i}_ab.png"),make_checkerboard(window_imgs_a[i],
-        #                                                                                  window_imgs_b[i]))
-        # self.window_pairs[0].visualize(os.path.join(output_path,f'feats_vis_{self.window_size}'))
 
         return affine
     
