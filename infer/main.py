@@ -100,8 +100,8 @@ def load_models(args):
     encoder = encoder.to(args.device).eval().half()
     gru = gru.to(args.device).eval().half()
 
-    encoder = torch.compile(encoder,mode='max-autotune')
-    gru = torch.compile(gru,mode="max-autotune")
+    # encoder = torch.compile(encoder,mode='max-autotune')
+    # gru = torch.compile(gru,mode="max-autotune")
 
     print("Models Loaded")
 
