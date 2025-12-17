@@ -14,7 +14,7 @@ import random
 from functools import partial
 import cv2
 from copy import deepcopy
-from typing import List, Dict
+from typing import List
 import itertools
 import yaml
 
@@ -48,10 +48,7 @@ def init_random_seed(args):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def load_images(args, lazy=False) -> List[RSImage] :
-    """
-    lazy: If True, load in lightweight mode (metadata only).
-    """
+def load_images(args) -> List[RSImage] :
     base_path = os.path.join(args.root, 'adjust_images')
     select_img_idxs = [int(i) for i in args.select_imgs.split(',')]
     img_folders = sorted([d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))])
@@ -59,50 +56,28 @@ def load_images(args, lazy=False) -> List[RSImage] :
     images = []
     for idx,folder in enumerate(img_folders):
         img_path = os.path.join(base_path,folder)
-        # Pass lazy flag
-        images.append(RSImage(args,img_path,idx,args.device, lazy=lazy))
-        if not lazy: 
-            print(f"Loaded Image {idx} from {folder}")
-    
-    if lazy and dist.is_initialized() and dist.get_rank() == 0:
-        print(f"[Rank 0] Meta-loaded {len(images)} Images (Lazy Mode)")
-    elif not lazy:
-        print(f"Totally {len(images)} Images Loaded")
-        
+        images.append(RSImage(args,img_path,idx,args.device))
+        print(f"Loaded Image {idx} from {folder}")
+    print(f"Totally {len(images)} Images Loaded")
     args.image_num = len(images)
     return images
 
-def build_pair_indices(args, images: List[RSImage]) -> List[Dict]:
-    """
-    Construct list of metadata dictionaries for pairs instead of Pair objects.
-    This runs on Rank 0 efficiently.
-    """
+def build_pairs(args,images:List[RSImage]) -> List[Pair]:
     images_num = len(images)
     configs = {
-        'max_window_num': args.max_window_num,
-        'min_window_size': args.min_window_size,
-        'max_window_size': args.max_window_size,
-        'min_area_ratio': args.min_cover_area_ratio,
+        'max_window_num':args.max_window_num,
+        'min_window_size':args.min_window_size,
+        'max_window_size':args.max_window_size,
+        'min_area_ratio':args.min_cover_area_ratio,
     }
-    pair_indices = []
-    for i, j in itertools.combinations(range(images_num), 2):
-        # is_overlap relies on corner_xys, which is computed in RSImage.__init__ even in lazy mode
-        if is_overlap(images[i], images[j], args.min_window_size ** 2):
-            output_path = os.path.join(args.output_path, f"pair_{images[i].id}_{images[j].id}")
-            # Clone config for each pair to set path
-            pair_config = configs.copy()
-            pair_config['output_path'] = output_path
-            
-            pair_indices.append({
-                'id_a': images[i].id,
-                'id_b': images[j].id,
-                'configs': pair_config
-            })
-            
-    if dist.is_initialized() and dist.get_rank() == 0:
-        print(f"[Rank 0] Identified {len(pair_indices)} pairs")
-    
-    return pair_indices
+    pairs = []
+    for i,j in itertools.combinations(range(images_num),2):
+        if is_overlap(images[i],images[j],args.min_window_size ** 2):
+            configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
+            pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
+            pairs.append(pair)
+    print(f"Totally {len(pairs)} Pairs")
+    return pairs
 
 def load_models(args):
     model_configs = load_config(args.model_config_path)
@@ -125,206 +100,76 @@ def load_models(args):
     encoder = encoder.to(args.device).eval().half()
     gru = gru.to(args.device).eval()
 
+    # encoder = torch.compile(encoder,mode='max-autotune')
+    # gru = torch.compile(gru,mode="max-autotune")
+
+    print("Models Loaded")
+
     return encoder,gru
 
-def main(args):
-    # ========================== 1. DDP Initialization ==========================
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-        local_rank = int(os.environ["LOCAL_RANK"])
-        torch.cuda.set_device(local_rank)
-        dist.init_process_group(backend="nccl")
-        args.device = f"cuda:{local_rank}"
-        is_ddp = True
-    else:
-        rank = 0
-        world_size = 1
-        is_ddp = False
-        print("Running in Single-GPU mode.")
+def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
+    print("Start Solving")
+    results = []
+    for pair in pairs:
+        print(f"Solving Pair {pair.id_a} - {pair.id_b}")
+        affine_ab,affine_ba = pair.solve_affines(encoder,gru)
+        result = {
+            pair.id_a:affine_ab,
+            pair.id_b:affine_ba
+        }
+        results.append(result)
+    
+    print("Pair Results\n")
+    for result in results:
+        ids = list(result.keys())
+        print(f"{ids[0]} ==> {ids[1]}:\n{result[ids[0]]}\n")
+        print(f"{ids[1]} ==> {ids[0]}:\n{result[ids[1]]}\n")
+        
+    solver_configs = load_config(args.solver_config_path)
+    print(f"Global Solving")
+    solver = GlobalAffineSolver(images=images,
+                                device=args.device,
+                                anchor_indices=[0],
+                                max_iter=100,
+                                converge_tol=1e-6)
+    # solver = TopologicalAffineSolver(images=images,
+    #                                  device=args.device,
+    #                                  anchor_indices=[0])
+    Ms = solver.solve(results)
+    Ms_23 = Ms[:,:2,]
+    return Ms_23
 
+
+def main(args):
     init_random_seed(args)
 
-    # ========================== 2. Data Preparation (Rank 0) ==========================
-    all_images = [] 
-    scatter_list = None
+    images = load_images(args)
+    pairs = build_pairs(args,images)
+    encoder,gru = load_models(args)
+
+    Ms = solve(args,images,pairs,encoder,gru)
+    for image in images:
+        M = Ms[image.id]
+        print(f"Affine Matrix of Image {image.id}\n{M}\n")
+        image.rpc.Update_Adjust(M)
+        image.rpc.Merge_Adjust()
     
-    if rank == 0:
-        # Rank 0 loads all images in lazy mode (metadata only)
-        all_images = load_images(args, lazy=True)
-        
-        # Build pair indices (metadata only)
-        all_pair_indices = build_pair_indices(args, all_images)
-        
-        # Sort to ensure deterministic order
-        all_pair_indices.sort(key=lambda p: (p['id_a'], p['id_b']))
-        
-        # Split into chunks
-        pairs_chunks = np.array_split(all_pair_indices, world_size)
-        scatter_list = [chunk.tolist() for chunk in pairs_chunks]
-        
-        print(f"[Rank 0] Distributing {len(all_pair_indices)} tasks to {world_size} ranks.")
-    else:
-        # Workers need empty container for all_images broadcast
-        # But since pickle works, we can just broadcast the object list
-        pass
-
-    # ========================== 3. Broadcast Image List & Scatter Tasks ==========================
-    if is_ddp:
-        # Broadcast the Lazy Image List so all workers have metadata/references
-        # Note: pickling lazy RSImage is fast as it contains no heavy arrays
-        broadcast_container = [all_images]
-        dist.broadcast_object_list(broadcast_container, src=0)
-        all_images = broadcast_container[0]
-
-        # Scatter the pair indices
-        output_list = [None]
-        dist.scatter_object_list(output_list, scatter_list if rank == 0 else None, src=0)
-        my_pair_indices = output_list[0]
-    else:
-        # Single GPU mode: run everything
-        if rank == 0: # Should be true
-            # In single GPU we need to convert build_pair_indices result to Pair objects later?
-            # Or just follow the same flow.
-            my_pair_indices = all_pair_indices
-        else:
-            my_pair_indices = []
-
-    # ========================== 4. Worker: Load Heavy Data & Construct Pairs ==========================
-    # Identify which images this rank needs
-    my_unique_image_ids = set()
-    for meta in my_pair_indices:
-        my_unique_image_ids.add(meta['id_a'])
-        my_unique_image_ids.add(meta['id_b'])
-            
-    # Load actual pixels for needed images
-    # Update device for local images
-    # tqdm.write(f"[Rank {rank}] Loading heavy data for {len(my_unique_image_ids)} images...")
-    for img_id in my_unique_image_ids:
-        img = all_images[img_id]
-        img.device = args.device # Set to local rank device
-        img.load_heavy_data()    # Actual IO
-
-    # Construct Pair objects locally
-    my_pairs = []
-    for meta in my_pair_indices:
-        img_a = all_images[meta['id_a']]
-        img_b = all_images[meta['id_b']]
-        pair = Pair(img_a, img_b, meta['id_a'], meta['id_b'], meta['configs'], device=args.device)
-        my_pairs.append(pair)
-
-    # ========================== 5. Load Models ==========================
-    encoder, gru = load_models(args)
-
-    # ========================== 6. Parallel Inference ==========================
-    local_results = []
+    for i,j in itertools.combinations(range(len(images)),2):
+        vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
     
-    # Setup progress bar
-    pbar = tqdm(my_pairs, position=rank, leave=True, ncols=140,
-                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {desc}')
+    report = get_error_report(pairs)
+    print("\n" + "--- Global Error Report (Summary) ---")
+    print(f"Total tie points checked: {report['count']}")
+    print(f"Mean Error:   {report['mean']:.4f} m")
+    print(f"Median Error: {report['median']:.4f} m")
+    print(f"Max Error:    {report['max']:.4f} m")
+    print(f"RMSE:         {report['rmse']:.4f} m")
+    print(f"< 1.0 m: {report['<1m_percent']:.2f} %")
+    print(f"< 3.0 m: {report['<3m_percent']:.2f} %")
+    print(f"< 5.0 m: {report['<5m_percent']:.2f} %")
+
+
     
-    def status_update(direction, w_size, step):
-        if isinstance(w_size, (int, float)):
-            w_str = f"{w_size}m"
-        else:
-            w_str = str(w_size)
-        pbar.set_description(f"[R{rank}] {direction} | {w_str} | {step}")
-
-    for pair in pbar:
-        pbar.set_description(f"[R{rank}] Pair {pair.id_a}-{pair.id_b} Init")
-        affine_ab, affine_ba = pair.solve_affines(encoder, gru, status_callback=status_update)
-        local_results.append({
-            pair.id_a: affine_ab,
-            pair.id_b: affine_ba
-        })
-    
-    pbar.close()
-
-    # ========================== 7. Gather Results ==========================
-    if is_ddp:
-        all_results_lists = [None for _ in range(world_size)]
-        dist.all_gather_object(all_results_lists, local_results)
-    else:
-        all_results_lists = [local_results]
-
-    # ========================== 8. Global Solve (Rank 0) ==========================
-    Ms_global = None
-    
-    if rank == 0:
-        print("\n[Rank 0] Aggregating results and solving global affine...")
-        
-        flat_results = [item for sublist in all_results_lists for item in sublist]
-        
-        # Load DEMs for ALL images for global solver projection
-        print("[Rank 0] Loading DEMs for Global Solver...")
-        for img in tqdm(all_images, desc="Loading DEMs"):
-            img.device = args.device
-            img.load_dem_only() # Lightweight load
-            
-        solver_configs = load_config(args.solver_config_path)
-        solver = GlobalAffineSolver(images=all_images,
-                                    device=args.device,
-                                    anchor_indices=[0],
-                                    max_iter=100,
-                                    converge_tol=1e-6)
-        
-        Ms_global = solver.solve(flat_results)
-        Ms_global = Ms_global[:, :2, ] 
-    
-    # ========================== 9. Broadcast Result ==========================
-    if is_ddp:
-        broadcast_list = [Ms_global]
-        dist.broadcast_object_list(broadcast_list, src=0)
-        Ms_global = broadcast_list[0]
-
-    # ========================== 10. Update, Output & Report ==========================
-    # 10.1 Update Local RPCs & Vis
-    for img_id in my_unique_image_ids:
-        img = all_images[img_id]
-        M = Ms_global[img.id]
-        img.rpc.Update_Adjust(M)
-        img.rpc.Merge_Adjust()
-
-    for pair in my_pairs:
-        vis_registration(image_a=pair.rs_image_a, 
-                         image_b=pair.rs_image_b, 
-                         output_path=args.output_path, 
-                         device=args.device)
-    
-    # 10.2 Rank 0 Error Report
-    if rank == 0:
-        print("\n[Rank 0] Calculating Final Error Report...")
-        # Update RPCs for ALL images in Rank 0 (they have DEM loaded now)
-        for i, img in enumerate(all_images):
-            M = Ms_global[i]
-            img.rpc.Update_Adjust(M)
-            img.rpc.Merge_Adjust()
-            
-        # Reconstruct light pairs for error checking (Pixel data not needed)
-        # We assume build_pair_indices holds all pairs in order
-        # Need to reconstruct the full list of indices since we scattered them
-        # all_pair_indices is still available on Rank 0
-        
-        eval_pairs = []
-        for meta in all_pair_indices:
-            img_a = all_images[meta['id_a']]
-            img_b = all_images[meta['id_b']]
-            # Device doesn't matter much for check_error as it uses CPU/Numpy mostly or lightweight tensors
-            # But ensure consistency
-            p = Pair(img_a, img_b, meta['id_a'], meta['id_b'], meta['configs'], device=args.device)
-            eval_pairs.append(p)
-            
-        report = get_error_report(eval_pairs)
-        print("\n" + "="*50)
-        print("Final Registration Error Report")
-        print("="*50)
-        # report is a dict, print nicely
-        for k, v in report.items():
-            print(f"{k}: {v}")
-        print("="*50)
-
-    if is_ddp:
-        dist.destroy_process_group()
 
 if __name__ == '__main__':
 
@@ -401,3 +246,6 @@ if __name__ == '__main__':
     os.makedirs(args.output_path,exist_ok=True)
 
     main(args)
+    
+
+
