@@ -169,6 +169,7 @@ def main(args):
         print("Running in Single-GPU mode.")
 
     init_random_seed(args)
+    args.device = f'cuda:{rank}'
 
     # ========================== 2. Data Preparation (Rank 0 Only) ==========================
     my_pairs = []
