@@ -52,19 +52,9 @@ class WindowSolver():
         t2 = time.perf_counter()
         print(f"==========build cost volume time:{t2 - t1}s")
 
-        self.Ms_a_b = torch.tensor([
-            [
-                [1.0,0.0,0.0],
-                [0.0,1.0,0.0]
-            ]
-        ] * self.B).to(device=self.device,dtype=torch.float32)
+        self.Ms_a_b = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(B,2,3)
 
-        self.Ms_b_a = torch.tensor([
-            [
-                [1.0,0.0,0.0],
-                [0.0,1.0,0.0]
-            ]
-        ] * self.B).to(device=self.device,dtype=torch.float32)
+        self.Ms_b_a = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(B,2,3)
 
         t3 = time.perf_counter()
         print(f"==========build base M time:{t3 - t2}s")
@@ -487,12 +477,7 @@ class WindowSolver():
         preds = torch.stack(preds,dim=1)
 
         if final_only:
-            final = torch.tensor([
-                    [
-                        [1.0,0.0,0.0],
-                        [0.0,1.0,0.0]
-                    ]
-                ] * self.B).to(device=self.device,dtype=torch.float32)
+            final = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(self.B,2,3)
             for t in range(self.gru_max_iter):
                 pred = preds[:,t]
                 final = self.merge_M(final,pred)
