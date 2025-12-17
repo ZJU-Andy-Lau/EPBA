@@ -19,26 +19,6 @@ if typing.TYPE_CHECKING:
     from rs_image import RSImage
     from pair import Pair
 
-# ==========================================
-# [新增] 状态汇报器
-# ==========================================
-class Reporter:
-    def __init__(self, queue, rank):
-        self.queue = queue
-        self.rank = rank
-    
-    def update(self, **kwargs):
-        """
-        发送状态更新消息到监控队列。
-        例如: reporter.update(step="GRU 1/10")
-        """
-        if self.queue is not None:
-            msg = {'rank': self.rank}
-            msg.update(kwargs)
-            self.queue.put(msg)
-
-# ==========================================
-
 def warp_quads(corners, values:List[np.ndarray], output_size=(512, 512)):
         
         # 1. 基础参数解析

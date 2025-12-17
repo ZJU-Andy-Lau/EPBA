@@ -13,7 +13,6 @@ from shared.rpc import RPCModelParameterTorch,project_linesamp
 from shared.utils import debug_print,check_invalid_tensors,avg_downsample
 from shared.visualize import vis_pyramid_correlation
 from criterion.utils import merge_affine
-from infer.utils import Reporter
 
 class WindowSolver():
     def __init__(self,B,H,W,
@@ -23,8 +22,7 @@ class WindowSolver():
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
                  height:torch.Tensor = None,
                  test_imgs_a = None, test_imgs_b = None,
-                 gru_max_iter:int = 10,
-                 reporter:Reporter = None): # [新增] reporter 参数
+                 gru_max_iter:int = 10):
         self.gru = gru
         self.gru_access = gru.module if hasattr(gru,'module') else gru
         self.match_feats_a, self.ctx_feats_a, self.confs_a = feats_a
@@ -38,7 +36,6 @@ class WindowSolver():
         self.height = height # B,h,w
         self.height_ds = avg_downsample(height,16) if not height is None else None
         self.gru_max_iter = gru_max_iter
-        self.reporter = reporter # [新增]
         self.B,self.H,self.W = B,H,W
         self.h,self.w = self.ctx_feats_a.shape[-2:]
         self.device = self.ctx_feats_a.device
@@ -384,10 +381,6 @@ class WindowSolver():
         vis_dict = {}
 
         for iter in range(self.gru_max_iter):
-            # [新增] 汇报进度
-            if self.reporter is not None:
-                self.reporter.update(step=f"GRU {iter+1}/{self.gru_max_iter}")
-
             # 计算a->b的仿射
             if flag == 'ab':
                 # 1. 准备数据 (接收新增的 anchor_coords)
@@ -471,9 +464,6 @@ class WindowSolver():
         preds = torch.stack(preds,dim=1)
 
         if final_only:
-            if self.reporter is not None:
-                self.reporter.update(step="Merging") # [新增] 汇报Merge状态
-            
             final = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(self.B,2,3)
             for t in range(self.gru_max_iter):
                 pred = preds[:,t]
