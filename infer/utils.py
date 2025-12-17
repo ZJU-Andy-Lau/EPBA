@@ -12,6 +12,7 @@ import os
 import typing
 from typing import List,Tuple
 import time
+from collections import defaultdict, deque
 
 
 if typing.TYPE_CHECKING:
@@ -697,3 +698,96 @@ def warp_perspective_huge(src: np.ndarray, M: np.ndarray, dsize: tuple, **kwargs
     output = cv2.warpPerspective(src_roi, M_new, dsize, **kwargs)
 
     return output
+
+def partition_pairs(A: list, K: int) -> list:
+    """
+    将包含tuple的列表A划分为K份，利用图的连通性（BFS）
+    使得每份中包含的 unique 整数尽可能少。
+    
+    Args:
+        A: List[Tuple[int, int]], 例如 [(1,2), (2,3), ...]
+        K: int, 需要划分的份数
+        
+    Returns:
+        List[List[Tuple[int, int]]]: 包含 K 个子列表的大列表
+    """
+    # 0. 边界情况处理
+    if K <= 0:
+        raise ValueError("K must be greater than 0")
+    if K == 1:
+        return [A]
+    if not A:
+        return [[] for _ in range(K)]
+    adj = defaultdict(list)
+    for idx, (u, v) in enumerate(A):
+        adj[u].append((v, idx))
+        adj[v].append((u, idx)) # 视为无向图
+        
+    # 2. 初始化参数
+    n_edges = len(A)
+    # 计算基础步长，尽量均匀分配
+    base_size = n_edges // K
+    
+    partitions = []           # 最终结果
+    current_partition = []    # 当前正在填充的子列表
+    visited_edges = set()     # 记录已经分配过的边索引
+    
+    # 获取所有涉及的节点，用于在图不连通时寻找新的起点
+    all_nodes = list(adj.keys())
+    node_cursor = 0 # 游标，避免每次从头遍历 all_nodes
+    
+    # BFS 队列
+    queue = deque()
+    while len(visited_edges) < n_edges:
+        if not queue:
+            found_seed = False
+            while node_cursor < len(all_nodes):
+                start_node = all_nodes[node_cursor]
+                has_unvisited = False
+                for _, e_idx in adj[start_node]:
+                    if e_idx not in visited_edges:
+                        has_unvisited = True
+                        break
+                
+                if has_unvisited:
+                    queue.append(start_node)
+                    found_seed = True
+                    break
+                else:
+                    node_cursor += 1
+
+            if not found_seed:
+                for i in range(n_edges):
+                    if i not in visited_edges:
+                        visited_edges.add(i)
+                        current_partition.append(A[i])
+                break
+
+        while queue:
+            u = queue.popleft()
+            
+            # 遍历节点 u 的所有邻居
+            for v, e_idx in adj[u]:
+                if e_idx in visited_edges:
+                    continue
+                visited_edges.add(e_idx)
+                current_partition.append(A[e_idx])
+                queue.append(v)
+
+                if len(partitions) < K - 1:
+                    if len(current_partition) >= base_size:
+                        partitions.append(current_partition)
+                        current_partition = []
+                        break 
+            if len(partitions) < K - 1 and len(current_partition) == 0 and visited_edges:
+                 # 这种情况下，我们希望保留 queue 的状态，直接进入下一轮外层循环
+                 # 以便为新的 current_partition 供货
+                 pass
+
+    if current_partition:
+        partitions.append(current_partition)
+
+    while len(partitions) < K:
+        partitions.append([])
+        
+    return partitions

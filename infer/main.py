@@ -36,7 +36,7 @@ from model.encoder import Encoder
 from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
-from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report
+from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,partition_pairs
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver,TopologicalAffineSolver
 from rs_image import RSImage,RSImageMeta,vis_registration
@@ -57,13 +57,13 @@ def load_images_meta(args) -> List[RSImageMeta]:
     for idx,folder in enumerate(img_folders):
         img_path = os.path.join(base_path,folder)
         metas.append(RSImageMeta(args,img_path,idx,args.device))
-        print(f"Loaded Image Meta {idx} from {folder}")
-    print(f"Totally {len(metas)} Images' Meta Loaded")
+        print(f"[rank{dist.get_rank()}]Loaded Image Meta {idx} from {folder}")
+    print(f"[rank{dist.get_rank()}]Totally {len(metas)} Images' Meta Loaded")
     return metas
 
 def load_images(args,metas:List[RSImageMeta]) -> List[RSImage] :
     images = [RSImage(meta,device=args.device) for meta in metas]
-    print(f"Totally {len(images)} Images Loaded")
+    print(f"[rank{dist.get_rank()}]Totally {len(images)} Images Loaded")
     args.image_num = len(images)
     return images
 
@@ -88,7 +88,7 @@ def build_pairs(args,images:List[RSImage]) -> List[Pair]:
             configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
             pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
             pairs.append(pair)
-    print(f"Totally {len(pairs)} Pairs")
+    print(f"[rank{dist.get_rank()}]Totally {len(pairs)} Pairs")
     return pairs
 
 def load_models(args):
@@ -115,75 +115,96 @@ def load_models(args):
     # encoder = torch.compile(encoder,mode='max-autotune')
     # gru = torch.compile(gru,mode="max-autotune")
 
-    print("Models Loaded")
+    print(f"[rank{dist.get_rank()}]Models Loaded")
 
     return encoder,gru
 
-def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBlock) -> torch.Tensor:
-    print("Start Solving")
-    results = []
+def main(args):
+
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group(backend="nccl")
+    args.device = f"cuda:{local_rank}"
+
+    init_random_seed(args)
+
+    metas = []
+    if rank == 0:
+        metas = load_images_meta(args)
+        pairs_ids_all = get_pairs(args,metas)
+        pairs_ids_chunks = partition_pairs(pairs_ids_all,world_size) # TODO:考虑pairs num < world size的情况
+    
+    #ddp同步metas
+    broadcast_container = [metas]
+    dist.broadcast_object_list(broadcast_container,src=0)
+    metas = broadcast_container[0]
+
+    # ddp分发pair ids
+    scatter_recive = [None]
+    dist.scatter_object_list(scatter_recive,pairs_ids_chunks if rank == 0 else None, src=0)
+    pairs_ids = scatter_recive[0]
+
+    image_ids = sorted(set(x for t in pairs_ids for x in t))
+
+    print(f"[rank{rank}]: pair_ids:{pairs_ids} \t image_ids:{image_ids}")
+
+    images = load_images(args,[metas[i] for i in image_ids])
+    pairs = build_pairs(args,images)
+    encoder,gru = load_models(args)
+
+    local_results = []
     for pair in pairs:
-        print(f"Solving Pair {pair.id_a} - {pair.id_b}")
+        print(f"[rank{rank}]Solving Pair {pair.id_a} - {pair.id_b}")
         affine_ab,affine_ba = pair.solve_affines(encoder,gru)
         result = {
             pair.id_a:affine_ab,
             pair.id_b:affine_ba
         }
-        results.append(result)
+        local_results.append(result)
+
+    # ddp收集results
+    all_results = [None for _ in range(world_size)]
+    dist.all_gather_object(all_results,local_results)
     
-    print("Pair Results\n")
-    for result in results:
-        ids = list(result.keys())
-        print(f"{ids[0]} ==> {ids[1]}:\n{result[ids[0]]}\n")
-        print(f"{ids[1]} ==> {ids[0]}:\n{result[ids[1]]}\n")
+    if rank == 0:
+        all_results = [item for sublist in all_results for item in sublist]
+        image_ids = sorted(set(x for t in pairs_ids_all for x in t))
+        images = load_images(args,[metas[i] for i in image_ids])
+        pairs = build_pairs(args,images)
+        if args.solver == 'global':
+            solver = GlobalAffineSolver(images=images,
+                                    device=args.device,
+                                    anchor_indices=[0],
+                                    max_iter=100,
+                                    converge_tol=1e-6)
+        else:
+            solver = TopologicalAffineSolver(images=images,
+                                            device=args.device,
+                                            anchor_indices=[0])
+        Ms = solver.solve(all_results)
+        Ms = Ms[:,:2,]
+
+        for i,image in enumerate(images):
+            M = Ms[i]
+            print(f"Affine Matrix of Image {image.id}\n{M}\n")
+            image.rpc.Update_Adjust(M)
+            image.rpc.Merge_Adjust()
         
-    solver_configs = load_config(args.solver_config_path)
-    print(f"Global Solving")
-    if args.solver == 'globla':
-        solver = GlobalAffineSolver(images=images,
-                                device=args.device,
-                                anchor_indices=[0],
-                                max_iter=100,
-                                converge_tol=1e-6)
-    else:
-        solver = TopologicalAffineSolver(images=images,
-                                        device=args.device,
-                                        anchor_indices=[0])
-    Ms = solver.solve(results)
-    Ms_23 = Ms[:,:2,]
-    return Ms_23
-
-
-def main(args):
-    init_random_seed(args)
-
-    metas = load_images_meta(args)
-    pair_ids = get_pairs(args,metas)
-    image_ids = sorted(set(x for t in pair_ids for x in t))
-    images = load_images(args,[metas[i] for i in image_ids])
-    pairs = build_pairs(args,images)
-    encoder,gru = load_models(args)
-
-    Ms = solve(args,images,pairs,encoder,gru)
-    for i,image in enumerate(images):
-        M = Ms[i]
-        print(f"Affine Matrix of Image {image.id}\n{M}\n")
-        image.rpc.Update_Adjust(M)
-        image.rpc.Merge_Adjust()
-    
-    for i,j in itertools.combinations(range(len(images)),2):
-        vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
-    
-    report = get_error_report(pairs)
-    print("\n" + "--- Global Error Report (Summary) ---")
-    print(f"Total tie points checked: {report['count']}")
-    print(f"Mean Error:   {report['mean']:.4f} m")
-    print(f"Median Error: {report['median']:.4f} m")
-    print(f"Max Error:    {report['max']:.4f} m")
-    print(f"RMSE:         {report['rmse']:.4f} m")
-    print(f"< 1.0 m: {report['<1m_percent']:.2f} %")
-    print(f"< 3.0 m: {report['<3m_percent']:.2f} %")
-    print(f"< 5.0 m: {report['<5m_percent']:.2f} %")
+        for i,j in itertools.combinations(range(len(images)),2):
+            vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
+        
+        report = get_error_report(pairs)
+        print("\n" + "--- Global Error Report (Summary) ---")
+        print(f"Total tie points checked: {report['count']}")
+        print(f"Mean Error:   {report['mean']:.4f} m")
+        print(f"Median Error: {report['median']:.4f} m")
+        print(f"Max Error:    {report['max']:.4f} m")
+        print(f"RMSE:         {report['rmse']:.4f} m")
+        print(f"< 1.0 m: {report['<1m_percent']:.2f} %")
+        print(f"< 3.0 m: {report['<3m_percent']:.2f} %")
+        print(f"< 5.0 m: {report['<5m_percent']:.2f} %")
 
 
     
@@ -247,8 +268,6 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_id', type=str, default=None)
 
     parser.add_argument('--random_seed',type=int,default=42)
-
-    parser.add_argument('--device',type=str,default='cuda')
 
     #==============================================================================
 

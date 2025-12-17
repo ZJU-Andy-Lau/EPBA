@@ -61,9 +61,7 @@ class Pair():
                                 device=device)
 
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
-        print("solve ab")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
-        print("solve ba")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
         return affine_ab,affine_ba
     
@@ -253,8 +251,6 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
-        # for affine in affines:
-        #     print(f"{affine.detach().cpu().numpy()}\n")
         coords_mat = get_coord_mat(32,32,Hs.shape[0],16,self.device) # (B,32,32,2)
         coords_mat_flat = coords_mat.flatten(1,2) # (B,1024,2)
         coords_src = apply_H(coords=coords_mat_flat,Hs=torch.linalg.inv(Hs),device=self.device) # (B,1024,2) 大图坐标系下的坐标
@@ -268,8 +264,6 @@ class Solver():
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
         
         merged_affine = solve_weighted_affine(coords_src_flat,coords_dst_flat,scores_norm)
-
-        print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
 
         # vis_shift,vis_error = visualizer.validate_affine_solver(coords_src[:,[0,31,31*32,31*33]],coords_dst[:,[0,31,31*32,31*33]],merged_affine,min(coords_src.shape[0],8))
         # cv2.imwrite(os.path.join(self.configs['output_path'],f'vis_shift_{self.window_size}.png'),vis_shift)
@@ -289,7 +283,6 @@ class Solver():
         affine = self.merge_affines(preds,Hs_a,scores)
         self.test_rpc()
         self.rpc_a.Update_Adjust(affine)
-        print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
         return affine
     
@@ -299,15 +292,7 @@ class Solver():
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
-            print("\n===============================================")
-            print(f"Solve level {self.window_size} m")
-            torch.cuda.synchronize()
-            start_time = time.perf_counter()
             self.solve_level_affine(encoder,gru)
-            torch.cuda.synchronize()
-            end_time = time.perf_counter()
-            print(f"Time Cost:{end_time - start_time} s")
-            print("===============================================\n")
             self.quadsplit_windows()
         return self.rpc_a.adjust_params
     
