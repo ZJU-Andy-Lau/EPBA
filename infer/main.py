@@ -74,7 +74,7 @@ def get_pairs(args,metas:List[RSImageMeta]):
             pair_idxs.append((i,j))
     return pair_idxs
 
-def build_pairs(args,images:List[RSImage]) -> List[Pair]:
+def build_pairs(args,images:List[RSImage],pair_ids = None) -> List[Pair]:
     images_num = len(images)
     configs = {
         'max_window_num':args.max_window_num,
@@ -83,11 +83,18 @@ def build_pairs(args,images:List[RSImage]) -> List[Pair]:
         'min_area_ratio':args.min_cover_area_ratio,
     }
     pairs = []
-    for i,j in itertools.combinations(range(images_num),2):
-        if is_overlap(images[i],images[j],args.min_window_size ** 2):
+    if pair_ids is None:
+        for i,j in itertools.combinations(range(images_num),2):
+            if is_overlap(images[i],images[j],args.min_window_size ** 2):
+                configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
+                pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
+                pairs.append(pair)
+    else:
+        for i,j in pair_ids:
             configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
             pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
             pairs.append(pair)
+
     print(f"[rank{dist.get_rank()}]Totally {len(pairs)} Pairs")
     return pairs
 

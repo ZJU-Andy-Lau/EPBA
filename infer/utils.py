@@ -711,34 +711,37 @@ def partition_pairs(A: list, K: int) -> list:
     Returns:
         List[List[Tuple[int, int]]]: 包含 K 个子列表的大列表
     """
-    # 0. 边界情况处理
-    if K <= 0:
-        raise ValueError("K must be greater than 0")
-    if K == 1:
-        return [A]
-    if not A:
-        return [[] for _ in range(K)]
+    n_edges = len(A)
+    if K <= 0: raise ValueError("K must be > 0")
+    if K == 1: return [A]
+    if n_edges == 0: return [[] for _ in range(K)]
+
+    # 计算基础大小和余数
+    base_size = n_edges // K
+    remainder = n_edges % K  # 有 remainder 个分块需要多承载 1 个元素
+
+    # 1. 构建邻接表
     adj = defaultdict(list)
     for idx, (u, v) in enumerate(A):
         adj[u].append((v, idx))
-        adj[v].append((u, idx)) # 视为无向图
-        
-    # 2. 初始化参数
-    n_edges = len(A)
-    # 计算基础步长，尽量均匀分配
-    base_size = n_edges // K
+        adj[v].append((u, idx))
+
+    partitions = []
+    current_partition = []
+    visited_edges = set()
     
-    partitions = []           # 最终结果
-    current_partition = []    # 当前正在填充的子列表
-    visited_edges = set()     # 记录已经分配过的边索引
-    
-    # 获取所有涉及的节点，用于在图不连通时寻找新的起点
+    # 游标与队列
     all_nodes = list(adj.keys())
-    node_cursor = 0 # 游标，避免每次从头遍历 all_nodes
-    
-    # BFS 队列
+    node_cursor = 0
     queue = deque()
     while len(visited_edges) < n_edges:
+        current_idx = len(partitions)
+        target_size = base_size + 1 if current_idx < remainder else base_size
+
+        if target_size == 0:
+            partitions.append([])
+            continue
+
         if not queue:
             found_seed = False
             while node_cursor < len(all_nodes):
@@ -757,32 +760,43 @@ def partition_pairs(A: list, K: int) -> list:
                     node_cursor += 1
 
             if not found_seed:
-                for i in range(n_edges):
-                    if i not in visited_edges:
-                        visited_edges.add(i)
-                        current_partition.append(A[i])
-                break
+                remaining_edges = [A[i] for i in range(n_edges) if i not in visited_edges]
+
+                for edge in remaining_edges:
+
+                     current_partition.append(edge)
+                     if len(current_partition) == target_size:
+                         partitions.append(current_partition)
+                         current_partition = []
+
+                         current_idx = len(partitions)
+                         if current_idx < K:
+                            target_size = base_size + 1 if current_idx < remainder else base_size
+                         else:
+
+                            partitions[-1].append(edge)
+                break 
 
         while queue:
             u = queue.popleft()
-            
-            # 遍历节点 u 的所有邻居
+
             for v, e_idx in adj[u]:
                 if e_idx in visited_edges:
                     continue
+
                 visited_edges.add(e_idx)
                 current_partition.append(A[e_idx])
                 queue.append(v)
 
-                if len(partitions) < K - 1:
-                    if len(current_partition) >= base_size:
-                        partitions.append(current_partition)
-                        current_partition = []
-                        break 
-            if len(partitions) < K - 1 and len(current_partition) == 0 and visited_edges:
-                 # 这种情况下，我们希望保留 queue 的状态，直接进入下一轮外层循环
-                 # 以便为新的 current_partition 供货
-                 pass
+                if len(current_partition) == target_size:
+                    partitions.append(current_partition)
+                    current_partition = []
+
+                    break
+
+            if not current_partition and len(partitions) < K:
+                break
+                
 
     if current_partition:
         partitions.append(current_partition)
