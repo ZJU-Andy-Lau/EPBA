@@ -38,7 +38,7 @@ from model.ctx_decoder import ContextDecoder
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report
 from pair import Pair
-from solve.global_affine_solver import GlobalAffineSolver
+from solve.global_affine_solver import GlobalAffineSolver,TopologicalAffineSolver
 from rs_image import RSImage,vis_registration
 
 def init_random_seed(args):
@@ -124,10 +124,13 @@ def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBloc
         
     solver_configs = load_config(args.solver_config_path)
     print(f"Global Solving")
-    solver = GlobalAffineSolver(images=images,
-                                device=args.device,
-                                anchor_indices=[0],
-                                lambda_anchor=1e8)
+    # solver = GlobalAffineSolver(images=images,
+    #                             device=args.device,
+    #                             anchor_indices=[0],
+    #                             lambda_anchor=1e8)
+    solver = TopologicalAffineSolver(images=images,
+                                     device=args.device,
+                                     anchor_indices=[0])
     Ms = solver.solve(results)
     Ms_23 = Ms[:,:2,]
     return Ms_23
