@@ -127,13 +127,14 @@ def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBloc
         
     solver_configs = load_config(args.solver_config_path)
     print(f"Global Solving")
-    # solver = GlobalAffineSolver(images=images,
-    #                             device=args.device,
-    #                             anchor_indices=[0],
-    #                             lambda_anchor=1e8)
-    solver = TopologicalAffineSolver(images=images,
-                                     device=args.device,
-                                     anchor_indices=[0])
+    solver = GlobalAffineSolver(images=images,
+                                device=args.device,
+                                anchor_indices=[0],
+                                max_iter=100,
+                                converge_tol=1e-6)
+    # solver = TopologicalAffineSolver(images=images,
+    #                                  device=args.device,
+    #                                  anchor_indices=[0])
     Ms = solver.solve(results)
     Ms_23 = Ms[:,:2,]
     return Ms_23
