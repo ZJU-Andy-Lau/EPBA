@@ -382,8 +382,8 @@ class Solver():
         #棋盘格
         img_a_b = make_checkerboard(img_a,img_b)
 
-        cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_a.png'),img_a)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_b.png'),img_b)
+        # cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_a.png'),img_a)
+        # cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_b.png'),img_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_a_b.png'),img_a_b)
 
 

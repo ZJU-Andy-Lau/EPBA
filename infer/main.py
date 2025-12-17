@@ -91,8 +91,13 @@ def build_pairs(args,images:List[RSImage],pair_ids = None) -> List[Pair]:
                 pairs.append(pair)
     else:
         for i,j in pair_ids:
-            configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
-            pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device)
+            try:
+                image_i = [image for image in images if image.id == i][0]
+                image_j = [image for image in images if image.id == j][0]
+            except:
+                raise ValueError(f"pair id {i}-{j} not found in images")
+            configs['output_path'] = os.path.join(args.output_path,f"pair_{i}_{j}")
+            pair = Pair(image_i,image_j,i,j,configs,device=args.device)
             pairs.append(pair)
 
     print(f"[rank{dist.get_rank()}]Totally {len(pairs)} Pairs")
