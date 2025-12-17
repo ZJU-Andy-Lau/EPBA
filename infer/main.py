@@ -131,6 +131,7 @@ def load_models(args):
 
     return encoder,gru
 
+@torch.no_grad()
 def main(args):
 
     rank = int(os.environ["RANK"])
@@ -175,6 +176,9 @@ def main(args):
             pair.id_b:affine_ba
         }
         local_results.append(result)
+    for image in images:
+        del image
+    images = None
 
     # ddp收集results
     all_results = [None for _ in range(world_size)]
