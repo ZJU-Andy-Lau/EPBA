@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch,project_linesamp
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,affine_xy_to_rowcol
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,affine_xy_to_rowcol,Reporter
 from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
 import shared.visualize as visualizer
@@ -60,11 +60,20 @@ class Pair():
                                 },
                                 device=device)
 
-    def solve_affines(self,encoder:Encoder,gru:GRUBlock):
-        print("solve ab")
-        affine_ab = self.solver_ab.solve_affine(encoder,gru)
-        print("solve ba")
-        affine_ba = self.solver_ba.solve_affine(encoder,gru)
+    def solve_affines(self,encoder:Encoder,gru:GRUBlock, reporter:Reporter = None):
+        """
+        [修改] 增加 reporter 参数，用于多卡状态汇报
+        """
+        if reporter:
+            reporter.update(direction="A->B")
+        # print("solve ab") 
+        affine_ab = self.solver_ab.solve_affine(encoder,gru, reporter=reporter)
+        
+        if reporter:
+            reporter.update(direction="B->A")
+        # print("solve ba")
+        affine_ba = self.solver_ba.solve_affine(encoder,gru, reporter=reporter)
+        
         return affine_ab,affine_ba
     
     
@@ -130,8 +139,9 @@ class Solver():
                 window_diags = window_diags[sorted_idxs]
         self.window_size = np.abs(window_diags[0,1,0] - window_diags[0,0,0])
 
-        window_vis = visualizer.vis_windows_distribution(self.rs_image_a.corner_xys,window_diags)
-        cv2.imwrite(os.path.join(self.configs['output_path'],f'window_vis_{self.window_size}m.png'),window_vis)
+        # [注释] 关闭窗口可视化以减少IO
+        # window_vis = visualizer.vis_windows_distribution(self.rs_image_a.corner_xys,window_diags)
+        # cv2.imwrite(os.path.join(self.configs['output_path'],f'window_vis_{self.window_size}m.png'),window_vis)
 
         data_a,data_b = self.get_data_by_diags(window_diags)
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
@@ -221,7 +231,7 @@ class Solver():
             window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
     
-    def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
+    def get_window_affines(self,encoder:Encoder,gru:GRUBlock, reporter:Reporter=None):
         imgs_a,imgs_b = self.collect_imgs()
         dems_a,dems_b = self.collect_dems(to_tensor=True)
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
@@ -234,7 +244,8 @@ class Solver():
                               H_as=Hs_a,H_bs=Hs_b,
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                               height=dems_a,
-                              test_imgs_a=imgs_a,test_imgs_b=imgs_b)
+                              test_imgs_a=imgs_a,test_imgs_b=imgs_b,
+                              reporter=reporter) # [修改] 传递 reporter
         preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
@@ -269,7 +280,7 @@ class Solver():
         
         merged_affine = solve_weighted_affine(coords_src_flat,coords_dst_flat,scores_norm)
 
-        print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
+        # print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
 
         # vis_shift,vis_error = visualizer.validate_affine_solver(coords_src[:,[0,31,31*32,31*33]],coords_dst[:,[0,31,31*32,31*33]],merged_affine,min(coords_src.shape[0],8))
         # cv2.imwrite(os.path.join(self.configs['output_path'],f'vis_shift_{self.window_size}.png'),vis_shift)
@@ -279,35 +290,38 @@ class Solver():
 
         return merged_affine
 
-    def solve_level_affine(self,encoder:Encoder,gru:GRUBlock):
+    def solve_level_affine(self,encoder:Encoder,gru:GRUBlock, reporter:Reporter=None):
         """
         Returns:
             affine: torch.Tensor, (2,3)
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
-        preds,scores = self.get_window_affines(encoder,gru)
+        preds,scores = self.get_window_affines(encoder,gru,reporter=reporter)
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.test_rpc()
+        # self.test_rpc()
         self.rpc_a.Update_Adjust(affine)
-        print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
+        # print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
         return affine
     
     @torch.no_grad()
-    def solve_affine(self,encoder:Encoder,gru:GRUBlock):
+    def solve_affine(self,encoder:Encoder,gru:GRUBlock, reporter:Reporter=None):
         self.init_window_pairs(a_max=self.configs['max_window_size'],
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
-            print("\n===============================================")
-            print(f"Solve level {self.window_size} m")
+            # [修改] 使用 Reporter 替代 print
+            if reporter:
+                reporter.update(level=f"{self.window_size}m")
+            # print("\n===============================================")
+            # print(f"Solve level {self.window_size} m")
             torch.cuda.synchronize()
             start_time = time.perf_counter()
-            self.solve_level_affine(encoder,gru)
+            self.solve_level_affine(encoder,gru,reporter=reporter)
             torch.cuda.synchronize()
             end_time = time.perf_counter()
-            print(f"Time Cost:{end_time - start_time} s")
-            print("===============================================\n")
+            # print(f"Time Cost:{end_time - start_time} s")
+            # print("===============================================\n")
             self.quadsplit_windows()
         return self.rpc_a.adjust_params
     
