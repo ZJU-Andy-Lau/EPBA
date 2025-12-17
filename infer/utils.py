@@ -10,6 +10,7 @@ from shapely.geometry import Polygon, box
 import os
 import typing
 from typing import List,Tuple
+import time
 
 
 if typing.TYPE_CHECKING:
@@ -291,13 +292,19 @@ def extract_features(encoder:'Encoder',imgs_a:np.ndarray,imgs_b:np.ndarray,devic
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
+    t0 = time.perf_counter()
     input_a = torch.stack([transform(img) for img in imgs_a],dim=0) # N,3,H,W
     input_b = torch.stack([transform(img) for img in imgs_b],dim=0) # N,3,H,W
+    t1 = time.perf_counter()
+    print(f"========transform data time:{t1 - t0}s")
     encoder = encoder.to(device).eval()
     input_a = input_a.to(device)
     input_b = input_b.to(device)
-
+    t2 = time.perf_counter()
+    print(f"========to device time:{t2 - t1}s")
     feats_a,feats_b = encoder(input_a,input_b)
+    t3 = time.perf_counter()
+    print(f"========encoder forward time:{t3 - t2}s")
 
     return feats_a,feats_b
 
