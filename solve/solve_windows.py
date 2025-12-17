@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import cv2
 import os
+import time
 
 from model.encoder import Encoder
 from model.gru import GRUBlock
@@ -33,8 +34,10 @@ class WindowSolver():
         self.rpc_a = rpc_a
         self.rpc_b = rpc_b
         self.height = height # B,h,w
+        t0 = time.perf_counter()
         self.height_ds = avg_downsample(height,16) if not height is None else None
-
+        t1 = time.perf_counter()
+        print(f"==========downsample height time:{t1 - t0}s")
         self.gru_max_iter = gru_max_iter
         self.B,self.H,self.W = B,H,W
         self.h,self.w = self.ctx_feats_a.shape[-2:]
@@ -45,6 +48,9 @@ class WindowSolver():
 
         self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b,num_levels=self.gru_access.corr_levels)
         self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a,num_levels=self.gru_access.corr_levels)
+
+        t2 = time.perf_counter()
+        print(f"==========build cost volume time:{t2 - t1}s")
 
         self.Ms_a_b = torch.tensor([
             [
