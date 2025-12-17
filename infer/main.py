@@ -163,7 +163,7 @@ class MonitorThread(threading.Thread):
         print("\n\n") # 留出空间给Log
 
 # ==========================================
-# [修改] Worker 主函数
+# [修改] Worker 主函数 (支持 IO-Master 模式)
 # ==========================================
 def main_worker(rank, world_size, args, msg_queue):
     # 1. 环境初始化
@@ -184,25 +184,46 @@ def main_worker(rank, world_size, args, msg_queue):
 
     # 3. 创建 Reporter
     reporter = Reporter(msg_queue, rank)
-    reporter.update(status="LOADING")
+    reporter.update(status="INIT_DATA")
 
-    # 4. 加载数据 (所有 Rank 都加载全量，以保证 Pair 顺序一致)
-    images = load_images(args)
-    pairs = build_pairs(args,images)
+    # 4. 数据加载与分发 (Rank 0 独占 IO + Scatter)
+    images = None 
+    scatter_list = None # 仅 Rank 0 使用，用于存放要分发给各 Rank 的 Pair 列表
+
+    if rank == 0:
+        reporter.update(status="LOADING")
+        # 仅主进程读取硬盘
+        images = load_images(args)
+        all_pairs = build_pairs(args, images)
+        
+        # 任务切分: 根据 rank 数量将 pairs 分成 world_size 份
+        scatter_list = [[] for _ in range(world_size)]
+        for i, pair in enumerate(all_pairs):
+            target_rank = i % world_size
+            scatter_list[target_rank].append(pair)
+            
+        # print(f"Rank 0: Prepared tasks for scatter. Total pairs: {len(all_pairs)}")
+
+    # 准备接收容器 (所有进程都需要)
+    my_pairs_wrapper = [None]
     
-    # 5. 加载模型
+    # 执行 Scatter: 将 Rank 0 的 scatter_list 分发给所有进程
+    # 注意: RSImage 对象可能会很大，Scatter 会通过 pickle 序列化传输对象
+    # 这避免了多进程并发读取文件的 IO 瓶颈
+    dist.scatter_object_list(my_pairs_wrapper, scatter_list if rank == 0 else None, src=0)
+    
+    # 解包得到当前进程需要处理的任务
+    my_pairs = my_pairs_wrapper[0]
+    
+    # 5. 加载模型 (每个 Rank 独立加载到自己的 GPU)
+    reporter.update(status="LOAD_MODEL")
     encoder, gru = load_models(args)
-
-    # 6. 任务分配
-    my_pairs_indices = [i for i in range(len(pairs)) if i % world_size == rank]
-    my_pairs = [pairs[i] for i in my_pairs_indices]
     
     local_results = []
     
-    # 7. 推理循环
+    # 6. 推理循环
     reporter.update(status="RUNNING")
     for idx, pair in enumerate(my_pairs):
-        global_idx = my_pairs_indices[idx]
         pair_id_str = f"{pair.id_a}-{pair.id_b}"
         progress_str = f"{idx+1}/{len(my_pairs)}"
         
@@ -227,18 +248,17 @@ def main_worker(rank, world_size, args, msg_queue):
     
     reporter.update(status="GATHERING")
     
-    # 8. 结果汇总
-    # all_results_lists will range(world_size) list of lists
+    # 7. 结果汇总
+    # all_results_lists will be a list of lists (len = world_size)
     all_results_lists = [None for _ in range(world_size)]
     dist.all_gather_object(all_results_lists, local_results)
     
-    # 9. Global Solve (仅 Rank 0)
+    # 8. Global Solve (仅 Rank 0)
+    # 只有 Rank 0 拥有完整的 images 列表，且 GlobalAffineSolver 需要它
     if rank == 0:
         reporter.update(status="SOLVING")
         # 展平列表
         final_results = []
-        # 按 Round-Robin 顺序重组结果 (可选，其实顺序不影响 Global Solve)
-        # 这里简单展平
         for sublist in all_results_lists:
             final_results.extend(sublist)
             
@@ -262,10 +282,15 @@ def main_worker(rank, world_size, args, msg_queue):
         
         # 可视化与报告
         reporter.update(status="VISUALIZING")
+        # 重新生成全量 pairs 列表用于报告统计 (或者从之前 build_pairs 获取)
+        # 这里为了代码简洁，复用 build_pairs 的逻辑或直接利用已有的 all_pairs (如果它还在内存中)
+        # 注意: all_pairs 在这里可以重新构建，因为 images 是完整的
+        report_pairs = build_pairs(args, images)
+        
         for i,j in itertools.combinations(range(len(images)),2):
             vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
         
-        report = get_error_report(pairs)
+        report = get_error_report(report_pairs)
         print("\n" + "--- Global Error Report (Summary) ---")
         print(f"Total tie points checked: {report['count']}")
         print(f"Mean Error:   {report['mean']:.4f} m")
@@ -339,7 +364,9 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_id', type=str, default=None)
 
     parser.add_argument('--random_seed',type=int,default=42)
-   
+
+    parser.add_argument('--device',type=str,default='cuda')
+    
     parser.add_argument('--world_size', type=int, default=8, help='Number of GPUs/Processes to use')
 
     #==============================================================================
