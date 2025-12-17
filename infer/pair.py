@@ -245,6 +245,7 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
+        print(self.device,feats_a[0].device)
         self.distribute_feats(feats_a,feats_b)
         solver = WindowSolver(B,H,W,
                               gru=gru,
@@ -323,13 +324,9 @@ class Solver():
             
             # print("\n===============================================")
             # print(f"Solve level {self.window_size} m")
-            torch.cuda.synchronize()
-            # start_time = time.perf_counter()
             
             self.solve_level_affine(encoder,gru)
             
-            torch.cuda.synchronize()
-            # end_time = time.perf_counter()
             # print(f"Time Cost:{end_time - start_time} s")
             # print("===============================================\n")
             
