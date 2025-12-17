@@ -224,6 +224,8 @@ def main(args):
     # ========================== 5. Load Models ==========================
     encoder, gru = load_models(args)
 
+    print(f"[rank{rank}]:{encoder.device}")
+
     # ========================== 6. Parallel Inference ==========================
     local_results = []
     
