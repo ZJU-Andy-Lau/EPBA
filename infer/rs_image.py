@@ -34,6 +34,11 @@ class RSImageMeta():
         self.rpc.to_gpu(device=device)
         
         self.corner_xys = self.__get_corner_xys__()
+
+        del self.rpc
+        del self.dem
+        self.rpc = None
+        self.dem = None
     
     @torch.no_grad()
     def __get_corner_xys__(self):
