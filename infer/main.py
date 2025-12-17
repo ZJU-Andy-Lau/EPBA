@@ -155,10 +155,10 @@ def main(args):
 
     image_ids = sorted(set(x for t in pairs_ids for x in t))
 
-    print(f"[rank{rank}]: pair_ids:{pairs_ids} \t image_ids:{image_ids}")
+    print(f"[rank{rank}]: pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
 
     images = load_images(args,[metas[i] for i in image_ids])
-    pairs = build_pairs(args,images)
+    pairs = build_pairs(args,images,pairs_ids)
     encoder,gru = load_models(args)
 
     local_results = []
