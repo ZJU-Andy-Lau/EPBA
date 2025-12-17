@@ -109,8 +109,8 @@ class Solver():
         self.rs_image_b = rs_image_b
         self.rpc_a = deepcopy(rs_image_a.rpc)
         self.rpc_b = deepcopy(rs_image_b.rpc)
-        self.rpc_a.to_gpu(self.device)
-        self.rpc_b.to_gpu(self.device)
+        self.rpc_a.to_gpu(device)
+        self.rpc_b.to_gpu(device)
         self.configs = configs
         self.device = device
         self.window_pairs:List[WindowPair] = []
