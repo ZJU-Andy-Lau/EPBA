@@ -434,7 +434,7 @@ def solve_weighted_affine(src: torch.Tensor, dst: torch.Tensor, scores: torch.Te
 
     return affine_matrix
 
-def is_overlap(image_a:'RSImage'|'RSImageMeta',image_b:'RSImage'|'RSImageMeta',min_area:float = 0.):
+def is_overlap(image_a:'RSImage',image_b:'RSImage',min_area:float = 0.):
     poly1 = Polygon(image_a.corner_xys)
     poly2 = Polygon(image_b.corner_xys)
     overlap_area = poly1.intersection(poly2).area
