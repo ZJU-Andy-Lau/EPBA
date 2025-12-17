@@ -34,8 +34,10 @@ class WindowSolver():
         self.rpc_a = rpc_a
         self.rpc_b = rpc_b
         self.height = height # B,h,w
+        torch.cuda.synchronize()
         t0 = time.perf_counter()
         self.height_ds = avg_downsample(height,16) if not height is None else None
+        torch.cuda.synchronize()
         t1 = time.perf_counter()
         print(f"==========downsample height time:{t1 - t0}s")
         self.gru_max_iter = gru_max_iter
@@ -49,6 +51,7 @@ class WindowSolver():
         self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b,num_levels=self.gru_access.corr_levels)
         self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a,num_levels=self.gru_access.corr_levels)
 
+        torch.cuda.synchronize()
         t2 = time.perf_counter()
         print(f"==========build cost volume time:{t2 - t1}s")
 
@@ -56,20 +59,24 @@ class WindowSolver():
 
         self.Ms_b_a = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(B,2,3)
 
+        torch.cuda.synchronize()
         t3 = time.perf_counter()
         print(f"==========build base M time:{t3 - t2}s")
 
         self.norm_factors_a = self.calculate_original_extent(self.B,self.H,self.W,self.H_as) # B,
         self.norm_factors_b = self.calculate_original_extent(self.B,self.H,self.W,self.H_bs)         
         
+        torch.cuda.synchronize()
         t4 = time.perf_counter()
         print(f"==========calc ori extend time:{t4 - t3}s")
 
     def calculate_original_extent(self,B,H,W,Hs) -> torch.Tensor:
         device = self.device
         dtype = Hs.dtype
+        torch.cuda.synchronize()
         t0 = time.perf_counter()
         Hs_inv = torch.inverse(Hs)
+        torch.cuda.synchronize()
         t1 = time.perf_counter()
         print(f"================inverse H time:{t1 - t0}s")
         corners_row = [0.0, 0.0, float(H), float(H)]
@@ -79,12 +86,14 @@ class WindowSolver():
         cols = torch.tensor(corners_col, dtype=dtype, device=device)
         corners_homo = torch.stack([rows, cols, ones], dim=0)
         corners_batch = corners_homo.unsqueeze(0).expand(B, -1, -1)
+        torch.cuda.synchronize()
         t2 = time.perf_counter()
         print(f"================build corners time:{t2 - t1}s")
         p_big_homo = torch.bmm(Hs_inv, corners_batch)
         w = p_big_homo[:, 2:3, :] 
         eps = 1e-7
         p_big = p_big_homo / (w + eps)
+        torch.cuda.synchronize()
         t3 = time.perf_counter()
         print(f"================apply H time:{t3 - t2}s")
 
@@ -94,7 +103,7 @@ class WindowSolver():
         row_span = rows_big.max(dim=1).values - rows_big.min(dim=1).values
         col_span = cols_big.max(dim=1).values - cols_big.min(dim=1).values
         max_extent = torch.maximum(row_span, col_span)
-
+        torch.cuda.synchronize()
         t4 = time.perf_counter()
         print(f"================maximum time:{t4 - t3}s")
 

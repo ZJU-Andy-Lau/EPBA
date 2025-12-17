@@ -227,9 +227,11 @@ class Solver():
         dems_a,dems_b = self.collect_dems(to_tensor=True)
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
+        torch.cuda.synchronize()
         t1 = time.perf_counter()
         print(f"===collect data time:{t1 - t0}s")
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
+        torch.cuda.synchronize()
         t2 = time.perf_counter()
         print(f"===extract feature time:{t2 - t1}s")
         self.distribute_feats(feats_a,feats_b)
@@ -240,9 +242,11 @@ class Solver():
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                               height=dems_a,
                               test_imgs_a=imgs_a,test_imgs_b=imgs_b)
+        torch.cuda.synchronize()
         t3 = time.perf_counter()
         print(f"===init solver time:{t3 - t2}s")
         preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
+        torch.cuda.synchronize()
         t4 = time.perf_counter()
         print(f"===solve time:{t4 - t3}s")
         _,_,confs_a = feats_a
@@ -294,11 +298,14 @@ class Solver():
             affine: torch.Tensor, (2,3)
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
+        torch.cuda.synchronize()
         t0 = time.perf_counter()
         preds,scores = self.get_window_affines(encoder,gru)
+        torch.cuda.synchronize()
         t1 = time.perf_counter()
         print(f"=get window affines time:{(t1-t0):.2f}s")
         affine = self.merge_affines(preds,Hs_a,scores)
+        torch.cuda.synchronize()
         t2 = time.perf_counter()
         print(f"=merge affines time:{(t2-t1):.2f}s")
 
@@ -317,8 +324,10 @@ class Solver():
         while self.window_size >= self.configs['min_window_size']:
             print("\n===============================================")
             print(f"Solve level {self.window_size} m")
+            torch.cuda.synchronize()
             start_time = time.perf_counter()
             self.solve_level_affine(encoder,gru)
+            torch.cuda.synchronize()
             end_time = time.perf_counter()
             print(f"Time Cost:{end_time - start_time} s")
             print("===============================================\n")
