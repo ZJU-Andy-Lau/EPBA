@@ -8,8 +8,8 @@ import os
 import cv2
 
 from infer.utils import warp_quads
-from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,project_linesamp
-from shared.rpc import RPCModelParameterTorch
+from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate
+from shared.rpc import RPCModelParameterTorch,project_linesamp
 from shared.visualize import make_checkerboard
 
 class RSImage():
