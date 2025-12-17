@@ -17,6 +17,35 @@ from tqdm import tqdm,trange
 import rasterio
 from typing import Tuple
 
+class RSImageMeta():
+    def __init__(self,options,root:str,id:int,device:str='cuda'):
+        """
+        root: path to folder which contains 'image.png','dem.npy','rpc.txt',
+        id: index of this image
+        """
+        self.options = options
+        self.root = root
+        self.id = id
+        self.dem = np.load(os.path.join(root,'dem.npy'),mmap_mode='r')
+        self.device = device
+        self.H,self.W = self.dem.shape[:2]
+        self.rpc = RPCModelParameterTorch()
+        self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
+        self.rpc.to_gpu(device=device)
+        
+        self.corner_xys = self.__get_corner_xys__()
+    
+    @torch.no_grad()
+    def __get_corner_xys__(self):
+        """
+        return: [tl,tr,br,bl] [x,y] np.ndarray
+        """
+        latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ([0.,self.W-1.,self.W-1.,0],
+                                                     [0.,0.,self.H - 1.,self.H - 1.],
+                                                     [self.dem[0,0],self.dem[0,-1],self.dem[-1,-1],self.dem[-1,0]]),dim=-1)
+        xys = project_mercator(latlons)
+        return xys.cpu().numpy()[:,[1,0]] # y,x -> x,y
+
 class RSImage():
     def __init__(self,options,root:str,id:int,device:str='cuda'):
         """
@@ -37,6 +66,29 @@ class RSImage():
         self.H,self.W = self.image.shape[:2]
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
+        self.rpc.to_gpu(device=device)
+        
+        self.corner_xys = self.__get_corner_xys__()
+    
+    def __init__(self,meta:RSImageMeta,device:str = None):
+        """
+        root: path to folder which contains 'image.png','dem.npy','rpc.txt',
+        id: index of this image
+        """
+        self.options = meta.options
+        self.root = meta.root
+        self.id = meta.id
+        self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
+        self.image = np.stack([self.image] * 3,axis=-1)
+        self.dem = np.load(os.path.join(self.root,'dem.npy'))
+        if os.path.exists(os.path.join(self.root,'tie_points.txt')):
+            self.tie_points = self.__load_tie_points__(os.path.join(self.root,'tie_points.txt'))
+        else:
+            self.tie_points = None
+        self.device = meta.device if device is None else device
+        self.H,self.W = self.image.shape[:2]
+        self.rpc = RPCModelParameterTorch()
+        self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
         self.rpc.to_gpu(device=device)
         
         self.corner_xys = self.__get_corner_xys__()
@@ -134,6 +186,8 @@ class RSImage():
         warped_res,Hs = warp_quads(corners,[self.image,self.dem],output_size)
         warped_imgs,warped_dems = warped_res
         return warped_imgs,warped_dems,Hs
+
+
 
 
 def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):

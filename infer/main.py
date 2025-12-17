@@ -39,7 +39,7 @@ from shared.utils import str2bool,get_current_time,load_model_state_dict,load_co
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver,TopologicalAffineSolver
-from rs_image import RSImage,vis_registration
+from rs_image import RSImage,RSImageMeta,vis_registration
 
 def init_random_seed(args):
     seed = args.random_seed 
@@ -48,19 +48,31 @@ def init_random_seed(args):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def load_images(args) -> List[RSImage] :
+def load_images_meta(args) -> List[RSImageMeta]:
     base_path = os.path.join(args.root, 'adjust_images')
     select_img_idxs = [int(i) for i in args.select_imgs.split(',')]
     img_folders = sorted([d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))])
     img_folders = [img_folders[i] for i in select_img_idxs] #按照字典序的idx
-    images = []
+    metas = []
     for idx,folder in enumerate(img_folders):
         img_path = os.path.join(base_path,folder)
-        images.append(RSImage(args,img_path,idx,args.device))
-        print(f"Loaded Image {idx} from {folder}")
+        metas.append(RSImageMeta(args,img_path,idx,args.device))
+        print(f"Loaded Image Meta {idx} from {folder}")
+    print(f"Totally {len(metas)} Images' Meta Loaded")
+    return metas
+
+def load_images(args,metas:List[RSImageMeta]) -> List[RSImage] :
+    images = [RSImage(meta,device=args.device) for meta in metas]
     print(f"Totally {len(images)} Images Loaded")
     args.image_num = len(images)
     return images
+
+def get_pairs(args,metas:List[RSImageMeta]):
+    pair_idxs = []
+    for i,j in itertools.combinations(range(len(metas)),2):
+        if is_overlap(metas[i],metas[j],args.min_window_size ** 2):
+            pair_idxs.append((i,j))
+    return pair_idxs
 
 def build_pairs(args,images:List[RSImage]) -> List[Pair]:
     images_num = len(images)
@@ -145,13 +157,16 @@ def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBloc
 def main(args):
     init_random_seed(args)
 
-    images = load_images(args)
+    metas = load_images_meta(args)
+    pair_ids = get_pairs(args,metas)
+    image_ids = sorted(set(x for t in pair_ids for x in t))
+    images = load_images(args,[metas[i] for i in image_ids])
     pairs = build_pairs(args,images)
     encoder,gru = load_models(args)
 
     Ms = solve(args,images,pairs,encoder,gru)
-    for image in images:
-        M = Ms[image.id]
+    for i,image in enumerate(images):
+        M = Ms[i]
         print(f"Affine Matrix of Image {image.id}\n{M}\n")
         image.rpc.Update_Adjust(M)
         image.rpc.Merge_Adjust()
