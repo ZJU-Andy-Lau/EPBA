@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributed as dist
 import numpy as np
 import cv2
 import os
@@ -406,7 +405,6 @@ class WindowSolver():
                     )
 
                 # 4. GRU 预测局部仿射 (输入新增 pos_features)
-                print(f"[rank{dist.get_rank()}]:{corr_simi_ab.device} \t {corr_offset_ab.device} \t {self.ctx_feats_a.device} \t {pos_features_ab.device} \t {self.confs_a.device} \t {hidden_state.device}")
                 delta_affines_local, hidden_state = self.gru(
                     corr_simi_ab,
                     corr_offset_ab,
