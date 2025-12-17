@@ -61,8 +61,7 @@ def load_images(args, lazy=False) -> List[RSImage] :
         img_path = os.path.join(base_path,folder)
         # Pass lazy flag
         images.append(RSImage(args,img_path,idx,args.device, lazy=lazy))
-        if not lazy: # Avoid cluttering log in lazy/rank0 mode
-            print(f"Loaded Image {idx} from {folder}")
+        print(f"Loaded Image {idx} from {folder}")
     
     if lazy and dist.is_initialized() and dist.get_rank() == 0:
         print(f"[Rank 0] Meta-loaded {len(images)} Images (Lazy Mode)")
@@ -224,7 +223,7 @@ def main(args):
     # ========================== 5. Load Models ==========================
     encoder, gru = load_models(args)
 
-    print(f"[rank{rank}]:{encoder.device}")
+    print(f"[rank{rank}]:{next(encoder.parameters()).device}")
 
     # ========================== 6. Parallel Inference ==========================
     local_results = []
