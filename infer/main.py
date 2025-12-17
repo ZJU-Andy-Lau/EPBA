@@ -127,14 +127,16 @@ def solve(args,images:List[RSImage],pairs:List[Pair],encoder:Encoder,gru:GRUBloc
         
     solver_configs = load_config(args.solver_config_path)
     print(f"Global Solving")
-    solver = GlobalAffineSolver(images=images,
+    if args.solver == 'globla':
+        solver = GlobalAffineSolver(images=images,
                                 device=args.device,
                                 anchor_indices=[0],
                                 max_iter=100,
                                 converge_tol=1e-6)
-    # solver = TopologicalAffineSolver(images=images,
-    #                                  device=args.device,
-    #                                  anchor_indices=[0])
+    else:
+        solver = TopologicalAffineSolver(images=images,
+                                        device=args.device,
+                                        anchor_indices=[0])
     Ms = solver.solve(results)
     Ms_23 = Ms[:,:2,]
     return Ms_23
@@ -207,6 +209,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_window_num', type=int, default=256)
 
     parser.add_argument('--min_cover_area_ratio', type=float, default=0.5)
+
+    parser.add_argument('--solver',type=str,default='global')
 
     parser.add_argument('--solver_config_path', type=str, default='configs/global_solver_config.yaml')
 
