@@ -68,9 +68,10 @@ class WindowSolver():
     def calculate_original_extent(self,B,H,W,Hs) -> torch.Tensor:
         device = self.device
         dtype = Hs.dtype
-
+        t0 = time.perf_counter()
         Hs_inv = torch.linalg.inv(Hs)
-
+        t1 = time.perf_counter()
+        print(f"================inverse H time:{t1 - t0}s")
         corners_row = [0.0, 0.0, float(H), float(H)]
         corners_col = [0.0, float(W), float(W), 0.0]
         ones = torch.ones(4, dtype=dtype, device=device)
@@ -78,10 +79,14 @@ class WindowSolver():
         cols = torch.tensor(corners_col, dtype=dtype, device=device)
         corners_homo = torch.stack([rows, cols, ones], dim=0)
         corners_batch = corners_homo.unsqueeze(0).expand(B, -1, -1)
+        t2 = time.perf_counter()
+        print(f"================build corners time:{t2 - t1}s")
         p_big_homo = torch.bmm(Hs_inv, corners_batch)
         w = p_big_homo[:, 2:3, :] 
         eps = 1e-7
         p_big = p_big_homo / (w + eps)
+        t3 = time.perf_counter()
+        print(f"================apply H time:{t3 - t2}s")
 
         rows_big = p_big[:, 0, :]  # (B, 4)
         cols_big = p_big[:, 1, :]  # (B, 4)
@@ -89,6 +94,9 @@ class WindowSolver():
         row_span = rows_big.max(dim=1).values - rows_big.min(dim=1).values
         col_span = cols_big.max(dim=1).values - cols_big.min(dim=1).values
         max_extent = torch.maximum(row_span, col_span)
+
+        t4 = time.perf_counter()
+        print(f"================maximum time:{t4 - t3}s")
 
         return max_extent
     
