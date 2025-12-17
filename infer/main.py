@@ -158,31 +158,41 @@ def main(args):
     scatter_recive = [None]
     dist.scatter_object_list(scatter_recive,pairs_ids_chunks if rank == 0 else None, src=0)
     pairs_ids = scatter_recive[0]
-
-    image_ids = sorted(set(x for t in pairs_ids for x in t))
-
-    print(f"[rank{rank}]: pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
-
-    images = load_images(args,[metas[i] for i in image_ids])
-    pairs = build_pairs(args,images,pairs_ids)
-    encoder,gru = load_models(args)
-
+    
     local_results = []
-    for pair in pairs:
-        print(f"[rank{rank}]Solving Pair {pair.id_a} - {pair.id_b}")
-        affine_ab,affine_ba = pair.solve_affines(encoder,gru)
-        result = {
-            pair.id_a:affine_ab,
-            pair.id_b:affine_ba
-        }
-        local_results.append(result)
-    for image in images:
-        del image
-    images = None
+    if len(pairs_ids) > 0:
+        image_ids = sorted(set(x for t in pairs_ids for x in t))
+
+        print(f"[rank{rank}]: pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
+
+        images = load_images(args,[metas[i] for i in image_ids])
+        pairs = build_pairs(args,images,pairs_ids)
+        encoder,gru = load_models(args)
+
+        
+        for pair in pairs:
+            print(f"[rank{rank}]Solving Pair {pair.id_a} - {pair.id_b}")
+            affine_ab,affine_ba = pair.solve_affines(encoder,gru)
+            result = {
+                pair.id_a:affine_ab,
+                pair.id_b:affine_ba
+            }
+            local_results.append(result)
+        
+        del encoder
+        del gru
+        for image in images:
+            del image
+        encoder = None
+        gru = None
+        images = None
 
     # ddp收集results
-    all_results = [None for _ in range(world_size)]
-    dist.all_gather_object(all_results,local_results)
+    if rank == 0:
+        all_results = [None for _ in range(world_size)]
+    else:
+        all_results = None
+    dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
     
     if rank == 0:
         all_results = [item for sublist in all_results for item in sublist]
