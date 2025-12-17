@@ -59,14 +59,14 @@ def load_images_meta(args, reporter) -> List[RSImageMeta]:
     for idx,folder in enumerate(img_folders):
         img_path = os.path.join(base_path,folder)
         metas.append(RSImageMeta(args,img_path,idx,args.device))
-        reporter.log(f"Loaded Image Meta {idx} from {folder}")
-    reporter.log(f"Totally {len(metas)} Images' Meta Loaded")
+        # reporter.log(f"Loaded Image Meta {idx} from {folder}")
+    # reporter.log(f"Totally {len(metas)} Images' Meta Loaded")
     return metas
 
 def load_images(args,metas:List[RSImageMeta], reporter) -> List[RSImage] :
     reporter.update(current_step="Loading Images")
     images = [RSImage(meta,device=args.device) for meta in metas]
-    reporter.log(f"Totally {len(images)} Images Loaded")
+    # reporter.log(f"Totally {len(images)} Images Loaded")
     args.image_num = len(images)
     return images
 
@@ -106,7 +106,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
             pair = Pair(image_i,image_j,i,j,configs,device=args.device, reporter=reporter)
             pairs.append(pair)
 
-    reporter.log(f"Totally {len(pairs)} Pairs")
+    # reporter.log(f"Totally {len(pairs)} Pairs")
     return pairs
 
 def load_models(args, reporter):
@@ -134,7 +134,7 @@ def load_models(args, reporter):
     # encoder = torch.compile(encoder,mode='max-autotune')
     # gru = torch.compile(gru,mode="max-autotune")
 
-    reporter.log(f"Models Loaded")
+    # reporter.log(f"Models Loaded")
 
     return encoder,gru
 
@@ -187,7 +187,7 @@ def main(args):
         if len(pairs_ids) > 0:
             image_ids = sorted(set(x for t in pairs_ids for x in t))
 
-            reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
+            # reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
 
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             pairs = build_pairs(args,images, reporter, pairs_ids)
@@ -196,7 +196,7 @@ def main(args):
             for idx, pair in enumerate(pairs):
                 # Update Task info
                 reporter.update(current_task=f"{pair.id_a}=>{pair.id_b}", progress=f"{idx+1}/{total_pairs}")
-                reporter.log(f"Solving Pair {pair.id_a} - {pair.id_b}")
+                # reporter.log(f"Solving Pair {pair.id_a} - {pair.id_b}")
                 
                 affine_ab,affine_ba = pair.solve_affines(encoder,gru)
                 result = {
