@@ -339,9 +339,7 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_id', type=str, default=None)
 
     parser.add_argument('--random_seed',type=int,default=42)
-
-    parser.add_argument('--device',type=str,default='cuda')
-    
+   
     parser.add_argument('--world_size', type=int, default=8, help='Number of GPUs/Processes to use')
 
     #==============================================================================
@@ -361,6 +359,10 @@ if __name__ == '__main__':
     # 必要的 MP 设置
     mp.set_start_method('spawn', force=True)
     
+    # [修复] 设置分布式通信所需的环境变量
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355' # 可以选择任意一个空闲端口
+
     # 创建共享消息队列
     manager = mp.Manager()
     queue = manager.Queue()
