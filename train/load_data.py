@@ -378,10 +378,6 @@ class TrainDataset(Dataset):
         residual2 = torch.from_numpy(residual2).unsqueeze(1)
 
         H_as, H_bs, M_a_b = torch.from_numpy(H_as), torch.from_numpy(H_bs), torch.from_numpy(M_a_b)
-
-        # t2 = time.perf_counter()
-
-        # print(t1 - t0, t2 - t1)
         
         return imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,H_as, H_bs, M_a_b
 

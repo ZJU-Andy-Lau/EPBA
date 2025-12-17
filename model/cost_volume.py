@@ -29,10 +29,7 @@ class CostVolume:
         
         # 2. 计算全对相关性 (All-Pairs Correlation)
         # Output: [B, H*W (Query), H*W (Ref)]
-        t0 = time.perf_counter()
         corr = torch.matmul(query_flat.transpose(1, 2), ref_flat)
-        t1 = time.perf_counter()
-        print(f"===============corr matmul time:{t1 - t0}s")
         # 4. 重塑为 [B, H, W, 1, H, W] 以便后续处理
         # 前两个 H,W 对应 Query 像素位置（保持不变）
         # 后两个 H,W 对应 Ref 像素位置（将被池化）

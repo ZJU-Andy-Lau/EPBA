@@ -297,26 +297,15 @@ def extract_features(encoder:'Encoder',imgs_a:np.ndarray,imgs_b:np.ndarray,devic
         v2.ToDtype(torch.float32, scale=True), # [0, 255] -> [0.0, 1.0] (在GPU上极快)
         v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
     ])
-    torch.cuda.synchronize()
-    t0 = time.perf_counter()
     input_a = torch.from_numpy(imgs_a).permute(0,3,1,2).contiguous().to(device, non_blocking=True)
     input_b = torch.from_numpy(imgs_b).permute(0,3,1,2).contiguous().to(device, non_blocking=True)
     input_a = transform(input_a)
     input_b = transform(input_b)
-    torch.cuda.synchronize()
-    t1 = time.perf_counter()
-    print(f"========transform data time:{t1 - t0}s")
     encoder = encoder.to(device).eval().half()
     input_a = input_a.to(device).half()
     input_b = input_b.to(device).half()
-    torch.cuda.synchronize()
-    t2 = time.perf_counter()
-    print(f"========to device time:{t2 - t1}s")
     with torch.autocast(device_type="cuda", dtype=torch.float16):
         feats_a,feats_b = encoder(input_a,input_b)
-    torch.cuda.synchronize()
-    t3 = time.perf_counter()
-    print(f"========encoder forward time:{t3 - t2}s")
     feats_a = [i.to(torch.float32) for i in feats_a]
     feats_b = [i.to(torch.float32) for i in feats_b]
 
