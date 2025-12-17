@@ -98,7 +98,7 @@ def load_models(args):
     args.gru_iter_num = model_configs['gru']['iter_num']
     
     encoder = encoder.to(args.device).eval().half()
-    gru = gru.to(args.device).eval().half()
+    gru = gru.to(args.device).eval()
 
     # encoder = torch.compile(encoder,mode='max-autotune')
     # gru = torch.compile(gru,mode="max-autotune")

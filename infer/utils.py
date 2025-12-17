@@ -317,6 +317,8 @@ def extract_features(encoder:'Encoder',imgs_a:np.ndarray,imgs_b:np.ndarray,devic
     torch.cuda.synchronize()
     t3 = time.perf_counter()
     print(f"========encoder forward time:{t3 - t2}s")
+    feats_a = [i.to(torch.float32) for i in feats_a]
+    feats_b = [i.to(torch.float32) for i in feats_b]
 
     return feats_a,feats_b
 
