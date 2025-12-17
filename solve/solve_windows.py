@@ -66,9 +66,14 @@ class WindowSolver():
             ]
         ] * self.B).to(device=self.device,dtype=torch.float32)
 
+        t3 = time.perf_counter()
+        print(f"==========build base M time:{t3 - t2}s")
+
         self.norm_factors_a = self.calculate_original_extent(self.B,self.H,self.W,self.H_as) # B,
         self.norm_factors_b = self.calculate_original_extent(self.B,self.H,self.W,self.H_bs)         
         
+        t4 = time.perf_counter()
+        print(f"==========calc ori extend time:{t4 - t3}s")
 
     def calculate_original_extent(self,B,H,W,Hs) -> torch.Tensor:
         device = self.device
