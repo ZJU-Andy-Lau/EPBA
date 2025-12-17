@@ -60,11 +60,29 @@ class Pair():
                                 },
                                 device=device)
 
-    def solve_affines(self,encoder:Encoder,gru:GRUBlock):
-        print("solve ab")
-        affine_ab = self.solver_ab.solve_affine(encoder,gru)
-        print("solve ba")
-        affine_ba = self.solver_ba.solve_affine(encoder,gru)
+    def solve_affines(self, encoder:Encoder, gru:GRUBlock, status_callback=None):
+        """
+        status_callback: function(direction, window_size, step_name)
+        """
+        # A -> B
+        if status_callback: 
+            status_callback("A->B", "Init", "Starting")
+        # 传递 lambda 以便注入方向信息
+        affine_ab = self.solver_ab.solve_affine(
+            encoder, 
+            gru, 
+            status_callback=lambda w, s: status_callback("A->B", w, s) if status_callback else None
+        )
+        
+        # B -> A
+        if status_callback: 
+            status_callback("B->A", "Init", "Starting")
+        affine_ba = self.solver_ba.solve_affine(
+            encoder, 
+            gru, 
+            status_callback=lambda w, s: status_callback("B->A", w, s) if status_callback else None
+        )
+        
         return affine_ab,affine_ba
     
     
@@ -269,7 +287,7 @@ class Solver():
         
         merged_affine = solve_weighted_affine(coords_src_flat,coords_dst_flat,scores_norm)
 
-        print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
+        # print(f"merged:\n{merged_affine.detach().cpu().numpy()}\n")
 
         # vis_shift,vis_error = visualizer.validate_affine_solver(coords_src[:,[0,31,31*32,31*33]],coords_dst[:,[0,31,31*32,31*33]],merged_affine,min(coords_src.shape[0],8))
         # cv2.imwrite(os.path.join(self.configs['output_path'],f'vis_shift_{self.window_size}.png'),vis_shift)
@@ -287,28 +305,40 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         preds,scores = self.get_window_affines(encoder,gru)
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.test_rpc()
+        # self.test_rpc()
         self.rpc_a.Update_Adjust(affine)
-        print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
+        # print(f"accumulate:\n{self.rpc_a.adjust_params.detach().cpu().numpy()}\n")
 
         return affine
     
     @torch.no_grad()
-    def solve_affine(self,encoder:Encoder,gru:GRUBlock):
+    def solve_affine(self, encoder:Encoder, gru:GRUBlock, status_callback=None):
         self.init_window_pairs(a_max=self.configs['max_window_size'],
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
-            print("\n===============================================")
-            print(f"Solve level {self.window_size} m")
+            # 状态更新：开始本层级计算
+            if status_callback:
+                status_callback(self.window_size, "Solving")
+            
+            # print("\n===============================================")
+            # print(f"Solve level {self.window_size} m")
             torch.cuda.synchronize()
-            start_time = time.perf_counter()
+            # start_time = time.perf_counter()
+            
             self.solve_level_affine(encoder,gru)
+            
             torch.cuda.synchronize()
-            end_time = time.perf_counter()
-            print(f"Time Cost:{end_time - start_time} s")
-            print("===============================================\n")
+            # end_time = time.perf_counter()
+            # print(f"Time Cost:{end_time - start_time} s")
+            # print("===============================================\n")
+            
+            # 状态更新：四叉树分裂
+            if status_callback:
+                status_callback(self.window_size, "Splitting")
+            
             self.quadsplit_windows()
+            
         return self.rpc_a.adjust_params
     
     def test_affine(self,M:torch.Tensor):

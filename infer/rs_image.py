@@ -18,28 +18,95 @@ import rasterio
 from typing import Tuple
 
 class RSImage():
-    def __init__(self,options,root:str,id:int,device:str='cuda'):
+    def __init__(self,options,root:str,id:int,device:str='cuda',lazy:bool=False):
         """
         root: path to folder which contains 'image.png','dem.npy','rpc.txt',
         id: index of this image
+        lazy: If True, only load metadata (RPC, corners, shape), do not load full image/dem data into memory.
         """
         self.options = options
         self.root = root
         self.id = id
-        self.image = cv2.imread(os.path.join(root,'image.png'),cv2.IMREAD_GRAYSCALE)
-        self.image = np.stack([self.image] * 3,axis=-1)
-        self.dem = np.load(os.path.join(root,'dem.npy'))
+        self.device = device
+        self.lazy = lazy
+
+        # 1. RPC 必须加载 (文件很小)
+        self.rpc = RPCModelParameterTorch()
+        self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
+        
+        # 2. 获取图像尺寸 (不读取像素数据)
+        img_path = os.path.join(root,'image.png')
+        # 使用 rasterio 或 cv2 读取头信息，这里用 cv2 的一种轻量方式
+        # 注意：cv2.imread 某些 flag 仍可能读取数据，为了绝对安全且通用，
+        # 我们这里暂时读取并释放，或者如果追求极致可以用 PIL/Rasterio 只读 metadata
+        # 鉴于 cv2 是依赖，我们快速读取形状
+        _tmp_img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        if _tmp_img is None:
+            raise FileNotFoundError(f"Image not found at {img_path}")
+        self.H, self.W = _tmp_img.shape[:2]
+        del _tmp_img # 立即释放
+
+        # 3. 处理 DEM 和 角点计算
+        dem_path = os.path.join(root,'dem.npy')
+        if not os.path.exists(dem_path):
+             raise FileNotFoundError(f"DEM not found at {dem_path}")
+        
+        # 为了计算 corner_xys，我们需要 DEM 的四个角点的高程
+        # 我们先加载 DEM
+        _full_dem = np.load(dem_path)
+        
+        # 提取角点高程用于 RPC 投影计算
+        corner_heights = [_full_dem[0,0], _full_dem[0,-1], _full_dem[-1,-1], _full_dem[-1,0]]
+        
+        # 计算 corner_xys (需要在 CPU 上进行，避免多进程初始化 CUDA 冲突)
+        # 将 RPC 临时转到 CPU
+        self.rpc.to_gpu('cpu')
+        latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ([0.,self.W-1.,self.W-1.,0],
+                                                     [0.,0.,self.H - 1.,self.H - 1.],
+                                                     corner_heights),dim=-1)
+        xys = project_mercator(latlons)
+        self.corner_xys = xys.cpu().numpy()[:,[1,0]] # y,x -> x,y
+
+        # 4. 根据 Lazy 模式决定是否保留数据
+        if self.lazy:
+            self.image = None
+            self.dem = None
+            del _full_dem
+            # Lazy 模式下 RPC 保持在 CPU，方便序列化传输
+        else:
+            self.image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            self.image = np.stack([self.image] * 3, axis=-1)
+            self.dem = _full_dem
+            self.rpc.to_gpu(device)
+
+        # 加载 Tie Points
         if os.path.exists(os.path.join(root,'tie_points.txt')):
             self.tie_points = self.__load_tie_points__(os.path.join(root,'tie_points.txt'))
         else:
             self.tie_points = None
-        self.device = device
-        self.H,self.W = self.image.shape[:2]
-        self.rpc = RPCModelParameterTorch()
-        self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
-        self.rpc.to_gpu(device=device)
+
+    def load_heavy_data(self):
+        """
+        Worker 进程在接收到任务后调用此方法，加载真正的像素数据和 DEM。
+        """
+        if self.image is None:
+            self.image = cv2.imread(os.path.join(self.root, 'image.png'), cv2.IMREAD_GRAYSCALE)
+            self.image = np.stack([self.image] * 3, axis=-1)
         
-        self.corner_xys = self.__get_corner_xys__()
+        if self.dem is None:
+            self.dem = np.load(os.path.join(self.root, 'dem.npy'))
+        
+        # 将 RPC 移动到指定的计算设备 (GPU)
+        self.rpc.to_gpu(self.device)
+
+    def load_dem_only(self):
+        """
+        Rank 0 在进行全局平差时调用，只加载 DEM 用于几何投影，不加载图像像素以节省内存。
+        """
+        if self.dem is None:
+            self.dem = np.load(os.path.join(self.root, 'dem.npy'))
+        # 确保 RPC 在正确的设备上（通常全局平差也在 GPU 上跑）
+        self.rpc.to_gpu(self.device)
 
     def __load_tie_points__(self,path) -> np.ndarray:
         tie_points = np.loadtxt(path,dtype=int)
@@ -54,7 +121,12 @@ class RSImage():
     def __get_corner_xys__(self):
         """
         return: [tl,tr,br,bl] [x,y] np.ndarray
+        注意：此方法主要在初始化时被内部逻辑替代使用，保留此处是为了兼容可能的外部调用，
+        但在 lazy=True 且 dem=None 时调用此方法会报错。
         """
+        if self.dem is None:
+             raise RuntimeError("Cannot calculate corner_xys in lazy mode without loaded DEM. Use load_heavy_data() or load_dem_only() first.")
+
         latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ([0.,self.W-1.,self.W-1.,0],
                                                      [0.,0.,self.H - 1.,self.H - 1.],
                                                      [self.dem[0,0],self.dem[0,-1],self.dem[-1,-1],self.dem[-1,0]]),dim=-1)
@@ -134,18 +206,6 @@ class RSImage():
         warped_res,Hs = warp_quads(corners,[self.image,self.dem],output_size)
         warped_imgs,warped_dems = warped_res
         return warped_imgs,warped_dems,Hs
-
-
-
-
-
-
-
-
-
-
-
-
 
 def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):
     H,W = window_size
