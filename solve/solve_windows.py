@@ -69,7 +69,7 @@ class WindowSolver():
         device = self.device
         dtype = Hs.dtype
         t0 = time.perf_counter()
-        Hs_inv = torch.linalg.inv(Hs)
+        Hs_inv = torch.inverse(Hs)
         t1 = time.perf_counter()
         print(f"================inverse H time:{t1 - t0}s")
         corners_row = [0.0, 0.0, float(H), float(H)]
