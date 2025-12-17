@@ -50,7 +50,7 @@ def warp_quads(corners, values:List[np.ndarray], output_size=(512, 512)):
             warped_value_i = []
 
             for value in values:
-                warped_value = cv2.warpPerspective(
+                warped_value = warp_perspective_huge(
                     value, 
                     H_xy, 
                     (target_w, target_h), 
@@ -581,3 +581,119 @@ def affine_xy_to_rowcol(matrix):
         result = result.squeeze(0)
         
     return result
+
+def warp_perspective_huge(src: np.ndarray, M: np.ndarray, dsize: tuple, **kwargs) -> np.ndarray:
+    """
+    针对超大分辨率图像的透视变换函数。
+    
+    该函数通过计算目标区域在源图像上的 ROI (感兴趣区域)，仅对该区域进行裁剪和变换，
+    从而绕过 OpenCV `warpPerspective` 对输入图像尺寸的 SHRT_MAX (32767) 限制，
+    并显著减少内存消耗和计算时间。
+
+    Args:
+        src (np.ndarray): 原始大图 (支持 numpy array, 内存映射 memmap 等)。
+                          图像尺寸可以非常大 (如 100,000 x 100,000)。
+        M (np.ndarray): 3x3 单应性变换矩阵 (Homography Matrix)，定义了从 src 到 dst 的映射。
+        dsize (tuple): 目标输出图像的尺寸 (width, height)。
+        **kwargs: 传递给 cv2.warpPerspective 的其他参数，例如:
+                  - flags (e.g., cv2.INTER_LINEAR, cv2.WARP_INVERSE_MAP)
+                  - borderMode (e.g., cv2.BORDER_CONSTANT)
+                  - borderValue (填充颜色)
+
+    Returns:
+        np.ndarray: 变换后的图像，尺寸为 dsize。
+    """
+    
+    # 1. 解析目标尺寸
+    dst_w, dst_h = dsize
+    
+    # 如果目标尺寸为空，直接返回空数组
+    if dst_w <= 0 or dst_h <= 0:
+        return np.zeros((dst_h, dst_w, src.shape[2] if src.ndim == 3 else 1), dtype=src.dtype)
+
+    # 2. 计算逆矩阵 M_inv
+    # warpPerspective 是从 src -> dst (前向映射定义，后向插值实现)
+    # 我们需要知道目标图的四个角点对应原图的哪里，所以需要逆变换 dst -> src
+    
+    flags = kwargs.get('flags', cv2.INTER_LINEAR)
+    if flags & cv2.WARP_INVERSE_MAP:
+        # 特殊情况：如果用户指定了 WARP_INVERSE_MAP，则 M 本身就是 dst->src
+        # 此时用于计算 ROI 的矩阵就是 M
+        # 而用于 warp 的矩阵也需要特殊处理。
+        # 为简化本演示，建议用户传入正向 M (src->dst) 并省略此 flag。
+        raise NotImplementedError("warp_perspective_huge 暂不支持 WARP_INVERSE_MAP flag，请直接传入逆矩阵并移除该 flag。")
+    else:
+        # 常规情况：M 是 src -> dst
+        ret, M_inv = cv2.invert(M)
+        if not ret:
+            raise ValueError("变换矩阵不可逆，无法计算 ROI。")
+
+    # 3. 计算目标图像四个角点在源图像上的坐标 (ROI)
+    # 目标图坐标: (0,0), (w,0), (w,h), (0,h)
+    pts_dst = np.array([
+        [0, 0],
+        [dst_w, 0],
+        [dst_w, dst_h],
+        [0, dst_h]
+    ], dtype=np.float32).reshape(-1, 1, 2)
+
+    # 映射回源图像坐标
+    pts_src = cv2.perspectiveTransform(pts_dst, M_inv)
+    
+    # 提取包围盒 (Bounding Box)
+    x_coords = pts_src[:, 0, 0]
+    y_coords = pts_src[:, 0, 1]
+    
+    x_min, x_max = x_coords.min(), x_coords.max()
+    y_min, y_max = y_coords.min(), y_coords.max()
+
+    # 4. 添加 Padding (缓冲区域)
+    # 这一步至关重要，插值算法需要周围像素，否则边缘会出现伪影
+    padding = 5 
+    x_start = int(np.floor(x_min)) - padding
+    y_start = int(np.floor(y_min)) - padding
+    x_end = int(np.ceil(x_max)) + padding
+    y_end = int(np.ceil(y_max)) + padding
+
+    # 5. 边界钳位 (Clamping) 与 安全切片
+    # 确保切片坐标在 src 图片的物理范围内
+    h_src, w_src = src.shape[:2]
+    
+    crop_x1 = max(0, x_start)
+    crop_y1 = max(0, y_start)
+    crop_x2 = min(w_src, x_end)
+    crop_y2 = min(h_src, y_end)
+
+    # 检查切片区域是否有效
+    if crop_x2 <= crop_x1 or crop_y2 <= crop_y1:
+        # 目标区域完全在原图之外，返回全黑/背景色图像
+        border_value = kwargs.get('borderValue', 0)
+        if src.ndim == 3:
+            return np.full((dst_h, dst_w, src.shape[2]), border_value, dtype=src.dtype)
+        else:
+            return np.full((dst_h, dst_w), border_value, dtype=src.dtype)
+
+    # 6. 执行切片 (Memory Slicing)
+    # 这一步生成的 src_roi 尺寸通常很小 (接近 dsize)，不会触发 SHRT_MAX
+    # 注意：如果是 memmap，这里才会真正触发磁盘 IO
+    src_roi = src[crop_y1:crop_y2, crop_x1:crop_x2]
+
+    # 7. 修正变换矩阵
+    # 我们从原图中切出了 src_roi，它的原点 (0,0) 对应原图的 (crop_x1, crop_y1)
+    # 我们需要构建一个平移矩阵 T，将“局部坐标”平移回“全局坐标”
+    # P_global = P_local + [crop_x1, crop_y1]
+    # M_new = M * T (因为 P_dst = M * P_global = M * T * P_local)
+    
+    T = np.array([
+        [1, 0, crop_x1],
+        [0, 1, crop_y1],
+        [0, 0, 1]
+    ], dtype=np.float64)
+    
+    M_new = M @ T
+
+    # 8. 执行 Warp
+    # 使用修正后的矩阵和小尺寸的 ROI 进行变换
+    output = cv2.warpPerspective(src_roi, M_new, dsize, **kwargs)
+
+    return output
