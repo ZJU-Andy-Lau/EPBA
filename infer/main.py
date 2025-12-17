@@ -159,14 +159,17 @@ def main(args):
         world_size = int(os.environ["WORLD_SIZE"])
         local_rank = int(os.environ["LOCAL_RANK"])
         torch.cuda.set_device(local_rank)
+        torch.cuda.empty_cache()
+        args.device=torch.device("cuda", args.local_rank)
         dist.init_process_group(backend="nccl")
-        args.device = f"cuda:{local_rank}"
         is_ddp = True
     else:
         rank = 0
         world_size = 1
         is_ddp = False
         print("Running in Single-GPU mode.")
+
+    print(f"rank:{rank} \t world_size:{world_size} \t local_rank:{local_rank} \t device:{args.device}")
 
     init_random_seed(args)
 
@@ -382,6 +385,8 @@ if __name__ == '__main__':
     parser.add_argument('--device',type=str,default='cuda')
 
     #==============================================================================
+
+    parser.add_argument("--local_rank", default=os.getenv('LOCAL_RANK', -1), type=int)
 
 
     args = parser.parse_args()

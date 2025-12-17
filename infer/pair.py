@@ -109,6 +109,8 @@ class Solver():
         self.rs_image_b = rs_image_b
         self.rpc_a = deepcopy(rs_image_a.rpc)
         self.rpc_b = deepcopy(rs_image_b.rpc)
+        self.rpc_a.to_gpu(self.device)
+        self.rpc_b.to_gpu(self.device)
         self.configs = configs
         self.device = device
         self.window_pairs:List[WindowPair] = []
@@ -245,7 +247,6 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         B,H,W = imgs_a.shape[:3]
         feats_a,feats_b = extract_features(encoder,imgs_a,imgs_b,device=self.device)
-        print(self.device,feats_a[0].device)
         self.distribute_feats(feats_a,feats_b)
         solver = WindowSolver(B,H,W,
                               gru=gru,
