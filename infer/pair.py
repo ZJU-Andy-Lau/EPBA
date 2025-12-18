@@ -66,11 +66,11 @@ class Pair():
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
         # 可以在这里更新一下状态，表明正在处理 AB 方向
         if self.reporter:
-            self.reporter.update(current_step="Solving A->B")
+            self.reporter.update(current_task=f"{self.id_a}=>{self.id_b}")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
         
         if self.reporter:
-            self.reporter.update(current_step="Solving B->A")
+            self.reporter.update(current_task=f"{self.id_b}=>{self.id_a}")
         affine_ba = self.solver_ba.solve_affine(encoder,gru)
         return affine_ab,affine_ba
     
@@ -374,6 +374,8 @@ class Solver():
         """
         M: torch.Tensor (2,3)
         """
+        if self.reporter:
+            self.reporter.update(current_step="Visualizing")
         # 在rs_image_a中裁切中间的一块512
         H,W = 2048,2048
         rpc_a = deepcopy(self.rpc_a)

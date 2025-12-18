@@ -195,13 +195,13 @@ def main(args):
 
             for idx, pair in enumerate(pairs):
                 # Update Task info
-                reporter.update(current_task=f"{pair.id_a}=>{pair.id_b}", progress=f"{idx+1}/{total_pairs}")
+                reporter.update(progress=f"{idx+1}/{total_pairs}")
                 # reporter.log(f"Solving Pair {pair.id_a} - {pair.id_b}")
                 
                 affine_ab,affine_ba = pair.solve_affines(encoder,gru)
                 result = {
-                    pair.id_a:affine_ab.detach(),
-                    pair.id_b:affine_ba.detach()
+                    pair.id_a:affine_ab.detach().cpu(),
+                    pair.id_b:affine_ba.detach().cpu()
                 }
                 local_results.append(result)
             
@@ -232,13 +232,13 @@ def main(args):
             pairs = build_pairs(args,images, reporter)
             if args.solver == 'global':
                 solver = GlobalAffineSolver(images=images,
-                                        device=args.device,
+                                        device='cpu',
                                         anchor_indices=[0],
                                         max_iter=100,
                                         converge_tol=1e-6)
             else:
                 solver = TopologicalAffineSolver(images=images,
-                                                device=args.device,
+                                                device='cpu',
                                                 anchor_indices=[0])
             Ms = solver.solve(all_results)
             Ms = Ms[:,:2,]
