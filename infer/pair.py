@@ -30,44 +30,52 @@ default_configs = {
 }
 
 class Pair():
-    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,id_a:int,id_b:int,configs = {},device:str = 'cuda', reporter=None):
+    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,id_a:int,id_b:int,configs = {},device:str = 'cuda', dual = True, check_error_only = False, reporter=None):
         self.rs_image_a = rs_image_a
         self.rs_image_b = rs_image_b
         self.id_a = id_a
         self.id_b = id_b
         self.configs = {**default_configs,**configs}
         self.device = device
+        self.dual = dual
         self.reporter = reporter # 接收 reporter
         self.window_pairs:List[WindowPair] = []
         self.window_size = -1
-        self.solver_ab = Solver(rs_image_a=rs_image_a,
-                                rs_image_b=rs_image_b,
-                                configs={
-                                    **self.configs,
-                                    **{
-                                        'output_path':os.path.join(self.configs['output_path'],'solve_ab')
+        if not check_error_only:
+            self.solver_ab = Solver(rs_image_a=rs_image_a,
+                                    rs_image_b=rs_image_b,
+                                    configs={
+                                        **self.configs,
+                                        **{
+                                            'output_path':os.path.join(self.configs['output_path'],'solve_ab')
+                                        },
+                                        
                                     },
-                                    
-                                },
-                                device=device,
-                                reporter=reporter) # 透传 reporter
-        self.solver_ba = Solver(rs_image_a=rs_image_b,
-                                rs_image_b=rs_image_a,
-                                configs={
-                                    **self.configs,
-                                    **{
-                                        'output_path':os.path.join(self.configs['output_path'],'solve_ba')
+                                    device=device,
+                                    reporter=reporter)
+            if dual:
+                self.solver_ba = Solver(rs_image_a=rs_image_b,
+                                    rs_image_b=rs_image_a,
+                                    configs={
+                                        **self.configs,
+                                        **{
+                                            'output_path':os.path.join(self.configs['output_path'],'solve_ba')
+                                        },
+                                        
                                     },
-                                    
-                                },
-                                device=device,
-                                reporter=reporter) # 透传 reporter
+                                    device=device,
+                                    reporter=reporter)
+            else:
+                self.solver_ba = None
+            
 
     def solve_affines(self,encoder:Encoder,gru:GRUBlock):
-        # 可以在这里更新一下状态，表明正在处理 AB 方向
         if self.reporter:
             self.reporter.update(current_task=f"{self.id_a}=>{self.id_b}")
         affine_ab = self.solver_ab.solve_affine(encoder,gru)
+
+        if not self.dual:
+            return affine_ab
         
         if self.reporter:
             self.reporter.update(current_task=f"{self.id_b}=>{self.id_a}")
