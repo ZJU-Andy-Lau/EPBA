@@ -68,7 +68,7 @@ def get_ref_lists(args,adjust_metas:List[RSImageMeta],ref_metas:List[RSImageMeta
         ref_lists.append(ref_list)
     return ref_lists
 
-def build_adj_ref_pairs(args,adjust_images:List[RSImage],ref_images:List[RSImage], reporter) -> List[Pair]:
+def build_adj_ref_pairs(args,adjust_image:RSImage,ref_images:List[RSImage], reporter) -> List[Pair]:
     reporter.update(current_step="Building Pairs")
     configs = {
         'max_window_num':args.max_window_num,
@@ -77,11 +77,10 @@ def build_adj_ref_pairs(args,adjust_images:List[RSImage],ref_images:List[RSImage
         'min_area_ratio':args.min_cover_area_ratio,
     }
     pairs = []
-    for adjust_image in adjust_images:
-        for ref_image in ref_images:
-            configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
-            pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,device=args.device,dual=False,reporter=reporter)
-            pairs.append(pair)
+    for ref_image in ref_images:
+        configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
+        pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,device=args.device,dual=False,reporter=reporter)
+        pairs.append(pair)
     return pairs
 
 def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
@@ -173,11 +172,14 @@ def main(args):
         
         if len(adjust_metas) > 0 and len(ref_metas) > 0:
             reporter.update(current_task="Loading Images")
-            reporter.log(f"adjust metas:{adjust_metas}")
-            reporter.log(f"ref metas:{ref_metas}")
-            adjust_images = [RSImage(adjust_meta,device=args.device) for adjust_meta in adjust_metas]
-            ref_images = [RSImage(ref_meta,device=args.device) for ref_meta in ref_metas]
-            pairs = build_adj_ref_pairs(args,adjust_images,ref_images,reporter)
+            pairs:List[Pair] = []
+            adjust_images:List[RSImage] = []
+            for i in range(len(adjust_metas)):
+                adjust_image = RSImage(adjust_metas[i],device=args.device)
+                ref_images = [RSImage(ref_meta,device=args.device) for ref_meta in ref_metas[i]]
+                pairs_tmp = build_adj_ref_pairs(args,adjust_image,ref_images,reporter)
+                pairs.extend(pairs_tmp)
+                adjust_images.append(adjust_image)
 
             encoder,gru = load_models(args, reporter)
 
