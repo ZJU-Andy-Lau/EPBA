@@ -21,13 +21,19 @@ class StatusMonitor:
         self.live = None
         # 使用临时目录存储状态文件，避免污染项目目录
         self.status_dir = os.path.join('./tmp', f"epba_status_{experiment_id}")
+        self.logs_dir = os.path.join(self.status_dir, "logs")
         
         # 清理旧的状态文件
         if os.path.exists(self.status_dir):
-            shutil.rmtree(self.status_dir)
+            try:
+                shutil.rmtree(self.status_dir)
+            except:
+                pass
         os.makedirs(self.status_dir, exist_ok=True)
+        os.makedirs(self.logs_dir, exist_ok=True)
 
         self.console = Console()
+        self.log_cursors = {}  # 记录每个 Rank 日志文件的读取位置
 
     def start(self):
         self.running = True
@@ -78,6 +84,41 @@ class StatusMonitor:
                 rows.append({"rank": rank, "current_task": "Waiting...", "progress": "-", "level": "-", "current_step": "-", "timestamp": 0})
         return rows
 
+    def _process_logs(self):
+        """
+        轮询读取所有 Rank 的日志文件并显示
+        """
+        if not self.live:
+            return
+
+        for rank in range(self.world_size):
+            log_file = os.path.join(self.logs_dir, f"rank_{rank}.log")
+            if not os.path.exists(log_file):
+                continue
+            
+            try:
+                # 获取上次的读取位置
+                cursor = self.log_cursors.get(rank, 0)
+                
+                with open(log_file, 'r') as f:
+                    f.seek(cursor)
+                    lines = f.readlines()
+                    # 更新光标位置
+                    self.log_cursors[rank] = f.tell()
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if line:
+                            try:
+                                entry = json.loads(line)
+                                msg = entry.get("msg", "")
+                                if msg:
+                                    self.live.console.print(msg)
+                            except:
+                                pass
+            except Exception:
+                pass
+
     def generate_table(self, rows=None):
         table = Table(box=box.ROUNDED, title=f"EPBA Inference Monitor (Exp: {self.experiment_id})", width=None)
         table.add_column("Rank", justify="center", style="cyan", no_wrap=True, width=4)
@@ -109,10 +150,13 @@ class StatusMonitor:
     def _refresh_loop(self):
         while self.running:
             try:
-                # 1. 集中读取一次状态
+                # 1. 处理日志队列
+                self._process_logs()
+
+                # 2. 集中读取一次状态
                 rows = self._read_status_files()
                 
-                # 2. 检查是否有 Rank 报错（看门狗逻辑）
+                # 3. 检查是否有 Rank 报错（看门狗逻辑）
                 for row in rows:
                     if row.get("error"):
                         self.running = False # 停止循环
@@ -127,7 +171,7 @@ class StatusMonitor:
                         print("=" * 56 + "\n")
                         return # 退出监控线程
 
-                # 3. 如果无误，更新 UI
+                # 4. 如果无误，更新 UI
                 self.live.update(self.generate_table(rows))
                 
             except Exception:
@@ -139,8 +183,12 @@ class StatusReporter:
         self.rank = rank
         self.monitor = monitor # 只有 Rank 0 持有 monitor 实例
         self.status_dir = os.path.join('./tmp', f"epba_status_{experiment_id}")
+        self.logs_dir = os.path.join(self.status_dir, "logs")
         os.makedirs(self.status_dir, exist_ok=True)
+        os.makedirs(self.logs_dir, exist_ok=True)
+        
         self.file_path = os.path.join(self.status_dir, f"rank_{rank}.json")
+        self.log_file = os.path.join(self.logs_dir, f"rank_{rank}.log")
         
         self.state = {
             "rank": rank,
@@ -196,5 +244,11 @@ class StatusReporter:
             # Rank 0 通过 monitor 在 Live 界面上方输出
             self.monitor.log(msg)
         else:
-            # 其他 Rank 正常输出，通常会被重定向或忽略，但不会干扰 Rank 0 的界面
-            print(msg)
+            # 其他 Rank 写入日志文件，由 Monitor 轮询读取
+            entry = {"timestamp": time.time(), "msg": msg}
+            try:
+                with open(self.log_file, 'a') as f:
+                    f.write(json.dumps(entry) + "\n")
+            except Exception:
+                # 如果写日志失败，回退到 stdout（可能会被覆盖，但总比没有好）
+                print(msg)

@@ -218,7 +218,7 @@ def main(args):
         
         if rank == 0:
             all_results = [item for sublist in all_results for item in sublist]
-            reporter.log(f"all results:{all_results}")
+            reporter.log(f"all results:{all_results}\n{all_results[0]}")
             images = load_images(args,adjust_metas_all, reporter)
             for image in images:
                 M = all_results[image.id]
