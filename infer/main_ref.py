@@ -191,6 +191,7 @@ def main(args):
             
             for adjust_image in adjust_images:
                 local_results[adjust_image.id] = adjust_image.merge_affines()
+                reporter.log(f"{adjust_image.id}:\n{local_results[adjust_image.id]}")
             
             reporter.update(current_task="Finished", progress=f"{len(pairs)}/{len(pairs)}", level="-", current_step="Cleanup")
  
