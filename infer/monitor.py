@@ -6,17 +6,11 @@ import threading
 import glob
 import shutil
 from datetime import datetime
-
-# 尝试导入 rich，如果环境没有安装，则提供 Dummy 实现
-try:
-    from rich.live import Live
-    from rich.table import Table
-    from rich.console import Console
-    from rich.layout import Layout
-    from rich import box
-    HAS_RICH = True
-except ImportError:
-    HAS_RICH = False
+from rich.live import Live
+from rich.table import Table
+from rich.console import Console
+from rich.layout import Layout
+from rich import box
 
 class StatusMonitor:
     def __init__(self, world_size, experiment_id):
@@ -32,13 +26,10 @@ class StatusMonitor:
         if os.path.exists(self.status_dir):
             shutil.rmtree(self.status_dir)
         os.makedirs(self.status_dir, exist_ok=True)
-        
-        if HAS_RICH:
-            self.console = Console()
+
+        self.console = Console()
 
     def start(self):
-        if not HAS_RICH:
-            return
         self.running = True
         self.live = Live(self.generate_table(), console=self.console, refresh_per_second=10)
         self.live.start()
@@ -118,7 +109,7 @@ class StatusReporter:
     def __init__(self, rank, world_size, experiment_id, monitor=None):
         self.rank = rank
         self.monitor = monitor # 只有 Rank 0 持有 monitor 实例
-        self.status_dir = os.path.join(tempfile.gettempdir(), f"epba_status_{experiment_id}")
+        self.status_dir = os.path.join('./tmp', f"epba_status_{experiment_id}")
         os.makedirs(self.status_dir, exist_ok=True)
         self.file_path = os.path.join(self.status_dir, f"rank_{rank}.json")
         
