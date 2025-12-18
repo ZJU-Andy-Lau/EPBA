@@ -31,6 +31,7 @@ class StatusMonitor:
 
     def start(self):
         self.running = True
+        # 初始时生成一个空表
         self.live = Live(self.generate_table(), console=self.console, refresh_per_second=10)
         self.live.start()
         self.thread = threading.Thread(target=self._refresh_loop, daemon=True)
@@ -58,16 +59,10 @@ class StatusMonitor:
         else:
             print(message)
 
-    def generate_table(self):
-        table = Table(box=box.ROUNDED, title=f"EPBA Inference Monitor (Exp: {self.experiment_id})", width=None)
-        table.add_column("Rank", justify="center", style="cyan", no_wrap=True, width=4)
-        table.add_column("Current Task", style="magenta", width=12)
-        table.add_column("Progress", justify="right", style="green", width=8)
-        table.add_column("Level", justify="right", style="yellow", width=10)
-        table.add_column("Current Step", style="blue")
-        table.add_column("Last Update", style="dim", width=10)
-
-        # 收集所有 Rank 的数据
+    def _read_status_files(self):
+        """
+        读取所有 Rank 的状态文件并返回列表
+        """
         rows = []
         for rank in range(self.world_size):
             file_path = os.path.join(self.status_dir, f"rank_{rank}.json")
@@ -81,6 +76,20 @@ class StatusMonitor:
                     rows.append({"rank": rank, "current_task": "Reading...", "progress": "-", "level": "-", "current_step": "-", "timestamp": 0})
             else:
                 rows.append({"rank": rank, "current_task": "Waiting...", "progress": "-", "level": "-", "current_step": "-", "timestamp": 0})
+        return rows
+
+    def generate_table(self, rows=None):
+        table = Table(box=box.ROUNDED, title=f"EPBA Inference Monitor (Exp: {self.experiment_id})", width=None)
+        table.add_column("Rank", justify="center", style="cyan", no_wrap=True, width=4)
+        table.add_column("Current Task", style="magenta", width=12)
+        table.add_column("Progress", justify="right", style="green", width=8)
+        table.add_column("Level", justify="right", style="yellow", width=10)
+        table.add_column("Current Step", style="blue")
+        table.add_column("Last Update", style="dim", width=10)
+
+        # 如果没有传入 rows，则自己读取（兼容旧调用方式）
+        if rows is None:
+            rows = self._read_status_files()
         
         rows.sort(key=lambda x: x.get("rank", -1))
         
@@ -100,7 +109,27 @@ class StatusMonitor:
     def _refresh_loop(self):
         while self.running:
             try:
-                self.live.update(self.generate_table())
+                # 1. 集中读取一次状态
+                rows = self._read_status_files()
+                
+                # 2. 检查是否有 Rank 报错（看门狗逻辑）
+                for row in rows:
+                    if row.get("error"):
+                        self.running = False # 停止循环
+                        self.live.stop()     # 停止 TUI，释放终端控制权
+                        
+                        # 打印醒目的报错信息
+                        print(f"\n{'='*20} RANK {row.get('rank')} CRASHED {'='*20}")
+                        print(f"Task: {row.get('current_task')}")
+                        print(f"Time: {datetime.fromtimestamp(row.get('timestamp', time.time()))}")
+                        print("-" * 50)
+                        print(row['error']) # 打印堆栈
+                        print("=" * 56 + "\n")
+                        return # 退出监控线程
+
+                # 3. 如果无误，更新 UI
+                self.live.update(self.generate_table(rows))
+                
             except Exception:
                 pass
             time.sleep(0.1)
@@ -119,6 +148,7 @@ class StatusReporter:
             "progress": "0/0",
             "level": "-",
             "current_step": "Startup",
+            "error": None, # 新增错误字段
             "timestamp": time.time()
         }
         self.last_write_time = 0
@@ -137,8 +167,8 @@ class StatusReporter:
         
         self.state["timestamp"] = time.time()
         
-        # 策略：如果 task, progress, level 变化，或者距离上次写入超过0.1s，则写入
-        force_keys = ['current_task', 'progress', 'level']
+        # 策略：如果 task, progress, level, error 变化，或者距离上次写入超过0.1s，则写入
+        force_keys = ['current_task', 'progress', 'level', 'error']
         is_force = any(k in kwargs for k in force_keys)
         
         if updated:

@@ -6,6 +6,7 @@ import numpy as np
 import random
 from typing import List,Tuple
 import itertools
+import traceback # 新增导入
 
 
 import torch
@@ -233,6 +234,12 @@ def main(args):
             reporter.log(f"< 1.0 m: {report['<1m_percent']:.2f} %")
             reporter.log(f"< 3.0 m: {report['<3m_percent']:.2f} %")
             reporter.log(f"< 5.0 m: {report['<5m_percent']:.2f} %")
+            
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        if reporter:
+            reporter.update(current_task="ERROR", error=error_msg)
+        raise e  
     
     finally:
         if monitor:
