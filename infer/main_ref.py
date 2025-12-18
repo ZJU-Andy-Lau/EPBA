@@ -173,6 +173,8 @@ def main(args):
         
         if len(adjust_metas) > 0 and len(ref_metas) > 0:
             reporter.update(current_task="Loading Images")
+            reporter.log(f"adjust metas:{adjust_metas}")
+            reporter.log(f"ref metas:{ref_metas}")
             adjust_images = [RSImage(adjust_meta,device=args.device) for adjust_meta in adjust_metas]
             ref_images = [RSImage(ref_meta,device=args.device) for ref_meta in ref_metas]
             pairs = build_adj_ref_pairs(args,adjust_images,ref_images,reporter)
