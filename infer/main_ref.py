@@ -65,7 +65,7 @@ def get_ref_lists(args,adjust_metas:List[RSImageMeta],ref_metas:List[RSImageMeta
         for j in range(len(ref_metas)):
             if is_overlap(adjust_metas[i],ref_metas[j],args.min_window_size ** 2):
                 ref_list.append(j)
-        ref_lists.append(ref_lists)
+        ref_lists.append(ref_list)
     return ref_lists
 
 def build_adj_ref_pairs(args,adjust_images:List[RSImage],ref_images:List[RSImage], reporter) -> List[Pair]:
@@ -153,9 +153,7 @@ def main(args):
         if rank == 0:
             adjust_metas_all,ref_metas_all = load_images_meta(args, reporter)
             ref_lists = get_ref_lists(args,adjust_metas_all,ref_metas_all,reporter)
-            reporter.log(ref_lists)
-            reporter.log(ref_lists[0])
-            reporter.log(ref_lists[0][0])
+            reporter.log(f"ref lists:{ref_lists}")
             ref_metas_lists = [[ref_metas_all[i] for i in sub_list] for sub_list in ref_lists]
             adjust_metas_chunk = np.array_split(np.array(adjust_metas_all,dtype=object),world_size) # (world_size,K)
             ref_metas_chunk = np.array_split(np.array(ref_metas_lists,dtype=object),world_size) # (world_size,K,N)
