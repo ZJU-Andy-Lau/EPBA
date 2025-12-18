@@ -97,6 +97,8 @@ class RSImage():
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
         self.rpc.to_gpu(device=device)
+
+        self.affine_list = []
         
         self.corner_xys = self.__get_corner_xys__()
 
