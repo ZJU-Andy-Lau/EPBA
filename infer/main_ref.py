@@ -243,7 +243,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--select_adjust_imgs',type=str,default='0,1')
 
-    parser.add_argument('--select_ref_imgs',type=int,default='0')
+    parser.add_argument('--select_ref_imgs',type=str,default='0')
 
     #==============================================================================
 
