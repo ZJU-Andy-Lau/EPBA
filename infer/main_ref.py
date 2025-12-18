@@ -191,7 +191,7 @@ def main(args):
             
             for adjust_image in adjust_images:
                 local_results[adjust_image.id] = adjust_image.merge_affines()
-                reporter.log(f"{adjust_image.id}:\n{local_results[adjust_image.id]}")
+                # reporter.log(f"{adjust_image.id}:\n{local_results[adjust_image.id]}")
             
             reporter.update(current_task="Finished", progress=f"{len(pairs)}/{len(pairs)}", level="-", current_step="Cleanup")
  
@@ -217,8 +217,9 @@ def main(args):
         dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
         
         if rank == 0:
-            all_results = [item for sublist in all_results for item in sublist]
-            reporter.log(f"all results:{all_results}\n{all_results[0]}")
+            all_results = {k:v for d in all_results if d for k,v in d.items()}
+            
+            reporter.log(f"all results:{all_results}")
             images = load_images(args,adjust_metas_all, reporter)
             for image in images:
                 M = all_results[image.id]
