@@ -26,7 +26,7 @@ class StatusMonitor:
         self.thread = None
         self.live = None
         # 使用临时目录存储状态文件，避免污染项目目录
-        self.status_dir = os.path.join(tempfile.gettempdir(), f"epba_status_{experiment_id}")
+        self.status_dir = os.path.join('./tmp', f"epba_status_{experiment_id}")
         
         # 清理旧的状态文件
         if os.path.exists(self.status_dir):
