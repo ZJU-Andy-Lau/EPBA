@@ -196,12 +196,16 @@ def main(args):
  
             del encoder
             del gru
-            for image in images:
-                del image
+            for pair in pairs:
+                del pair.rs_image_a
+                del pair.rs_image_b
+                del pair
+            pairs = None
+            adjust_images = None
+            ref_images = None
             encoder = None
             gru = None
-            images = None
-
+            
         # ddp收集results
         reporter.update(current_step="Gathering Results")
         if rank == 0:

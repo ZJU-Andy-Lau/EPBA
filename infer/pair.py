@@ -26,7 +26,7 @@ default_configs = {
     'min_window_size':500,
     'max_window_size':8000,
     'min_area_ratio':0.5,
-    'output_path':'./result'
+    'output_path':'./results'
 }
 
 class Pair():
