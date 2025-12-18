@@ -79,7 +79,7 @@ def build_adj_ref_pairs(args,adjust_image:RSImage,ref_images:List[RSImage], repo
     pairs = []
     for ref_image in ref_images:
         configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
-        pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,device=args.device,dual=False,reporter=reporter)
+        pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
         pairs.append(pair)
     return pairs
 
