@@ -31,7 +31,7 @@ from torchvision import transforms
 
 from load_data import TrainDataset, ImageSampler
 from model.encoder import Encoder
-from model.gru_tf import GRUBlock
+from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
@@ -89,7 +89,7 @@ def load_models(args):
     pprint("Loading Models")
     
     encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128)
-    gru = GRUBlock(corr_levels=2,corr_radius=4,context_dim=128,tf_embed_dim=256,tf_heads=8,tf_depth=4)
+    gru = GRUBlock(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128)
     ctx_decoder = ContextDecoder(ctx_dim=128)
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
