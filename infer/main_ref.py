@@ -154,6 +154,8 @@ def main(args):
             adjust_metas_all,ref_metas_all = load_images_meta(args, reporter)
             ref_lists = get_ref_lists(args,adjust_metas_all,ref_metas_all,reporter)
             reporter.log(ref_lists)
+            reporter.log(ref_lists[0])
+            reporter.log(ref_lists[0][0])
             ref_metas_lists = [[ref_metas_all[i] for i in sub_list] for sub_list in ref_lists]
             adjust_metas_chunk = np.array_split(np.array(adjust_metas_all,dtype=object),world_size) # (world_size,K)
             ref_metas_chunk = np.array_split(np.array(ref_metas_lists,dtype=object),world_size) # (world_size,K,N)
