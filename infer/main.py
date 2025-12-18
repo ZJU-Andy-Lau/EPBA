@@ -200,8 +200,8 @@ def main(args):
                 
                 affine_ab,affine_ba = pair.solve_affines(encoder,gru)
                 result = {
-                    pair.id_a:affine_ab,
-                    pair.id_b:affine_ba
+                    pair.id_a:affine_ab.detach(),
+                    pair.id_b:affine_ba.detach()
                 }
                 local_results.append(result)
             
