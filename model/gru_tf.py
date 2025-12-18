@@ -164,6 +164,7 @@ class GRUBlock(nn.Module):
         # 3. GRU 单元 (Recurrent Unit)
         # 为了最大化利用 Transformer 的特征，我们将 GRU 的维度对齐到 tf_embed_dim (256)
         self.gru_dim = tf_embed_dim
+        self.hiddem_dim = tf_embed_dim
         self.gru = nn.GRUCell(input_size=self.gru_dim, hidden_size=self.gru_dim)
         
         # 4. 解耦仿射头 (Decoupled Affine Heads)
