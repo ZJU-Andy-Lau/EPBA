@@ -196,8 +196,9 @@ def main(args):
  
             del encoder
             del gru
+            for image in adjust_images:
+                del image
             for pair in pairs:
-                del pair.rs_image_a
                 del pair.rs_image_b
                 del pair
             pairs = None
@@ -216,6 +217,7 @@ def main(args):
         
         if rank == 0:
             all_results = [item for sublist in all_results for item in sublist]
+            reporter.log(f"all results:{all_results}")
             images = load_images(args,adjust_metas_all, reporter)
             for image in images:
                 M = all_results[image.id]
