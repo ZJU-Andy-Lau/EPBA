@@ -97,7 +97,7 @@ def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
     for i,j in itertools.combinations(range(images_num),2):
         if is_overlap(images[i],images[j],args.min_window_size ** 2):
             configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
-            pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device, reporter=reporter)
+            pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device,check_error_only=True,reporter=reporter)
             pairs.append(pair)
 
     return pairs
@@ -218,8 +218,6 @@ def main(args):
         
         if rank == 0:
             all_results = {k:v for d in all_results if d for k,v in d.items()}
-            
-            reporter.log(f"all results:{all_results}")
             images = load_images(args,adjust_metas_all, reporter)
             for image in images:
                 M = all_results[image.id]

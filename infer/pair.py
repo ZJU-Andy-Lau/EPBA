@@ -47,7 +47,7 @@ class Pair():
                                     configs={
                                         **self.configs,
                                         **{
-                                            'output_path':os.path.join(self.configs['output_path'],'solve_ab')
+                                            'output_path':os.path.join(self.configs['output_path'],'solve_ab') if dual else self.configs['output_path']
                                         },
                                         
                                     },
