@@ -169,8 +169,16 @@ class Solver():
         
         imgs_a,dems_a,Hs_a = self.rs_image_a.crop_windows(corners_linesamps_a)
         imgs_b,dems_b,Hs_b = self.rs_image_b.crop_windows(corners_linesamps_b)
+
+        valid_mask = self.get_valid_mask([imgs_a,dems_a,Hs_a,imgs_b,dems_b,Hs_b])
+
+        imgs_a,dems_a,Hs_a,imgs_b,dems_b,Hs_b = [i[valid_mask] for i in [imgs_a,dems_a,Hs_a,imgs_b,dems_b,Hs_b]]
         
         return (imgs_a,dems_a,Hs_a),(imgs_b,dems_b,Hs_b)
+    
+    def get_valid_mask(self,datas):
+        valid_mask = np.logical_and.reduce([~np.isnan(data).reshape(data.shape[0],-1).any(axis=1) for data in datas])
+        return valid_mask
     
     def generate_window_pairs(self,data_a,data_b,diags):
         imgs_a,dems_a,Hs_a = data_a

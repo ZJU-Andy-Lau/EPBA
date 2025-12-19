@@ -33,13 +33,19 @@ def load_images_meta(args, reporter) -> Tuple[List[RSImageMeta],List[RSImageMeta
 
     adjust_base_path = os.path.join(args.root, 'adjust_images')
     ref_base_path = os.path.join(args.root, 'ref_images')
-    
-    adjust_select_img_idxs = [int(i) for i in args.select_adjust_imgs.split(',')]
-    ref_select_img_idxs = [int(i) for i in args.select_ref_imgs.split(',')]
 
     adjust_img_folders = sorted([d for d in os.listdir(adjust_base_path) if os.path.isdir(os.path.join(adjust_base_path, d))])
+    if args.select_adjust_imgs != '-1':
+        adjust_select_img_idxs = [int(i) for i in args.select_adjust_imgs.split(',')]
+    else:
+        adjust_select_img_idxs = range(len(adjust_img_folders))
     adjust_img_folders = [adjust_img_folders[i] for i in adjust_select_img_idxs]
+
     ref_img_folders = sorted([d for d in os.listdir(ref_base_path) if os.path.isdir(os.path.join(ref_base_path, d))])
+    if args.select_ref_imgs != '-1':
+        ref_select_img_idxs = [int(i) for i in args.select_ref_imgs.split(',')]
+    else:
+        ref_select_img_idxs = range(len(ref_img_folders))
     ref_img_folders = [ref_img_folders[i] for i in ref_select_img_idxs]
 
     adjust_metas = []
@@ -260,9 +266,9 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str,
                         help='path to all images needed adjustment in a folder')
     
-    parser.add_argument('--select_adjust_imgs',type=str,default='0,1')
+    parser.add_argument('--select_adjust_imgs',type=str,default='-1')
 
-    parser.add_argument('--select_ref_imgs',type=str,default='0')
+    parser.add_argument('--select_ref_imgs',type=str,default='-1')
 
     #==============================================================================
 
