@@ -274,12 +274,12 @@ def main(args):
     adapter_scheduler = MultiStageOneCycleLR(optimizer=adapter_optimizer,
                                              total_steps=args.max_epoch * batch_num,
                                              warmup_ratio=min(5. / args.max_epoch,.1),
-                                             cooldown_ratio=.9)
+                                             cooldown_ratio=max((1. - .5 / args.max_epoch, .9)) - (5. / args.max_epoch))
     
     gru_scheduler = MultiStageOneCycleLR(optimizer=gru_optimizer,
                                          total_steps=args.max_epoch * batch_num,
                                          warmup_ratio=min(5. / args.max_epoch,.1),
-                                         cooldown_ratio=.9)
+                                         cooldown_ratio=max((1. - .5 / args.max_epoch, .9)) - (5. / args.max_epoch))
 
     loss_funcs = Loss(img_size = (dataset.input_size,dataset.input_size),
                       downsample_factor = dataset.DOWNSAMPLE,
@@ -449,6 +449,8 @@ def main(args):
 
             for key in records:
                 logger.add_scalar(f"loss/{key}",records[key].item(),epoch)
+            logger.add_scalar(f"lr/adp_lr",adapter_scheduler.get_lr()[0],epoch)
+            logger.add_scalar(f"lr/gru_lr",gru_scheduler.get_lr()[0],epoch)
 
             
             if 'values' in debug_info:
