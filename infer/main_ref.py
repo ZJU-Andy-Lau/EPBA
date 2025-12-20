@@ -15,7 +15,7 @@ import torch.distributed as dist
 
 
 from model.encoder import Encoder
-from model.gru import GRUBlock
+from model.gru_mf import GRUBlock
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
 from pair import Pair
