@@ -540,23 +540,27 @@ def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
     
     return distance
 
-def get_error_report(pairs:List['Pair']):
-    all_distances_list = []
-    for pair in pairs:
-        distances = pair.check_error()
-        all_distances_list.append(distances)
-    all_distances = np.concatenate(all_distances_list)
+def get_report_dict(all_distances:np.ndarray):
     total_points = len(all_distances)
     report = {
         'mean': float(np.mean(all_distances)),
         'median': float(np.median(all_distances)),
         'max': float(np.max(all_distances)),
         'rmse': float(np.sqrt(np.mean(all_distances**2))),
-        'count': int(total_points),
+        'count': total_points,
         '<1m_percent': float(((all_distances < 1.0).sum() / total_points) * 100),
         '<3m_percent': float(((all_distances < 3.0).sum() / total_points) * 100),
         '<5m_percent': float(((all_distances < 5.0).sum() / total_points) * 100),
     }
+    return report
+
+def get_error_report(pairs:List['Pair']):
+    all_distances_list = []
+    for pair in pairs:
+        distances = pair.check_error()
+        all_distances_list.append(distances)
+    all_distances = np.concatenate(all_distances_list)
+    report = get_report_dict(all_distances)
     return report
 
 def affine_xy_to_rowcol(matrix):

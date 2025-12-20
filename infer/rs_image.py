@@ -226,6 +226,38 @@ class RSImage():
 
         return solution.T
 
+    def vis_checkpoints(self,ref_points:np.ndarray = None):
+        """
+        ref_points: (N,3) (lon,lat,height) np.ndarray
+        """
+        img = self.image.copy()
+        for p in self.tie_points:
+            cv2.circle(img,(int(p[1]),int(p[0])),1,(0,0,255),-1)
+        if not ref_points is None:
+            samps,lines = self.rpc.RPC_OBJ2PHOTO(ref_points[:,1],ref_points[:,0],ref_points[:,2],'numpy')
+            samps,lines = np.round(samps).astype(int),np.round(lines).astype(int)
+            for l,s in zip(samps,lines):
+                cv2.circle(img,(s,l),1,(0,255,0),-1)
+        return img
+
+    def check_error(self,ref_points:np.ndarray):
+        """
+        ref_points: (N,3) (lon,lat,height) np.ndarray
+        """
+        samps,lines = self.rpc.RPC_OBJ2PHOTO(ref_points[:,1],ref_points[:,0],ref_points[:,2],'numpy')
+        ref = np.stack([lines,samps],axis=-1)
+        dis = np.linalg.norm(ref - self.tie_points,axis=-1)
+        return dis
+
+    def get_ref_points(self):
+        """
+        如果作为ref_image,提供自身的tie_points作为ref_points
+        """
+        heights = self.dem[self.tie_points[:,0],self.tie_points[:,1]]
+        lats,lons = self.rpc.RPC_PHOTO2OBJ(self.tie_points[:,1],self.tie_points[:,0],heights,'numpy')
+        ref_points = np.stack([lons,lats,heights],axis=-1)
+        return ref_points
+
 
 def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):
     H,W = window_size
