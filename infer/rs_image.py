@@ -236,7 +236,7 @@ class RSImage():
         if not ref_points is None:
             samps,lines = self.rpc.RPC_OBJ2PHOTO(ref_points[:,1],ref_points[:,0],ref_points[:,2],'numpy')
             samps,lines = np.round(samps).astype(int),np.round(lines).astype(int)
-            for l,s in zip(samps,lines):
+            for l,s in zip(lines,samps):
                 cv2.circle(img,(s,l),1,(0,255,0),-1)
         return img
 
