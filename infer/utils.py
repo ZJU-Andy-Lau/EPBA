@@ -838,7 +838,7 @@ def create_grid_img(image_list, padding=10, bg_color=(255, 255, 255)):
     # 行数则由总数除以列数决定
     rows = math.ceil(n_images / cols)
 
-    print(f"正在组合 {n_images} 张图像 -> 布局: {rows} 行 x {cols} 列")
+    # print(f"正在组合 {n_images} 张图像 -> 布局: {rows} 行 x {cols} 列")
 
     # 2. 计算大画布的总尺寸
     # 宽度 = 列数 * 图宽 + (列数 + 1) * 间距
