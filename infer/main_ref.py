@@ -213,6 +213,7 @@ def main(args):
                 ref_points = pair.rs_image_b.get_ref_points()
                 dis = pair.rs_image_a.check_error(ref_points)
                 checkpoint_vis = pair.rs_image_a.vis_checkpoints(ref_points)
+                reporter.log(f"checkpoint_vis shape:{checkpoint_vis.shape}")
                 local_dis.append(dis)
                 cv2.imwrite(os.path.join(args.output_path,f"ckpts_{pair.id_a}_{pair.id_b}.png"),checkpoint_vis)
                 report = get_report_dict(dis)
