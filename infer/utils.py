@@ -13,6 +13,7 @@ import typing
 from typing import List,Tuple
 import time
 from collections import defaultdict, deque
+import math
 
 
 if typing.TYPE_CHECKING:
@@ -809,3 +810,66 @@ def partition_pairs(A: list, K: int) -> list:
         partitions.append([])
         
     return partitions
+
+def create_grid_img(image_list, padding=10, bg_color=(255, 255, 255)):
+    """
+    将一组图像列表组合成一张长宽比接近 1:1 的大图，并添加间隔。
+
+    参数:
+        image_list (list): 包含多个 numpy 数组的列表，每个数组形状应为 (H, W, C)。
+                           假设所有图像尺寸相同。
+        padding (int): 图像之间的间隔（像素）。
+        bg_color (tuple): 背景颜色，RGB 格式，例如 (255, 255, 255) 为白色。
+
+    返回:
+        numpy.ndarray: 组合后的大图数组。
+    """
+    if not image_list:
+        raise ValueError("图像列表为空")
+
+    # 获取单张图像的尺寸
+    # 假设所有图像尺寸一致，取第一张图的尺寸
+    img_h, img_w, img_c = image_list[0].shape
+    n_images = len(image_list)
+
+    # 1. 智能计算网格行列数
+    # 为了让整体接近正方形 (1:1)，列数取平方根向上取整
+    cols = math.ceil(math.sqrt(n_images))
+    # 行数则由总数除以列数决定
+    rows = math.ceil(n_images / cols)
+
+    print(f"正在组合 {n_images} 张图像 -> 布局: {rows} 行 x {cols} 列")
+
+    # 2. 计算大画布的总尺寸
+    # 宽度 = 列数 * 图宽 + (列数 + 1) * 间距
+    # 高度 = 行数 * 图高 + (行数 + 1) * 间距
+    grid_w = cols * img_w + (cols + 1) * padding
+    grid_h = rows * img_h + (rows + 1) * padding
+
+    # 3. 创建画布
+    # 使用图像的数据类型 (通常是 uint8)
+    dtype = image_list[0].dtype
+    
+    # 初始化画布，填充背景色
+    # np.full 需要先创建形状，再填充颜色
+    grid_image = np.full((grid_h, grid_w, img_c), bg_color, dtype=dtype)
+
+    # 4. 填入图像
+    for idx, img in enumerate(image_list):
+        # 计算当前图像在网格中的行列索引
+        r = idx // cols
+        c = idx % cols
+
+        # 计算像素坐标位置
+        # y_start = 顶部边距 + 前面 r 行图像的高度 + 前面 r 行的间距
+        y_start = padding + r * (img_h + padding)
+        y_end = y_start + img_h
+        
+        # x_start = 左侧边距 + 前面 c 列图像的宽度 + 前面 c 列的间距
+        x_start = padding + c * (img_w + padding)
+        x_end = x_start + img_w
+
+        # 将图像赋值给画布对应区域
+        grid_image[y_start:y_end, x_start:x_end, :] = img
+
+    return grid_image

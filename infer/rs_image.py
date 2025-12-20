@@ -9,7 +9,7 @@ import os
 import cv2
 
 
-from infer.utils import warp_quads
+from infer.utils import warp_quads,create_grid_img
 from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
 from shared.visualize import make_checkerboard
 from shared.rpc import RPCModelParameterTorch,project_linesamp
@@ -238,7 +238,15 @@ class RSImage():
             samps,lines = np.round(samps).astype(int),np.round(lines).astype(int)
             for l,s in zip(lines,samps):
                 cv2.circle(img,(s,l),1,(0,255,0),-1)
-        return img
+        s = 256
+        grid_imgs = []
+        for p in self.tie_points:
+            cl,cs = p
+            cl = min(self.H - s // 2,max(s // 2, cl))
+            cs = min(self.W - s // 2,max(s // 2, cs))
+            grid_imgs.append(img[cl - s // 2 : cl + s // 2, cs - s // 2 : cs + s // 2])
+        vis_img = create_grid_img(grid_imgs)
+        return vis_img
 
     def check_error(self,ref_points:np.ndarray):
         """
