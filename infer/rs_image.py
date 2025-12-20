@@ -230,21 +230,28 @@ class RSImage():
         """
         ref_points: (N,3) (lon,lat,height) np.ndarray
         """
-        img = self.image.copy()
-        for p in self.tie_points:
-            cv2.circle(img,(int(p[1]),int(p[0])),1,(0,0,255),-1)
         if not ref_points is None:
             samps,lines = self.rpc.RPC_OBJ2PHOTO(ref_points[:,1],ref_points[:,0],ref_points[:,2],'numpy')
             samps,lines = np.round(samps).astype(int),np.round(lines).astype(int)
-            for l,s in zip(lines,samps):
-                cv2.circle(img,(s,l),1,(0,255,0),-1)
-        s = 256
+            ref_points = np.stack([lines,samps],axis=-1)
         grid_imgs = []
-        for p in self.tie_points:
+        s = 256
+        for i,p in enumerate(self.tie_points):
             cl,cs = p
             cl = min(self.H - s // 2,max(s // 2, cl))
             cs = min(self.W - s // 2,max(s // 2, cs))
-            grid_imgs.append(img[cl - s // 2 : cl + s // 2, cs - s // 2 : cs + s // 2])
+            pl = p[0] - cl + s // 2
+            ps = p[1] - cs + s // 2
+            img = self.image[cl - s // 2 : cl + s // 2, cs - s // 2 : cs + s // 2]
+            cv2.circle(img,(ps,pl),1,(0,255,0),-1)
+            if not ref_points is None:
+                rp = ref_points[i]
+                rpl = rp[0] - p[0] + pl
+                rps = rp[1] - p[1] + ps
+                cv2.circle(img,(rps,rpl),1,(0,0,255),-1)
+
+            grid_imgs.append(img)
+
         vis_img = create_grid_img(grid_imgs)
         return vis_img
 
