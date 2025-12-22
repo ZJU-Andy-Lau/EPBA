@@ -131,7 +131,7 @@ class Solver():
                                     a_min=self.configs['min_window_size'],
                                     target_area_ratio=self.configs['min_area_ratio'],
                                     div_factor=self.configs['prob_div_factor'],
-                                    check_diag_valid_func=self.check_diags_valid)
+                                    check_diags_valid_func=self.check_diags_valid)
         
         if self.reporter:
             self.reporter.update(current_step="Filtering Windows")
