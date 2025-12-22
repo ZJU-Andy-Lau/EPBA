@@ -272,19 +272,20 @@ class RSImage_Error_Check():
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
         self.rpc.to_gpu(self.device)
+        self.tie_points_path = os.path.join(self.root,'tie_points.txt')
+        self.dem_path = os.path.join(self.root,'dem.npy')
 
         self.tie_points = self._load_tie_points()
         self.heights = self.get_heights_for_tie_points()
     
     def _load_tie_points(self) -> np.ndarray:
         """加载 tie_points.txt 文件"""
-        path = os.path.join(self.root,'tie_points.txt')
-        if not os.path.exists(path):
+        if not os.path.exists(self.tie_points_path):
             print(f"信息 (Image {self.id}): 未找到 tie_points.txt。")
             return None
         
         try:
-            tie_points = np.loadtxt(path, dtype=int)
+            tie_points = np.loadtxt(self.tie_points_path, dtype=int)
             if tie_points.ndim == 0: # 空文件
                 return None
             if tie_points.ndim == 1:

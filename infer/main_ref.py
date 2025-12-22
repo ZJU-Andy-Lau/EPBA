@@ -203,7 +203,7 @@ def main(args):
                 affine = adjust_image.merge_affines()
                 reporter.log(f"Affine Matrix of Image {adjust_image.id}\n{affine}\n")
                 adjust_image.rpc.Update_Adjust(affine)
-                adjust_image.rpc.Merge_Adjust()
+                # adjust_image.rpc.Merge_Adjust()
                 local_results[adjust_image.id] = affine
             
             reporter.update(current_task="Check Error", level="-", current_step="-")
