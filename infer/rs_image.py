@@ -179,30 +179,42 @@ class RSImage():
         else:
             return corners_linesamps[0]
 
-    def check_diag_valid(self,diag:np.ndarray):
-        corners = self.convert_diags_to_corners(diag)
-        min_r, min_c = np.floor(corners.min(axis=0)).astype(int)
-        max_r, max_c = np.ceil(corners.max(axis=0)).astype(int)
-        min_r = max(0, min_r)
-        min_c = max(0, min_c)
-        max_r = min(self.H - 1, max_r)
-        max_c = min(self.W - 1, max_c)
-        roi_mask = self.invalid_mask[min_r:max_r+1, min_c:max_c+1]
-        if not np.any(roi_mask):
-            return True
-        grid_r, grid_c = np.meshgrid(
-            np.arange(min_r, max_r + 1),
-            np.arange(min_c, max_c + 1),
-            indexing='ij'
+    def check_diags_valid(self,diags:np.ndarray):
+        corners = self.convert_diags_to_corners(diags)
+        if corners.ndim == 2:
+            corners = corners[np.newaxis, :, :]
+        N = corners.shape[0]
+        mask = self.invalid_mask
+        points = np.argwhere(mask)
+        K = points.shape[0]
+        if K == 0:
+            return np.ones(N, dtype=bool)
+        global_min = corners.min(axis=(0, 1))
+        global_max = corners.max(axis=(0, 1))
+        min_r, min_c = np.floor(global_min).astype(int)
+        max_r, max_c = np.ceil(global_max).astype(int)
+        keep_mask = (
+            (points[:, 0] >= min_r) & 
+            (points[:, 0] <= max_r) & 
+            (points[:, 1] >= min_c) & 
+            (points[:, 1] <= max_c)
         )
-        points = np.stack((grid_r.flatten(), grid_c.flatten()), axis=1)
-        path = Path(corners)
-        is_inside = path.contains_points(points).reshape(roi_mask.shape)
-        
-        if np.any(is_inside & roi_mask):
-            return False
-        else:
-            return True
+        points = points[keep_mask]
+        K = points.shape[0]
+        if K == 0:
+            return np.ones(N, dtype=bool)
+        edge_vecs = np.roll(corners, -1, axis=1) - corners
+        P = points[np.newaxis, :, np.newaxis, :]
+        C = corners[:, np.newaxis, :, :]
+        E = edge_vecs[:, np.newaxis, :, :]
+        term1 = (P[..., 0] - C[..., 0]) * E[..., 1]
+        term2 = (P[..., 1] - C[..., 1]) * E[..., 0]
+        cross_products = term1 - term2
+        all_positive = np.all(cross_products >= 0, axis=2) # Shape: (N, K)
+        all_negative = np.all(cross_products <= 0, axis=2) # Shape: (N, K)
+        is_inside = all_positive | all_negative
+        result = ~np.any(is_inside, axis=1)
+        return result
 
     def crop_windows(self,corners:np.ndarray,output_size=(512, 512)):
         """

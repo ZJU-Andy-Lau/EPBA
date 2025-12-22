@@ -131,8 +131,10 @@ class Solver():
                                     a_min=self.configs['min_window_size'],
                                     target_area_ratio=self.configs['min_area_ratio'],
                                     div_factor=self.configs['prob_div_factor'],
-                                    check_diag_valid_func=self.check_diag_valid)
+                                    check_diag_valid_func=self.check_diags_valid)
         
+        if self.reporter:
+            self.reporter.update(current_step="Filtering Windows")
         if self.configs['max_window_num'] > 0 and window_diags.shape[0] > self.configs['max_window_num']:
             confs = self.get_conf_by_diags(window_diags)
             scores = np.mean(confs,axis=(1,2))
@@ -156,8 +158,8 @@ class Solver():
         self.window_pairs_num = len(self.window_pairs)
         
         
-    def check_diag_valid(self,diag:np.ndarray):
-        return self.rs_image_a.check_diag_valid(diag) & self.rs_image_b.check_diag_valid(diag)
+    def check_diags_valid(self,diags:np.ndarray):
+        return self.rs_image_a.check_diags_valid(diags) & self.rs_image_b.check_diags_valid(diags)
     
     def get_data_by_diags(self,diags,rpc_a = None,rpc_b = None):
         if rpc_a is None:

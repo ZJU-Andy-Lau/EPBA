@@ -155,7 +155,7 @@ def convert_diags_to_tlbr(diags: np.ndarray) -> np.ndarray:
     tlbr[:, 0, 1] = diags[:, 1, 1]
     return tlbr
 
-def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor = 2.0, check_diag_valid_func = None):
+def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor = 2.0, check_diags_valid_func = None):
     """
     在凸多边形内划分正方形，通过迭代缩小边长 a，直到填充面积超过多边形面积的一定比例。
 
@@ -218,14 +218,6 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor 
                         # 快速预筛选：如果正方形完全在边界框外，直接跳过 (优化性能)
                         if x > max_x or y > max_y:
                             continue
-
-                        if not check_diag_valid_func is None:
-                            diag = np.array([
-                                [x, y + current_a],
-                                [x + current_a, y]
-                            ])
-                            if not check_diag_valid_func(diag):
-                                continue
                             
                         # 构建正方形
                         sq_poly = box(x, y, x + current_a, y + current_a)
@@ -233,9 +225,13 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor 
                         # 严格检查包含关系
                         if poly.contains(sq_poly):
                             current_candidates.append([
-                                [x, y], 
-                                [x + current_a, y + current_a]
+                                [x, y + current_a], 
+                                [x + current_a, y]
                             ])
+
+                current_candidates = np.array(current_candidates)
+                mask = check_diags_valid_func(current_candidates)
+                current_candidates = current_candidates[mask]                
                 
                 # 如果当前偏移找到的正方形更多，则更新最佳方案
                 if len(current_candidates) > max_count_for_this_a:
@@ -247,7 +243,7 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor 
         
         # 4. 检查是否满足停止条件
         if current_coverage > target_area:
-            return convert_diags_to_tlbr(np.array(best_squares_for_this_a))
+            return best_squares_for_this_a
         
         # 5. 更新迭代参数
         current_a /= div_factor
