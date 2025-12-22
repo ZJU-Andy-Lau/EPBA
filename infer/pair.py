@@ -124,6 +124,8 @@ class Solver():
         return polygon_corners
     
     def build_window_pairs(self):
+        if self.reporter:
+            self.reporter.update(current_step="Finding Windows")
         window_diags = find_squares(self.intersection,
                                     a_max=self.window_size,
                                     a_min=self.configs['min_window_size'],
@@ -149,7 +151,7 @@ class Solver():
         for window_pair in self.window_pairs:
             window_pair.clear()
             window_pair = None
-            
+
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
         self.window_pairs_num = len(self.window_pairs)
         
