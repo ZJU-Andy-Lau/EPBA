@@ -132,7 +132,7 @@ class Solver():
                                     a_min=self.configs['min_window_size'],
                                     target_area_ratio=self.configs['min_area_ratio'],
                                     div_factor=self.configs['prob_div_factor'],
-                                    check_diags_valid_func=self.check_diags_valid)
+                                    check_diags_valid_func=None) # self.check_diags_valid
         t1 = time.perf_counter()
         self.reporter.log(f"find squeares time:{t1 - t0}s")
 
