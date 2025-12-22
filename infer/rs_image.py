@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import cv2
+from matplotlib.path import Path
 
 
 from infer.utils import warp_quads,create_grid_img
@@ -179,13 +180,29 @@ class RSImage():
             return corners_linesamps[0]
 
     def check_diag_valid(self,diag:np.ndarray):
-        tlbr = self.convert_diags_to_corners(diag)
-        invalid_mask = self.invalid_mask[tlbr[0,0]:tlbr[1,0],tlbr[0,1]:tlbr[1,1]]
-        if invalid_mask.any():
+        corners = self.convert_diags_to_corners(diag)
+        min_r, min_c = np.floor(corners.min(axis=0)).astype(int)
+        max_r, max_c = np.ceil(corners.max(axis=0)).astype(int)
+        min_r = max(0, min_r)
+        min_c = max(0, min_c)
+        max_r = min(self.H - 1, max_r)
+        max_c = min(self.W - 1, max_c)
+        roi_mask = self.invalid_mask[min_r:max_r+1, min_c:max_c+1]
+        if not np.any(roi_mask):
+            return True
+        grid_r, grid_c = np.meshgrid(
+            np.arange(min_r, max_r + 1),
+            np.arange(min_c, max_c + 1),
+            indexing='ij'
+        )
+        points = np.stack((grid_r.flatten(), grid_c.flatten()), axis=1)
+        path = Path(corners)
+        is_inside = path.contains_points(points).reshape(roi_mask.shape)
+        
+        if np.any(is_inside & roi_mask):
             return False
         else:
             return True
-
 
     def crop_windows(self,corners:np.ndarray,output_size=(512, 512)):
         """
