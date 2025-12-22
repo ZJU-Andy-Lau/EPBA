@@ -230,8 +230,9 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor 
                             ])
 
                 current_candidates = np.array(current_candidates)
-                mask = check_diags_valid_func(current_candidates)
-                current_candidates = current_candidates[mask]                
+                if not check_diags_valid_func is None:
+                    mask = check_diags_valid_func(current_candidates)
+                    current_candidates = current_candidates[mask]                
                 
                 # 如果当前偏移找到的正方形更多，则更新最佳方案
                 if len(current_candidates) > max_count_for_this_a:
