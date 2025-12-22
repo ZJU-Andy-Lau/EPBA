@@ -78,6 +78,11 @@ class RSImage():
         self.affine_list = []
         
         self.corner_xys = self.__get_corner_xys__()
+
+        self.invalid_mask = np.isnan(self.dem)
+
+        self.confidence_map = np.random.rand(*self.dem.shape)
+        self.confidence_map[self.invalid_mask] = 0.0
     
     def __init__(self,meta:RSImageMeta,device:str = None):
         """
@@ -163,8 +168,10 @@ class RSImage():
         Return:
             corners: ndarray, (N,4,2), (line,samp)
         """
+        batched = True
         if diags.ndim < 3:
             diags = diags[None]
+            batched = False
         N = diags.shape[0]
         corners_xy = np.zeros((N,4,2),dtype=diags.dtype)
         corners_xy[:,0,:] = diags[:,0,:]
@@ -176,8 +183,18 @@ class RSImage():
         corners_xy_flat = corners_xy.reshape(-1,2) # N*4,2
         corners_samplines_flat = self.xy_to_sampline(corners_xy_flat,rpc=rpc)
         corners_linesamps = corners_samplines_flat.reshape(N,4,2)[...,[1,0]]
-        return corners_linesamps
+        if batched:
+            return corners_linesamps
+        else:
+            return corners_linesamps[0]
 
+    def check_diag_valid(self,diag:np.ndarray):
+        tlbr = self.convert_diags_to_corners(diag)
+        invalid_mask = self.invalid_mask[tlbr[0,0]:tlbr[1,0],tlbr[0,1]:tlbr[1,1]]
+        if invalid_mask.any():
+            return False
+        else:
+            return True
 
 
     def crop_windows(self,corners:np.ndarray,output_size=(512, 512)):
@@ -193,12 +210,13 @@ class RSImage():
         Returns:
             warped_images (B,H,W,3) ,
             warped_dems (B,H,W) ,
+            warped_confs (B,H,W) ,
             Hs (np.ndarray): 形状为 (B, 3, 3) 的单应变换矩阵。
                             该矩阵是在 (row, col) 坐标系下的变换。
         """
-        warped_res,Hs = warp_quads(corners,[self.image,self.dem],output_size)
-        warped_imgs,warped_dems = warped_res
-        return warped_imgs,warped_dems,Hs
+        warped_res,Hs = warp_quads(corners,[self.image,self.dem,self.confidence_map],output_size)
+        warped_imgs,warped_dems,warped_conf = warped_res
+        return warped_imgs,warped_dems,warped_conf,Hs
 
     def merge_affines(self):
         if len(self.affine_list) == 0:
