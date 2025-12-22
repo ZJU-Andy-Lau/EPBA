@@ -7,7 +7,6 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import cv2
-from matplotlib.path import Path
 
 
 from infer.utils import warp_quads,create_grid_img
@@ -63,8 +62,22 @@ class RSImage():
         self.options = options
         self.root = root
         self.id = id
+        self.image = cv2.imread(os.path.join(root,'image.png'),cv2.IMREAD_GRAYSCALE)
+        self.image = np.stack([self.image] * 3,axis=-1)
+        self.dem = np.load(os.path.join(root,'dem.npy'))
+        if os.path.exists(os.path.join(root,'tie_points.txt')):
+            self.tie_points = self.__load_tie_points__(os.path.join(root,'tie_points.txt'))
+        else:
+            self.tie_points = None
         self.device = device
-        self.initialize()
+        self.H,self.W = self.image.shape[:2]
+        self.rpc = RPCModelParameterTorch()
+        self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
+        self.rpc.to_gpu(device=device)
+
+        self.affine_list = []
+        
+        self.corner_xys = self.__get_corner_xys__()
     
     def __init__(self,meta:RSImageMeta,device:str = None):
         """
@@ -74,10 +87,6 @@ class RSImage():
         self.options = meta.options
         self.root = meta.root
         self.id = meta.id
-        self.device = meta.device if device is None else device
-        self.initialize()
-    
-    def initialize(self):
         self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
         self.image = np.stack([self.image] * 3,axis=-1)
         self.dem = np.load(os.path.join(self.root,'dem.npy'))
@@ -85,20 +94,15 @@ class RSImage():
             self.tie_points = self.__load_tie_points__(os.path.join(self.root,'tie_points.txt'))
         else:
             self.tie_points = None
-        
+        self.device = meta.device if device is None else device
         self.H,self.W = self.image.shape[:2]
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
-        self.rpc.to_gpu(device=self.device)
+        self.rpc.to_gpu(device=device)
 
         self.affine_list = []
         
         self.corner_xys = self.__get_corner_xys__()
-
-        self.invalid_mask = np.isnan(self.dem)
-
-        self.confidence_map = np.random.rand(*self.dem.shape)
-        self.confidence_map[self.invalid_mask] = 0.0
 
     def __load_tie_points__(self,path) -> np.ndarray:
         tie_points = np.loadtxt(path,dtype=int)
@@ -159,10 +163,8 @@ class RSImage():
         Return:
             corners: ndarray, (N,4,2), (line,samp)
         """
-        batched = True
         if diags.ndim < 3:
             diags = diags[None]
-            batched = False
         N = diags.shape[0]
         corners_xy = np.zeros((N,4,2),dtype=diags.dtype)
         corners_xy[:,0,:] = diags[:,0,:]
@@ -174,31 +176,8 @@ class RSImage():
         corners_xy_flat = corners_xy.reshape(-1,2) # N*4,2
         corners_samplines_flat = self.xy_to_sampline(corners_xy_flat,rpc=rpc)
         corners_linesamps = corners_samplines_flat.reshape(N,4,2)[...,[1,0]]
-        if batched:
-            return corners_linesamps
-        else:
-            return corners_linesamps[0]
+        return corners_linesamps
 
-    def check_diags_valid(self,diags:np.ndarray):
-        corners = self.convert_diags_to_corners(diags)
-        if corners.ndim == 2:
-            corners = corners[np.newaxis, :, :]
-        N = corners.shape[0]
-        mask = self.invalid_mask
-        quad_min = corners.min(axis=1) # [min_row, min_col]
-        quad_max = corners.max(axis=1) # [max_row, max_col]
-        r1 = np.floor(quad_min[:, 0]).astype(int)
-        c1 = np.floor(quad_min[:, 1]).astype(int)
-        r2 = np.ceil(quad_max[:, 0]).astype(int)
-        c2 = np.ceil(quad_max[:, 1]).astype(int)
-        results = np.ones(N, dtype=bool)
-    
-        for i in range(N):
-            sub_mask = mask[r1[i]:r2[i], c1[i]:c2[i] ]
-            if np.any(sub_mask):
-                results[i] = False
-                
-        return results
 
 
     def crop_windows(self,corners:np.ndarray,output_size=(512, 512)):
@@ -214,13 +193,12 @@ class RSImage():
         Returns:
             warped_images (B,H,W,3) ,
             warped_dems (B,H,W) ,
-            warped_confs (B,H,W) ,
             Hs (np.ndarray): 形状为 (B, 3, 3) 的单应变换矩阵。
                             该矩阵是在 (row, col) 坐标系下的变换。
         """
-        warped_res,Hs = warp_quads(corners,[self.image,self.dem,self.confidence_map],output_size)
-        warped_imgs,warped_dems,warped_conf = warped_res
-        return warped_imgs,warped_dems,warped_conf,Hs
+        warped_res,Hs = warp_quads(corners,[self.image,self.dem],output_size)
+        warped_imgs,warped_dems = warped_res
+        return warped_imgs,warped_dems,Hs
 
     def merge_affines(self):
         if len(self.affine_list) == 0:

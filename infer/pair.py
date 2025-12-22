@@ -26,9 +26,7 @@ default_configs = {
     'min_window_size':500,
     'max_window_size':8000,
     'min_area_ratio':0.5,
-    'output_path':'./results',
-    'prob_div_factor':2.0,
-    'div_factor':2.0
+    'output_path':'./results'
 }
 
 class Pair():
@@ -112,38 +110,44 @@ class Solver():
         self.device = device
         self.reporter = reporter # 保存 reporter
         self.window_pairs:List[WindowPair] = []
+        self.window_size = -1
         os.makedirs(self.configs['output_path'],exist_ok=True)
 
-        self.intersection = self.get_intersection()
-        self.window_size = self.configs['max_window_size'] # 初始化为最大窗口尺寸
-    
-    def get_intersection(self):
-        corners_a = self.rs_image_a.corner_xys # (4,2)
-        corners_b = self.rs_image_b.corner_xys
+    def init_window_pairs(self,a_max = 8000,a_min = 500,area_ratio = 0.5):
+        if self.reporter:
+            self.reporter.update(current_step="Init Window Pairs")
+        corners_a = self.rs_image_a.__get_corner_xys__() # (4,2)
+        corners_b = self.rs_image_b.__get_corner_xys__()
+
         polygon_corners = find_intersection(np.stack([corners_a,corners_b],axis=0))
-        return polygon_corners
-    
-    def build_window_pairs(self):
-        if self.reporter:
-            self.reporter.update(current_step="Finding Windows")
-        t0 = time.perf_counter()
-        window_diags = find_squares(self.intersection,
-                                    a_max=self.window_size,
-                                    a_min=self.configs['min_window_size'],
-                                    target_area_ratio=self.configs['min_area_ratio'],
-                                    div_factor=self.configs['prob_div_factor'],
-                                    check_diags_valid_func=None) # self.check_diags_valid
-        t1 = time.perf_counter()
-        self.reporter.log(f"find squeares time:{t1 - t0}s")
+        window_diags = find_squares(polygon_corners,a_max,a_min,area_ratio) # N,2,2
 
+        self.build_window_pairs(window_diags)
+
+    def quadsplit_windows(self):
         if self.reporter:
-            self.reporter.update(current_step="Filtering Windows")
+            self.reporter.update(current_step="Quad-Splitting")
+        new_diags = []
+        scores = []
+        for window_pair in self.window_pairs:
+            new_diag,score = window_pair.quadsplit()
+            new_diags.append(new_diag)
+            scores.append(score)
+            window_pair.clear()
+        
+        new_diags = np.concatenate(new_diags,axis=0) # （4*N,2,2)
+        scores = np.concatenate(scores,axis=0) #(4*N,)
+
+        self.build_window_pairs(new_diags,scores)
+        
+    def build_window_pairs(self,window_diags,scores = None):
         if self.configs['max_window_num'] > 0 and window_diags.shape[0] > self.configs['max_window_num']:
-            confs = self.get_conf_by_diags(window_diags)
-            scores = np.mean(confs,axis=(1,2))
-            sorted_idxs = np.argsort(-scores)[:self.configs['max_window_num']] #从大到小
-            window_diags = window_diags[sorted_idxs]
-
+            if scores is None:
+                idxs = np.random.choice(range(window_diags.shape[0]),self.configs['max_window_num'])
+                window_diags = window_diags[idxs]
+            else:
+                sorted_idxs = np.argsort(-scores)[:self.configs['max_window_num']] #从大到小
+                window_diags = window_diags[sorted_idxs]
         self.window_size = np.abs(window_diags[0,1,0] - window_diags[0,0,0])
 
         window_vis = visualizer.vis_windows_distribution(self.rs_image_a.corner_xys,window_diags)
@@ -152,17 +156,8 @@ class Solver():
         if self.reporter:
             self.reporter.update(current_step="Cropping Windows")
         data_a,data_b = self.get_data_by_diags(window_diags)
-
-        for window_pair in self.window_pairs:
-            window_pair.clear()
-            window_pair = None
-
         self.window_pairs = self.generate_window_pairs(data_a,data_b,window_diags)
         self.window_pairs_num = len(self.window_pairs)
-        
-        
-    def check_diags_valid(self,diags:np.ndarray):
-        return self.rs_image_a.check_diags_valid(diags) & self.rs_image_b.check_diags_valid(diags)
     
     def get_data_by_diags(self,diags,rpc_a = None,rpc_b = None):
         if rpc_a is None:
@@ -172,26 +167,18 @@ class Solver():
         corners_linesamps_a = self.rs_image_a.convert_diags_to_corners(diags,rpc_a)
         corners_linesamps_b = self.rs_image_b.convert_diags_to_corners(diags,rpc_b)
         
-        imgs_a,dems_a,_,Hs_a = self.rs_image_a.crop_windows(corners_linesamps_a)
-        imgs_b,dems_b,_,Hs_b = self.rs_image_b.crop_windows(corners_linesamps_b)
+        imgs_a,dems_a,Hs_a = self.rs_image_a.crop_windows(corners_linesamps_a)
+        imgs_b,dems_b,Hs_b = self.rs_image_b.crop_windows(corners_linesamps_b)
+
+        valid_mask = self.get_valid_mask([imgs_a,dems_a,Hs_a,imgs_b,dems_b,Hs_b])
+
+        imgs_a,dems_a,Hs_a,imgs_b,dems_b,Hs_b = [i[valid_mask] for i in [imgs_a,dems_a,Hs_a,imgs_b,dems_b,Hs_b]]
         
         return (imgs_a,dems_a,Hs_a),(imgs_b,dems_b,Hs_b)
     
-    def get_conf_by_diags(self,diags,rpc_a = None,rpc_b = None):
-        if rpc_a is None:
-            rpc_a = self.rpc_a
-        if rpc_b is None:
-            rpc_b = self.rpc_b
-        corners_linesamps_a = self.rs_image_a.convert_diags_to_corners(diags,rpc_a)
-        corners_linesamps_b = self.rs_image_b.convert_diags_to_corners(diags,rpc_b)
-        
-        _,_,conf_a,_ = self.rs_image_a.crop_windows(corners_linesamps_a)
-        _,_,conf_b,_ = self.rs_image_b.crop_windows(corners_linesamps_b)
-
-        conf = .5 * (conf_a + conf_b)
-
-        return conf # B,H,W
-        
+    def get_valid_mask(self,datas):
+        valid_mask = np.logical_and.reduce([~np.isnan(data).reshape(data.shape[0],-1).any(axis=1) for data in datas])
+        return valid_mask
     
     def generate_window_pairs(self,data_a,data_b,diags):
         imgs_a,dems_a,Hs_a = data_a
@@ -340,12 +327,15 @@ class Solver():
     
     @torch.no_grad()
     def solve_affine(self,encoder:Encoder,gru:GRUBlock):
+        self.init_window_pairs(a_max=self.configs['max_window_size'],
+                               a_min=self.configs['min_window_size'],
+                               area_ratio=self.configs['min_area_ratio'])
         while self.window_size >= self.configs['min_window_size']:
-            self.build_window_pairs()
+            # 更新层级信息
             if self.reporter:
                 self.reporter.update(level=f"{int(self.window_size)}m")
             self.solve_level_affine(encoder,gru)
-            self.window_size = int(self.window_size / self.configs['div_factor'])
+            self.quadsplit_windows()
         return self.rpc_a.adjust_params
     
     def test_affine(self,M:torch.Tensor):
@@ -448,7 +438,57 @@ class WindowPair():
         self.window_a = window_a
         self.window_b = window_b
         self.diag = diag
-       
+    
+    def _get_score(self,tlrc,brrc):
+        confs_a = self.window_a.confs[...,tlrc[0]:brrc[0],tlrc[1]:brrc[1]].reshape(-1)
+        confs_b = self.window_b.confs[...,tlrc[0]:brrc[0],tlrc[1]:brrc[1]].reshape(-1)
+        scores = torch.sqrt(confs_a * confs_b).mean()
+        return scores.item()
+
+    def quadsplit(self):
+        """
+        Return:
+        new_diags: np.ndarray (4,2,2)
+        scores: np.ndarray (4,)
+        """
+        tlx,tly = self.diag[0]
+        brx,bry = self.diag[1]
+        mid_x = (tlx + brx) * 0.5
+        mid_y = (tly + bry) * 0.5
+        H,W = self.window_a.confs.shape[-2:]
+        mid_row = H // 2
+        mid_col = W // 2
+        new_diags = np.array([
+            [
+                [tlx,tly],
+                [mid_x,mid_y]
+            ],
+            [
+                [mid_x,tly],
+                [brx,mid_y]
+            ],
+            [
+                [tlx,mid_y],
+                [mid_x,bry]
+            ],
+            [
+                [mid_x,mid_y],
+                [brx,bry]
+            ]
+        ])
+        scores = np.array([
+            self._get_score([0,0],[mid_row,mid_col]),
+            self._get_score([0,mid_col],[mid_row,W]),
+            self._get_score([mid_row,0],[H,mid_col]),
+            self._get_score([mid_row,mid_col],[H,W]),
+        ])
+        scores_rank = np.argsort(-scores)
+        weight = 1.0
+        for i in scores_rank:
+            scores[i] *= weight
+            weight *= 0.5
+        return new_diags,scores
+    
     def visualize(self,output_path:str):
         match_feat_a,ctx_feat_a,conf_a = self.window_a.match_feats.permute(1,2,0),self.window_a.ctx_feats.permute(1,2,0),self.window_a.confs.permute(1,2,0)
         match_feat_b,ctx_feat_b,conf_b = self.window_b.match_feats.permute(1,2,0),self.window_b.ctx_feats.permute(1,2,0),self.window_b.confs.permute(1,2,0)

@@ -155,7 +155,7 @@ def convert_diags_to_tlbr(diags: np.ndarray) -> np.ndarray:
     tlbr[:, 0, 1] = diags[:, 1, 1]
     return tlbr
 
-def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor = 2.0, check_diags_valid_func = None):
+def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5):
     """
     在凸多边形内划分正方形，通过迭代缩小边长 a，直到填充面积超过多边形面积的一定比例。
 
@@ -225,14 +225,9 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor 
                         # 严格检查包含关系
                         if poly.contains(sq_poly):
                             current_candidates.append([
-                                [x, y + current_a], 
-                                [x + current_a, y]
+                                [x, y], 
+                                [x + current_a, y + current_a]
                             ])
-
-                current_candidates = np.array(current_candidates)
-                if not check_diags_valid_func is None:
-                    mask = check_diags_valid_func(current_candidates)
-                    current_candidates = current_candidates[mask]                
                 
                 # 如果当前偏移找到的正方形更多，则更新最佳方案
                 if len(current_candidates) > max_count_for_this_a:
@@ -244,10 +239,10 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5, div_factor 
         
         # 4. 检查是否满足停止条件
         if current_coverage > target_area:
-            return best_squares_for_this_a
+            return convert_diags_to_tlbr(np.array(best_squares_for_this_a))
         
         # 5. 更新迭代参数
-        current_a /= div_factor
+        current_a /= 2.0
         iteration += 1
         
     print(f"Warning: Minimum edge length ({a_min}) reached without meeting area threshold.")
