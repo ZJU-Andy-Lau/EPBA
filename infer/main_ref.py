@@ -254,7 +254,7 @@ def main(args):
         if rank == 0:
             all_results = {k:v for d in all_results if d for k,v in d.items()}
             reporter.update(current_step="Loading Images")
-            images = [RSImage_Error_Check(meta,device=args.device) for meta in metas]
+            images = [RSImage_Error_Check(meta,device=args.device) for meta in adjust_metas_all]
             for image in images:
                 M = all_results[image.id]
                 image.rpc.Update_Adjust(M)
