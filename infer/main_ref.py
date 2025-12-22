@@ -19,7 +19,7 @@ from model.gru_mf import GRUBlock
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
 from pair import Pair
-from rs_image import RSImage,RSImageMeta,vis_registration
+from rs_image import RSImage,RSImageMeta,RSImage_Error_Check,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
 
 def init_random_seed(args):
@@ -176,7 +176,6 @@ def main(args):
         ref_metas = scatter_ref_metas[0] # K,N
         
         local_results = {}
-        local_dis = []
         reporter.update(current_task="Ready", progress=f"-", level="-", current_step="Ready")
         
         if len(adjust_metas) > 0 and len(ref_metas) > 0:
@@ -213,20 +212,17 @@ def main(args):
                 ref_points = pair.rs_image_b.get_ref_points()
                 dis = pair.rs_image_a.check_error(ref_points)
                 checkpoint_vis = pair.rs_image_a.vis_checkpoints(ref_points)
-                local_dis.append(dis)
                 cv2.imwrite(os.path.join(args.output_path,f"ckpts_{pair.id_a}_{pair.id_b}.png"),checkpoint_vis)
                 report = get_report_dict(dis)
                 reporter.log("\n" + f"--- Adj {pair.id_a} => Ref {pair.id_b}  Error Report ---")
                 reporter.log(f"Total tie points checked: {report['count']}")
-                reporter.log(f"Mean Error:   {report['mean']:.4f} m")
-                reporter.log(f"Median Error: {report['median']:.4f} m")
-                reporter.log(f"Max Error:    {report['max']:.4f} m")
-                reporter.log(f"RMSE:         {report['rmse']:.4f} m")
+                reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
+                reporter.log(f"Median Error: {report['median']:.4f} pix")
+                reporter.log(f"Max Error:    {report['max']:.4f} pix")
+                reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
                 reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
                 reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
                 reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
-            
-            local_dis = np.concatenate(local_dis)
 
                 
                 # reporter.log(f"{adjust_image.id}:\n{local_results[adjust_image.id]}")
@@ -250,51 +246,37 @@ def main(args):
         reporter.update(current_step="Gathering Results")
         if rank == 0:
             all_results = [None for _ in range(world_size)]
-            all_distances = [None for _ in range(world_size)]
         else:
             all_results = None
-            all_distances = None
+
         dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
-        dist.gather_object(local_dis, all_distances if rank == 0 else None, dst=0)
         
         if rank == 0:
+            all_results = {k:v for d in all_results if d for k,v in d.items()}
+            reporter.update(current_step="Loading Images")
+            images = [RSImage_Error_Check(meta,device=args.device) for meta in metas]
+            for image in images:
+                M = all_results[image.id]
+                image.rpc.Update_Adjust(M)
+                # image.rpc.Merge_Adjust()
+
+            all_distances = []
+            for i,j in itertools.combinations(range(len(images)),2):
+                ref_points = images[i].get_ref_points()
+                distances = images[j].check_error(ref_points)
+                all_distances.append(distances)
             all_distances = np.concatenate(all_distances)
+
             report = get_report_dict(all_distances)
             reporter.log("\n" + "--- Global Error Report (Summary) ---")
             reporter.log(f"Total tie points checked: {report['count']}")
-            reporter.log(f"Mean Error:   {report['mean']:.4f} m")
-            reporter.log(f"Median Error: {report['median']:.4f} m")
-            reporter.log(f"Max Error:    {report['max']:.4f} m")
-            reporter.log(f"RMSE:         {report['rmse']:.4f} m")
+            reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
+            reporter.log(f"Median Error: {report['median']:.4f} pix")
+            reporter.log(f"Max Error:    {report['max']:.4f} pix")
+            reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
             reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
             reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
             reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
-
-            # all_results = {k:v for d in all_results if d for k,v in d.items()}
-            # images = load_images(args,adjust_metas_all, reporter)
-            # for image in images:
-            #     M = all_results[image.id]
-            #     reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
-            #     image.rpc.Update_Adjust(M)
-            #     image.rpc.Merge_Adjust()
-            
-
-            # pairs = build_pairs(args,images, reporter)
-            
-            # reporter.update(current_step="Visualizing")
-            # for i,j in itertools.combinations(range(len(images)),2):
-            #     vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
-            
-            # report = get_error_report(pairs)
-            # reporter.log("\n" + "--- Global Error Report (Summary) ---")
-            # reporter.log(f"Total tie points checked: {report['count']}")
-            # reporter.log(f"Mean Error:   {report['mean']:.4f} m")
-            # reporter.log(f"Median Error: {report['median']:.4f} m")
-            # reporter.log(f"Max Error:    {report['max']:.4f} m")
-            # reporter.log(f"RMSE:         {report['rmse']:.4f} m")
-            # reporter.log(f"< 1.0 m: {report['<1m_percent']:.2f} %")
-            # reporter.log(f"< 3.0 m: {report['<3m_percent']:.2f} %")
-            # reporter.log(f"< 5.0 m: {report['<5m_percent']:.2f} %")
             
     except Exception as e:
         error_msg = traceback.format_exc()

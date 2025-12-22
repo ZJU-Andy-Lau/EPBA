@@ -62,22 +62,8 @@ class RSImage():
         self.options = options
         self.root = root
         self.id = id
-        self.image = cv2.imread(os.path.join(root,'image.png'),cv2.IMREAD_GRAYSCALE)
-        self.image = np.stack([self.image] * 3,axis=-1)
-        self.dem = np.load(os.path.join(root,'dem.npy'))
-        if os.path.exists(os.path.join(root,'tie_points.txt')):
-            self.tie_points = self.__load_tie_points__(os.path.join(root,'tie_points.txt'))
-        else:
-            self.tie_points = None
         self.device = device
-        self.H,self.W = self.image.shape[:2]
-        self.rpc = RPCModelParameterTorch()
-        self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
-        self.rpc.to_gpu(device=device)
-
-        self.affine_list = []
-        
-        self.corner_xys = self.__get_corner_xys__()
+        self.initialize()
     
     def __init__(self,meta:RSImageMeta,device:str = None):
         """
@@ -87,6 +73,10 @@ class RSImage():
         self.options = meta.options
         self.root = meta.root
         self.id = meta.id
+        self.device = meta.device if device is None else device
+        self.initialize()
+    
+    def initialize(self):
         self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
         self.image = np.stack([self.image] * 3,axis=-1)
         self.dem = np.load(os.path.join(self.root,'dem.npy'))
@@ -94,11 +84,11 @@ class RSImage():
             self.tie_points = self.__load_tie_points__(os.path.join(self.root,'tie_points.txt'))
         else:
             self.tie_points = None
-        self.device = meta.device if device is None else device
+        
         self.H,self.W = self.image.shape[:2]
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
-        self.rpc.to_gpu(device=device)
+        self.rpc.to_gpu(device=self.device)
 
         self.affine_list = []
         
@@ -273,6 +263,126 @@ class RSImage():
         ref_points = np.stack([lons,lats,heights],axis=-1)
         return ref_points
 
+class RSImage_Error_Check():
+    def __init__(self,meta:RSImageMeta,device:str = None):
+        self.options = meta.options
+        self.root = meta.root
+        self.id = meta.id
+        self.device = meta.device if device is None else device
+        self.rpc = RPCModelParameterTorch()
+        self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
+        self.rpc.to_gpu(self.device)
+
+        self.tie_points = self._load_tie_points()
+        self.heights = self.get_heights_for_tie_points()
+    
+    def _load_tie_points(self) -> np.ndarray:
+        """加载 tie_points.txt 文件"""
+        path = self.tie_points_path
+        if not os.path.exists(path):
+            print(f"信息 (Image {self.id}): 未找到 tie_points.txt。")
+            return None
+        
+        try:
+            tie_points = np.loadtxt(path, dtype=int)
+            if tie_points.ndim == 0: # 空文件
+                return None
+            if tie_points.ndim == 1:
+                tie_points = tie_points.reshape(1, -1)
+            if tie_points.shape[1] != 2:
+                print(f"警告 (Image {self.id}): tie_points 格式错误。")
+                return None
+            return tie_points
+        except Exception as e:
+            print(f"警告 (Image {self.id}): 加载 tie_points 失败: {e}")
+            return None
+    
+    def _get_dem_values_at_coords(self, lines: np.ndarray, samps: np.ndarray) -> np.ndarray:
+        """
+        [核心功能] 使用内存映射 (mmap) 按需从磁盘加载DEM值。
+        """
+        if not os.path.exists(self.dem_path):
+            print(f"警告 (Image {self.id}): 未找到 dem.npy at {self.dem_path}。将使用RPC平均高程。")
+            return np.full(lines.shape, self.rpc.HEIGHT_OFF.item())
+            
+        try:
+            # 'r' 模式 = 只读。这不会将文件加载到RAM。
+            dem_mmap = np.load(self.dem_path, mmap_mode='r')
+            
+            # 检查坐标是否越界
+            H, W = dem_mmap.shape
+            if np.any(lines < 0) or np.any(lines >= H) or np.any(samps < 0) or np.any(samps >= W):
+                 print(f"警告 (Image {self.id}): 连接点坐标越界。DEM 尺寸: ({H}, {W})")
+                 # 裁剪坐标以防止错误
+                 lines = np.clip(lines, 0, H - 1)
+                 samps = np.clip(samps, 0, W - 1)
+
+            # 仅从磁盘读取这几个点的值
+            heights = dem_mmap[lines, samps]
+            # 必须将结果复制为新数组，否则 mmap 引用会保持打开
+            return np.array(heights)
+        except Exception as e:
+            print(f"警告 (Image {self.id}): 无法从 {self.dem_path} 读取DEM值: {e}")
+            # 回退：使用RPC的平均高程
+            return np.full(lines.shape, self.rpc.HEIGHT_OFF.item())
+
+    def _get_corner_xys(self) -> np.ndarray:
+        """计算4个角的地理坐标 (用于 find_overlapping_pairs)"""
+        try:
+            # 快速读取DEM的形状，而不加载全部内容
+            dem_shape = np.load(self.dem_path, mmap_mode='r').shape
+            H, W = dem_shape
+        except Exception as e:
+            print(f"致命错误 (Image {self.id}): 无法读取 {self.dem_path} 的尺寸: {e}")
+            raise e # 允许 load_imgs_bundle 捕获此异常
+
+        # 定义4个角点的 (line, samp) 坐标
+        corner_lines = np.array([0, 0, H - 1, H - 1], dtype=int)
+        corner_samps = np.array([0, W - 1, 0, W - 1], dtype=int)
+        
+        # [关键] 按需加载这4个角点的DEM值
+        corner_heights = self._get_dem_values_at_coords(corner_lines, corner_samps)
+
+        # 使用RPC计算地理坐标 (转为 tensor 以使用 RPC 类)
+        latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ(
+            torch.from_numpy(corner_samps),
+            torch.from_numpy(corner_lines),
+            torch.from_numpy(corner_heights)
+        ), dim=-1)
+        
+        # 使用RPC内置的方法 (lat,lon) -> (y,x)，然后翻转为 (x,y)
+        # (这取代了对 utils.py 中 project_mercator 的需求)
+        yx = self.rpc.latlon2yx(latlons) # (N, 2) tensor [y, x]
+        xy = yx[:, [1, 0]] # [x, y]
+        return xy.cpu().numpy()
+
+    def get_heights_for_tie_points(self) -> np.ndarray:
+        """
+        公开接口：获取所有 tie_points 对应的高程值。
+        """
+        if self.tie_points is None:
+            return np.array([])
+        
+        lines = self.tie_points[:, 0]
+        samps = self.tie_points[:, 1]
+        return self._get_dem_values_at_coords(lines, samps)
+
+    def check_error(self,ref_points:np.ndarray):
+        """
+        ref_points: (N,3) (lon,lat,height) np.ndarray
+        """
+        samps,lines = self.rpc.RPC_OBJ2PHOTO(ref_points[:,1],ref_points[:,0],ref_points[:,2],'numpy')
+        ref = np.stack([lines,samps],axis=-1)
+        dis = np.linalg.norm(ref - self.tie_points,axis=-1)
+        return dis
+
+    def get_ref_points(self):
+        """
+        如果作为ref_image,提供自身的tie_points作为ref_points
+        """
+        lats,lons = self.rpc.RPC_PHOTO2OBJ(self.tie_points[:,1],self.tie_points[:,0],self.heights,'numpy')
+        ref_points = np.stack([lons,lats,self.heights],axis=-1)
+        return ref_points
 
 def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):
     H,W = window_size
