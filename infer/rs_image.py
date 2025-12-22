@@ -185,36 +185,21 @@ class RSImage():
             corners = corners[np.newaxis, :, :]
         N = corners.shape[0]
         mask = self.invalid_mask
-        points = np.argwhere(mask)
-        K = points.shape[0]
-        if K == 0:
-            return np.ones(N, dtype=bool)
-        global_min = corners.min(axis=(0, 1))
-        global_max = corners.max(axis=(0, 1))
-        min_r, min_c = np.floor(global_min).astype(int)
-        max_r, max_c = np.ceil(global_max).astype(int)
-        keep_mask = (
-            (points[:, 0] >= min_r) & 
-            (points[:, 0] <= max_r) & 
-            (points[:, 1] >= min_c) & 
-            (points[:, 1] <= max_c)
-        )
-        points = points[keep_mask]
-        K = points.shape[0]
-        if K == 0:
-            return np.ones(N, dtype=bool)
-        edge_vecs = np.roll(corners, -1, axis=1) - corners
-        P = points[np.newaxis, :, np.newaxis, :]
-        C = corners[:, np.newaxis, :, :]
-        E = edge_vecs[:, np.newaxis, :, :]
-        term1 = (P[..., 0] - C[..., 0]) * E[..., 1]
-        term2 = (P[..., 1] - C[..., 1]) * E[..., 0]
-        cross_products = term1 - term2
-        all_positive = np.all(cross_products >= 0, axis=2) # Shape: (N, K)
-        all_negative = np.all(cross_products <= 0, axis=2) # Shape: (N, K)
-        is_inside = all_positive | all_negative
-        result = ~np.any(is_inside, axis=1)
-        return result
+        quad_min = corners.min(axis=1) # [min_row, min_col]
+        quad_max = corners.max(axis=1) # [max_row, max_col]
+        r1 = np.floor(quad_min[:, 0]).astype(int)
+        c1 = np.floor(quad_min[:, 1]).astype(int)
+        r2 = np.ceil(quad_max[:, 0]).astype(int)
+        c2 = np.ceil(quad_max[:, 1]).astype(int)
+        results = np.ones(N, dtype=bool)
+    
+        for i in range(N):
+            sub_mask = mask[r1[i]:r2[i], c1[i]:c2[i] ]
+            if np.any(sub_mask):
+                results[i] = False
+                
+        return results
+
 
     def crop_windows(self,corners:np.ndarray,output_size=(512, 512)):
         """
