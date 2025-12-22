@@ -278,7 +278,7 @@ class RSImage_Error_Check():
     
     def _load_tie_points(self) -> np.ndarray:
         """加载 tie_points.txt 文件"""
-        path = self.tie_points_path
+        path = os.path.join(self.root,'tie_points.txt')
         if not os.path.exists(path):
             print(f"信息 (Image {self.id}): 未找到 tie_points.txt。")
             return None
