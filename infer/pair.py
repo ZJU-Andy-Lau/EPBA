@@ -126,13 +126,16 @@ class Solver():
     def build_window_pairs(self):
         if self.reporter:
             self.reporter.update(current_step="Finding Windows")
+        t0 = time.perf_counter()
         window_diags = find_squares(self.intersection,
                                     a_max=self.window_size,
                                     a_min=self.configs['min_window_size'],
                                     target_area_ratio=self.configs['min_area_ratio'],
                                     div_factor=self.configs['prob_div_factor'],
                                     check_diags_valid_func=self.check_diags_valid)
-        
+        t1 = time.perf_counter()
+        self.reporter.log(f"find squeares time:{t1 - t0}s")
+
         if self.reporter:
             self.reporter.update(current_step="Filtering Windows")
         if self.configs['max_window_num'] > 0 and window_diags.shape[0] > self.configs['max_window_num']:
