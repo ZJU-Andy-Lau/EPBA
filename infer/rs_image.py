@@ -62,27 +62,8 @@ class RSImage():
         self.options = options
         self.root = root
         self.id = id
-        self.image = cv2.imread(os.path.join(root,'image.png'),cv2.IMREAD_GRAYSCALE)
-        self.image = np.stack([self.image] * 3,axis=-1)
-        self.dem = np.load(os.path.join(root,'dem.npy'))
-        if os.path.exists(os.path.join(root,'tie_points.txt')):
-            self.tie_points = self.__load_tie_points__(os.path.join(root,'tie_points.txt'))
-        else:
-            self.tie_points = None
         self.device = device
-        self.H,self.W = self.image.shape[:2]
-        self.rpc = RPCModelParameterTorch()
-        self.rpc.load_from_file(os.path.join(root,'rpc.txt'))
-        self.rpc.to_gpu(device=device)
-
-        self.affine_list = []
-        
-        self.corner_xys = self.__get_corner_xys__()
-
-        self.invalid_mask = np.isnan(self.dem)
-
-        self.confidence_map = np.random.rand(*self.dem.shape)
-        self.confidence_map[self.invalid_mask] = 0.0
+        self.initialize()
     
     def __init__(self,meta:RSImageMeta,device:str = None):
         """
@@ -92,6 +73,10 @@ class RSImage():
         self.options = meta.options
         self.root = meta.root
         self.id = meta.id
+        self.device = meta.device if device is None else device
+        self.initialize()
+    
+    def initialize(self):
         self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
         self.image = np.stack([self.image] * 3,axis=-1)
         self.dem = np.load(os.path.join(self.root,'dem.npy'))
@@ -99,15 +84,20 @@ class RSImage():
             self.tie_points = self.__load_tie_points__(os.path.join(self.root,'tie_points.txt'))
         else:
             self.tie_points = None
-        self.device = meta.device if device is None else device
+        
         self.H,self.W = self.image.shape[:2]
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
-        self.rpc.to_gpu(device=device)
+        self.rpc.to_gpu(device=self.device)
 
         self.affine_list = []
         
         self.corner_xys = self.__get_corner_xys__()
+
+        self.invalid_mask = np.isnan(self.dem)
+
+        self.confidence_map = np.random.rand(*self.dem.shape)
+        self.confidence_map[self.invalid_mask] = 0.0
 
     def __load_tie_points__(self,path) -> np.ndarray:
         tie_points = np.loadtxt(path,dtype=int)
