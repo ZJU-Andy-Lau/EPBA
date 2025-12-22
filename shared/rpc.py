@@ -243,10 +243,11 @@ class RPCModelParameterTorch:
             t_new = -(R_inv @ t) 
             self.adjust_params_inv = torch.cat([R_inv, t_new.unsqueeze(1)], dim=1).to(torch.double)
         except torch.linalg.LinAlgError:
-            print("警告: 仿射矩阵R不可逆。使用伪逆。")
-            R_inv = torch.linalg.pinv(R)
-            t_new = -(R_inv @ t)
-            self.adjust_params_inv = torch.cat([R_inv, t_new.unsqueeze(1)], dim=1).to(torch.double)
+            raise ValueError(f"仿射矩阵：\n{self.adjust_params.detach().cpu().numpy()}\n不可逆")
+            # print("警告: 仿射矩阵R不可逆。使用伪逆。")
+            # R_inv = torch.linalg.pinv(R)
+            # t_new = -(R_inv @ t)
+            # self.adjust_params_inv = torch.cat([R_inv, t_new.unsqueeze(1)], dim=1).to(torch.double)
 
     
     def Clear_Adjust(self):
