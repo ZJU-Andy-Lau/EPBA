@@ -4,5 +4,6 @@ weights/
 log/
 tmp/
 results/
+cmd/
 *.sh
 test.ipynb
