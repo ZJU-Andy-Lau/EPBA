@@ -174,8 +174,8 @@ def solve_pair_affine_sift(args, adjust_image: RSImage, ref_image: RSImage, repo
         # pts_a_crop 是 (x, y) 即 (col, row)
         
         # 转换为 (row, col)
-        pts_a_rc = pts_a_crop[:, ::-1]
-        pts_b_rc = pts_b_crop[:, ::-1]
+        pts_a_rc = pts_a_crop[:, [1,0]]
+        pts_b_rc = pts_b_crop[:, [1,0]]
         
         # 转换为 Tensor 以利用 infer/utils 中的 apply_H
         pts_a_rc_t = torch.from_numpy(pts_a_rc).unsqueeze(0).to(args.device) # (1, N, 2)
@@ -293,11 +293,12 @@ def main(args):
                     continue
                     
                 adjust_image = RSImage(adj_meta, device=args.device)
-                reporter.update(progress=f"{i+1}/{len(adjust_metas)} (Adj ID: {adjust_image.id})")
+                reporter.update(progress=f"{i+1}/{len(adjust_metas)}")
                 
                 # 遍历该 adjust image 对应的所有 ref image
                 for ref_meta in current_refs:
                     ref_image = RSImage(ref_meta, device=args.device)
+                    reporter.update(current_step=f"{adjust_image.id}=>{ref_image.id}")
                     
                     # 核心求解
                     affine = solve_pair_affine_sift(args, adjust_image, ref_image, reporter)
@@ -406,6 +407,9 @@ if __name__ == '__main__':
     if args.experiment_id is None:
         args.experiment_id = get_current_time() + "_SIFT"
     
+    if '[time]' in args.experiment_id:
+        args.experiment_id = args.experiment_id.replace('[time]',get_current_time())
+
     args.output_path = os.path.join(args.output_path, args.experiment_id)
     os.makedirs(args.output_path, exist_ok=True)
 
