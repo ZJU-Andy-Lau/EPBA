@@ -270,11 +270,11 @@ def main(args):
                 if len(current_refs) == 0: continue
                     
                 adjust_image = RSImage(adj_meta, device=args.device)
-                reporter.update(progress=f"{i+1}/{len(adjust_metas)} (Adj ID: {adjust_image.id})")
+                reporter.update(progress=f"{i+1}/{len(adjust_metas)}")
                 
                 for ref_meta in current_refs:
                     ref_image = RSImage(ref_meta, device=args.device)
-                    
+                    reporter.update(current_step=f"{adjust_image.id}=>{ref_image.id}")
                     affine = solve_pair_affine_loftr(args, loftr_model, adjust_image, ref_image, reporter)
                     
                     if affine is not None:

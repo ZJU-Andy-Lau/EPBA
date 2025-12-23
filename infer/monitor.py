@@ -122,7 +122,7 @@ class StatusMonitor:
     def generate_table(self, rows=None):
         table = Table(box=box.ROUNDED, title=f"EPBA Inference Monitor (Exp: {self.experiment_id})", width=None)
         table.add_column("Rank", justify="center", style="cyan", no_wrap=True, width=4)
-        table.add_column("Current Task", style="magenta", width=12)
+        table.add_column("Current Task", style="magenta")
         table.add_column("Progress", justify="right", style="green", width=8)
         table.add_column("Level", justify="right", style="yellow", width=10)
         table.add_column("Current Step", style="blue")
