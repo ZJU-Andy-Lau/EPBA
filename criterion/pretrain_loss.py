@@ -2,7 +2,7 @@ import torch.nn as nn
 from .sim_loss import SimLoss
 from .conf_loss import ConfLoss
 from .ctx_loss import CtxLoss
-from .utils import residual_to_conf
+from .utils import residual_to_weights
 
 class Loss(nn.Module):
     def __init__(self, downsample_factor = 16,temperature = 0.07):
@@ -21,7 +21,7 @@ class Loss(nn.Module):
         loss_conf_2 = self.conf_loss(conf = confs_2, residual = input['residual_2'])
         loss_conf = .5 * loss_conf_1 + .5 * loss_conf_2
 
-        conf_weights = residual_to_conf(input['residual_1']).mean(dim=(1,2)) * residual_to_conf(input['residual_2']).mean(dim=(1,2))
+        conf_weights = residual_to_weights(input['residual_1'],div=5.) * residual_to_weights(input['residual_2'],div=5.)
         conf_weights = conf_weights.detach() / conf_weights.detach().mean()
 
         loss_sim = self.sim_loss(feats_a = match_feats_1,

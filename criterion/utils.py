@@ -93,4 +93,18 @@ def residual_to_conf(residual) -> torch.Tensor:
     conf[residual > res_mid] = .1
     conf[(residual <= res_mid) & (residual >= 0)] = .9
     conf[residual < 0] = .1
-    return conf
+    return 
+
+def residual_to_weights(residual:torch.Tensor, div) -> torch.Tensor:
+    """
+    residual: (B,H,W) torch.Tensor
+
+    returns: weights (B,) torch.Tensor
+    """
+    residual = residual.detach()
+    residual[residual < 0] = torch.max(residual)
+    min_value = residual.min()
+    max_value = 2 * div + min_value
+    conf = torch.clamp((max_value - residual) / (max_value - min_value),min=0.,max=1.)
+    weights = torch.mean(conf,dim=(1,2))
+    return weights
