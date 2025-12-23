@@ -15,7 +15,7 @@ from tqdm import tqdm
 # 确保在工程根目录下运行，以便 python 能找到 src 包
 from src.models.nets import CasP
 from preprocess.conf.model import ConfHead
-from shared.visualize import make_checkerboard
+from shared.visualize import make_checkerboard,vis_confidence_overlay
 
 # ==========================================
 # 1. 置信度预测模型 (用户自定义部分)
@@ -220,6 +220,8 @@ class ImageRegistrar:
         ref_img = imgs[0]
         # print(f"Processing Reference Image (index 0)")
         ref_orig, ref_resampled, ref_conf = self.preprocess_image(ref_img)
+        conf_vis = vis_confidence_overlay(ref_resampled,ref_conf)
+        cv2.imwrite(os.path.join(output_dir,f'{key}_conf.png'),conf_vis)
         
         # 保存基准图像作为参考
         # cv2.imwrite(os.path.join(output_dir, "registered_0.jpg"), cv2.cvtColor(ref_orig, cv2.COLOR_RGB2BGR))
@@ -238,6 +240,7 @@ class ImageRegistrar:
 
             # 1. 预处理
             tgt_orig, tgt_resampled, tgt_conf = self.preprocess_image(tgt_img)
+
 
             # 2. 分块 CasP 匹配 (在 3456 尺度下)
             # print("  > Running 3x3 block matching...")
