@@ -212,6 +212,11 @@ def vis_confidence_overlay(img, conf_map):
     Returns: img_overlay (H,W,3) np.ndarray
     
     """
+    if img.ndim == 2:
+        img = np.stack([img] * 3,axis=-1)
+    if img.shape[-1] == 1:
+        img = np.concatenate([img] * 3,axis=-1)
+
     H, W = img.shape[:2]
     
     # 1. 上采样
