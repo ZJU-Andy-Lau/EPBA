@@ -185,8 +185,8 @@ def solve_pair_affine_sift(args, adjust_image: RSImage, ref_image: RSImage, repo
         H_b_inv = torch.from_numpy(np.linalg.inv(Hs_b[i])).unsqueeze(0).to(args.device, dtype=torch.float32)
         
         # 应用逆变换还原到全图坐标 (row, col)
-        pts_a_global = apply_H(pts_a_rc_t, H_a_inv).squeeze(0).cpu().numpy()
-        pts_b_global = apply_H(pts_b_rc_t, H_b_inv).squeeze(0).cpu().numpy()
+        pts_a_global = apply_H(pts_a_rc_t, H_a_inv, args.device).squeeze(0).cpu().numpy()
+        pts_b_global = apply_H(pts_b_rc_t, H_b_inv, args.device).squeeze(0).cpu().numpy()
         
         all_pts_a_global.append(pts_a_global)
         all_pts_b_global.append(pts_b_global)
