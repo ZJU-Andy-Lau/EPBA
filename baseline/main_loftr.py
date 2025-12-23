@@ -149,8 +149,8 @@ def solve_pair_affine_loftr(args, loftr_model, adjust_image: RSImage, ref_image:
         if len(pts_a_crop) == 0: continue
 
         # 4. 坐标还原
-        pts_a_rc = pts_a_crop[:, ::-1] # (x,y) -> (row,col)
-        pts_b_rc = pts_b_crop[:, ::-1]
+        pts_a_rc = pts_a_crop[:, [1,0]] # (x,y) -> (row,col)
+        pts_b_rc = pts_b_crop[:, [1,0]]
         
         pts_a_rc_t = torch.from_numpy(pts_a_rc).unsqueeze(0).to(args.device)
         pts_b_rc_t = torch.from_numpy(pts_b_rc).unsqueeze(0).to(args.device)
@@ -158,8 +158,8 @@ def solve_pair_affine_loftr(args, loftr_model, adjust_image: RSImage, ref_image:
         H_a_inv = torch.from_numpy(np.linalg.inv(Hs_a[i])).unsqueeze(0).to(args.device, dtype=torch.float32)
         H_b_inv = torch.from_numpy(np.linalg.inv(Hs_b[i])).unsqueeze(0).to(args.device, dtype=torch.float32)
         
-        pts_a_global = apply_H(pts_a_rc_t, H_a_inv).squeeze(0).cpu().numpy()
-        pts_b_global = apply_H(pts_b_rc_t, H_b_inv).squeeze(0).cpu().numpy()
+        pts_a_global = apply_H(pts_a_rc_t, H_a_inv, args.device).squeeze(0).cpu().numpy()
+        pts_b_global = apply_H(pts_b_rc_t, H_b_inv, args.device).squeeze(0).cpu().numpy()
         
         all_pts_a_global.append(pts_a_global)
         all_pts_b_global.append(pts_b_global)
@@ -365,6 +365,9 @@ if __name__ == '__main__':
 
     if args.experiment_id is None:
         args.experiment_id = get_current_time() + "_LoFTR"
+    
+    if '[time]' in args.experiment_id:
+        args.experiment_id = args.experiment_id.replace('[time]',get_current_time())
     
     args.output_path = os.path.join(args.output_path, args.experiment_id)
     os.makedirs(args.output_path, exist_ok=True)
