@@ -80,3 +80,17 @@ def merge_affine(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     C = C_hom[:, :2, :]
 
     return C
+
+def residual_to_conf(residual) -> torch.Tensor:
+    """
+    residual: (B,H,W) torch.Tensor
+
+    returns: conf (B,H,W) torch.Tensor
+    """
+    conf = torch.full(residual.shape,.5,device=residual.device,dtype=residual.dtype)
+    valid_residual = residual[residual >= 0]
+    res_mid = torch.median(valid_residual)
+    conf[residual > res_mid] = .1
+    conf[(residual <= res_mid) & (residual >= 0)] = .9
+    conf[residual < 0] = .1
+    return conf

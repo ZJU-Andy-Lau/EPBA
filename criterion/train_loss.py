@@ -6,7 +6,7 @@ from .conf_loss import ConfLoss
 from .affine_loss import AffineLoss
 from .consist_loss import ConsistLoss
 from .ctx_loss import CtxLoss
-from .utils import invert_affine_matrix
+from .utils import invert_affine_matrix,residual_to_conf
 
 class Loss(nn.Module):
     def __init__(self,img_size = (512,512), downsample_factor = 16,temperature = 0.07,decay_rate = 0.8,reg_weight = 0.001,device = 'cuda'):
@@ -40,8 +40,12 @@ class Loss(nn.Module):
                                  M_a_b = input['M_a_b'])
         
         loss_conf_1 = self.conf_loss(conf = confs_1, residual = input['residual_1'])
-        loss_conf_2 = self.conf_loss(conf = confs_2, residual = input['residual_1'])
+        loss_conf_2 = self.conf_loss(conf = confs_2, residual = input['residual_2'])
         loss_conf = .5 * loss_conf_1 + .5 * loss_conf_2
+
+        conf_weights = residual_to_conf(input['residual_1']).mean(dim=(1,2)) * residual_to_conf(input['residual_2']).mean(dim=(1,2))
+        conf_weights = conf_weights.detach() / conf_weights.detach().mean()
+        
 
         # [修改] 处理 Affine Loss 的可视化返回
         if return_details:
@@ -51,12 +55,14 @@ class Loss(nn.Module):
                                                                                 Hs_b = input['Hs_b'],
                                                                                 M_a_b = input['M_a_b'],
                                                                                 norm_factor = input['norm_factor_a'],
+                                                                                conf_weights = conf_weights,
                                                                                 return_details = True)
         else:
             loss_affine_1, loss_affine_last_1 = self.affine_loss(delta_affines = input['preds_1'],
                                                                 Hs_a = input['Hs_a'],
                                                                 Hs_b = input['Hs_b'],
                                                                 M_a_b = input['M_a_b'],
+                                                                conf_weights = conf_weights,
                                                                 norm_factor = input['norm_factor_a'])
             affine_details = None
         
@@ -65,13 +71,15 @@ class Loss(nn.Module):
                                                             Hs_a = input['Hs_b'],
                                                             Hs_b = input['Hs_a'],
                                                             M_a_b = invert_affine_matrix(input['M_a_b']),
-                                                            norm_factor = input['norm_factor_b'])
+                                                            norm_factor = input['norm_factor_b'],
+                                                            conf_weights = conf_weights)
         
         loss_affine = .5 * loss_affine_1 + .5 * loss_affine_2
         loss_affine_last = .5 * loss_affine_last_1 + .5 * loss_affine_last_2
 
         loss_consist = self.consist_loss(delta_affine_a = input['preds_1'],
-                                         delta_affine_b = input['preds_2'])
+                                         delta_affine_b = input['preds_2'],
+                                         conf_weights = conf_weights)
         
         loss_ctx_1 = self.ctx_loss(input['imgs_pred_1'],input['imgs_1'])
         loss_ctx_2 = self.ctx_loss(input['imgs_pred_2'],input['imgs_2'])

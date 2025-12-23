@@ -75,7 +75,7 @@ class AffineLoss(nn.Module):
         
         return ref_grid
 
-    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, norm_factor, return_details=False):
+    def forward(self, delta_affines, Hs_a, Hs_b, M_a_b, norm_factor, conf_weights = None, return_details=False):
         """
         Args:
             delta_affines: (B, steps, 2, 3) 预测的仿射变换增量 (RC)
@@ -87,7 +87,9 @@ class AffineLoss(nn.Module):
         """
         B, steps, _, _ = delta_affines.shape
         scale = 512. / norm_factor
-        
+        if conf_weights is None:
+            conf_weights = torch.ones((delta_affines.shape[0],),device=delta_affines.device)
+
         # --- 1. 构建参考网格 (Reference Grid) ---
         ref_grid = self.get_reference_grid_in_large_coords(Hs_a)
         
@@ -122,8 +124,8 @@ class AffineLoss(nn.Module):
             
             # A. 几何距离损失
             pred_points = torch.bmm(current_affine, ref_grid)
-            loss_dist = torch.norm(pred_points - target_points, dim=1) # B,N
-            last_loss = torch.mean(loss_dist * scale.unsqueeze(-1))
+            loss_dist = torch.norm(pred_points - target_points, dim=1) * conf_weights # B,N
+            last_loss = torch.mean(loss_dist * scale.unsqueeze(-1) * conf_weights)
             
             # B. 正则化损失
             pred_linear = current_affine[:, :, :2]

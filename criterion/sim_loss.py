@@ -115,7 +115,7 @@ class SimLoss(nn.Module):
 
         return warped_feats_b, valid_mask
 
-    def forward(self, feats_a, feats_b, Hs_a, Hs_b, M_a_b):
+    def forward(self, feats_a, feats_b, Hs_a, Hs_b, M_a_b, conf_weights = None):
         """
         Args:
             feats_a (Tensor): (B, D, h, w)
@@ -126,6 +126,8 @@ class SimLoss(nn.Module):
         """
         B, D, h, w = feats_a.shape
         N = h * w
+        if conf_weights is None:
+            conf_weights = torch.ones((feats_a.shape[0],),device=feats_a.device)
         
         # 1. 计算总变换矩阵
         T = self.get_transform_matrix(Hs_a, Hs_b, M_a_b)
@@ -155,7 +157,7 @@ class SimLoss(nn.Module):
         labels = torch.arange(N, device=feats_a.device).repeat(B) # (B*N)
 
         # 使用 reduction='none' 获取每个样本的 loss
-        loss_per_sample = F.cross_entropy(logits_reshaped, labels, reduction='none') # (B*N)
+        loss_per_sample = F.cross_entropy(logits_reshaped, labels, reduction='none') * conf_weights # (B*N)
 
         # 7. 应用 Mask 并求平均
         # 只有当 feats_a 中的点确实变换到了 feats_b 内部时，才计算 Loss

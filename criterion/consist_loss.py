@@ -50,7 +50,7 @@ class ConsistLoss(nn.Module):
         matrix_3x3 = torch.cat([affine_2x3, last_row], dim=1)
         return matrix_3x3
 
-    def forward(self, delta_affine_a, delta_affine_b):
+    def forward(self, delta_affine_a, delta_affine_b, conf_weights = None):
         """
         Args:
             delta_affine_a: (B, steps, 2, 3) 预测的 A -> B 增量
@@ -61,6 +61,8 @@ class ConsistLoss(nn.Module):
         B, steps, _, _ = delta_affine_a.shape
         device = delta_affine_a.device
         N = self.base_grid.shape[2]
+        if conf_weights is None:
+            conf_weights = torch.ones((delta_affine_a.shape[0],),device=delta_affine_b.device)
 
         # 1. 扩展网格到 Batch (B, 3, N)
         points_identity = self.base_grid.expand(B, -1, -1)
@@ -103,11 +105,11 @@ class ConsistLoss(nn.Module):
             
             # Dir 1: || P_recon_a - P_origin ||
             diff_a = points_recon_a[:, :2, :] - points_identity[:, :2, :]
-            loss_cycle_a = torch.norm(diff_a, p=2, dim=1).mean() # Mean over points and batch
+            loss_cycle_a = (torch.norm(diff_a, p=2, dim=1) * conf_weights).mean() # Mean over points and batch
 
             # Dir 2: || P_recon_b - P_origin ||
             diff_b = points_recon_b[:, :2, :] - points_identity[:, :2, :]
-            loss_cycle_b = torch.norm(diff_b, p=2, dim=1).mean()
+            loss_cycle_b = (torch.norm(diff_b, p=2, dim=1) * conf_weights).mean()
 
             # 双向损失取平均
             total_step_loss = (loss_cycle_a + loss_cycle_b) / 2.0
