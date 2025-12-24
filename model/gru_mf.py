@@ -116,8 +116,9 @@ class GRUBlock(nn.Module):
         self.corr_dim = corr_levels * (2 * corr_radius + 1)**2
         self.offset_dim = self.corr_dim * 2
         self.pos_dim = 2
+        self.conf_dim = 1
         
-        input_dim = self.corr_dim + self.offset_dim + self.context_dim + self.pos_dim
+        input_dim = self.corr_dim + self.offset_dim + self.context_dim + self.pos_dim + self.conf_dim
         
         # 2. 运动 Transformer (替换原有的 CNN Encoder)
         self.encoder = MotionTransformer(
@@ -163,7 +164,7 @@ class GRUBlock(nn.Module):
         masked_ctx = context_features * confidence_map
         
         # 2. 特征拼接
-        x = torch.cat([masked_corr, corr_offsets, masked_ctx, pos_features], dim=1)
+        x = torch.cat([masked_corr, corr_offsets, masked_ctx, pos_features, confidence_map], dim=1)
         
         # 3. 运动编码 (Transformer 提取全局特征)
         # x_global: [B, hidden_dim]
