@@ -47,6 +47,7 @@ class Loss(nn.Module):
         loss_conf = .5 * loss_conf_1 + .5 * loss_conf_2
 
         conf_weights = self.get_conf_weights(input['residual_1']) * self.get_conf_weights(input['residual_2'])
+        conf_weights = conf_weights.mean(dim=(1,2))
         conf_weights = conf_weights.detach() / conf_weights.detach().mean()
         
 
