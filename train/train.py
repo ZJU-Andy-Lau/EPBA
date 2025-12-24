@@ -272,7 +272,7 @@ def main(args):
     encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer = load_models(args)
 
     warmup_epoch = 5.
-    summit_hold_epoch = 3.
+    summit_hold_epoch = 0.
 
     adapter_scheduler = MultiStageOneCycleLR(optimizer=adapter_optimizer,
                                              total_steps=args.max_epoch * batch_num,
