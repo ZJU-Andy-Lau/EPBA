@@ -91,5 +91,6 @@ def residual_to_conf(residual:torch.Tensor,left:float,right:float) -> torch.Tens
     mid = (left + right) * 0.5
     a = np.log(9) / ((right - left) * 0.5)
     residual[residual < 0] = residual.max()
+    residual = torch.clamp(residual,min=0.,max=right + mid)
     conf = 1. / (1. + torch.exp(a * (residual - mid)))
     return conf
