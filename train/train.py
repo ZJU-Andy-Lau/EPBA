@@ -286,6 +286,7 @@ def main(args):
                       temperature = 0.07,
                       decay_rate = 0.8,
                       reg_weight = 1e-3,
+                      parallax_border = (2.,8.),
                       device = args.device)
 
     start_time = time.perf_counter()

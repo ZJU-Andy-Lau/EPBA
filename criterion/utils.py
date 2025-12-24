@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 def invert_affine_matrix(M):
     """
@@ -81,30 +82,14 @@ def merge_affine(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
 
     return C
 
-def residual_to_conf(residual) -> torch.Tensor:
+def residual_to_conf(residual:torch.Tensor,left:float,right:float) -> torch.Tensor:
     """
     residual: (B,H,W) torch.Tensor
 
     returns: conf (B,H,W) torch.Tensor
     """
-    conf = torch.full(residual.shape,.5,device=residual.device,dtype=residual.dtype)
-    valid_residual = residual[residual >= 0]
-    res_mid = torch.median(valid_residual)
-    conf[residual > res_mid] = .1
-    conf[(residual <= res_mid) & (residual >= 0)] = .9
-    conf[residual < 0] = .1
-    return 
-
-def residual_to_weights(residual:torch.Tensor, div) -> torch.Tensor:
-    """
-    residual: (B,H,W) torch.Tensor
-
-    returns: weights (B,) torch.Tensor
-    """
-    residual = residual.detach()
-    residual[residual < 0] = torch.max(residual)
-    min_value = residual.min()
-    max_value = 2 * div + min_value
-    conf = torch.clamp((max_value - residual) / (max_value - min_value),min=0.,max=1.)
-    weights = torch.mean(conf,dim=(1,2))
-    return weights
+    mid = (left + right) * 0.5
+    a = np.log(9) / ((right - left) * 0.5)
+    residual[residual < 0] = residual.max()
+    conf = 1. / (1. + torch.exp(a * (residual - mid)))
+    return conf

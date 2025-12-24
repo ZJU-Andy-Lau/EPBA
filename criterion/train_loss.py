@@ -1,15 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from functools import partial
 from .sim_loss import SimLoss
 from .conf_loss import ConfLoss
 from .affine_loss import AffineLoss
 from .consist_loss import ConsistLoss
 from .ctx_loss import CtxLoss
-from .utils import invert_affine_matrix,residual_to_weights
+from .utils import invert_affine_matrix,residual_to_conf
 
 class Loss(nn.Module):
-    def __init__(self,img_size = (512,512), downsample_factor = 16,temperature = 0.07,decay_rate = 0.8,reg_weight = 0.001,device = 'cuda'):
+    def __init__(self,img_size = (512,512), downsample_factor = 16,temperature = 0.07,decay_rate = 0.8,reg_weight = 0.001, parallax_border = (2.,8.), device = 'cuda'):
         super().__init__()
         self.sim_loss = SimLoss(downsample_factor = downsample_factor,
                                 temperature = temperature)
@@ -24,6 +25,8 @@ class Loss(nn.Module):
                                         decay_rate = decay_rate,
                                         device = device)
         self.ctx_loss = CtxLoss()
+
+        self.get_conf_weights = partial(residual_to_conf,left = parallax_border[0],right = parallax_border[1])
     
     def forward(self,input, return_details=False): # [修改] 增加 return_details 参数
         epoch = input['epoch']
@@ -43,7 +46,7 @@ class Loss(nn.Module):
         loss_conf_2 = self.conf_loss(conf = confs_2, residual = input['residual_2'])
         loss_conf = .5 * loss_conf_1 + .5 * loss_conf_2
 
-        conf_weights = residual_to_weights(input['residual_1'],div=5.) * residual_to_weights(input['residual_2'],div=5.)
+        conf_weights = self.get_conf_weights(input['residual_1']) * self.get_conf_weights(input['residual_2'])
         conf_weights = conf_weights.detach() / conf_weights.detach().mean()
         
 

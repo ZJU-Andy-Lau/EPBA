@@ -247,7 +247,8 @@ def main(args):
                                              cooldown_ratio=.9)
 
     loss_funcs = Loss(downsample_factor = dataset.DOWNSAMPLE,
-                      temperature = 0.07)
+                      temperature = 0.07,
+                      parallax_border = (2.,8.))
 
     for epoch in range(args.max_epoch):
         pprint(f'\nEpoch:{epoch}')
