@@ -5,7 +5,7 @@ from functools import partial
 from .utils import residual_to_conf
 
 class ConfLoss(nn.Module):
-    def __init__(self, parallax_border = (2.,8.)):
+    def __init__(self, parallax_border = (2.,10.)):
         super().__init__()
         self.bce = nn.BCELoss()
         self.get_conf_label = partial(residual_to_conf,left = parallax_border[0],right = parallax_border[1]) 

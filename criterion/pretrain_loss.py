@@ -6,7 +6,7 @@ from .ctx_loss import CtxLoss
 from .utils import residual_to_conf
 
 class Loss(nn.Module):
-    def __init__(self, downsample_factor = 16,temperature = 0.07, parallax_border = (2.,8.)):
+    def __init__(self, downsample_factor = 16,temperature = 0.07, parallax_border = (2.,10.)):
         super().__init__()
         self.sim_loss = SimLoss(downsample_factor = downsample_factor,
                                 temperature = temperature)
@@ -26,7 +26,7 @@ class Loss(nn.Module):
 
         conf_weights = self.get_conf_weights(input['residual_1']) * self.get_conf_weights(input['residual_2'])
         conf_weights = conf_weights.detach() / conf_weights.detach().mean()
-        
+
         loss_sim = self.sim_loss(feats_a = match_feats_1,
                                  feats_b = match_feats_2,
                                  Hs_a = input['Hs_a'],

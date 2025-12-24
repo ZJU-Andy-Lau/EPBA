@@ -56,6 +56,7 @@ def apply_binary_colormap_to_parallax(parallax_map,left,right):
         return np.zeros((*parallax_map.shape, 3), dtype=np.uint8)
     
     parallax_map[np.isnan(parallax_map)] == np.nanmax(parallax_map)
+    parallax_map = np.clip(parallax_map,a_max=2 * right,a_min=0.)
 
     mid = (left + right) * 0.5
     a = np.log(9) / ((right - left) * 0.5)

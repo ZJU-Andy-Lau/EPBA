@@ -248,7 +248,7 @@ def main(args):
 
     loss_funcs = Loss(downsample_factor = dataset.DOWNSAMPLE,
                       temperature = 0.07,
-                      parallax_border = (2.,8.))
+                      parallax_border = (args.parallax_border_left,args.parallax_border_right))
 
     for epoch in range(args.max_epoch):
         pprint(f'\nEpoch:{epoch}')
@@ -354,6 +354,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',type=int,default=8)
     parser.add_argument('--resume_training',type=str2bool,default=False)
     parser.add_argument('--max_epoch',type=int,default=1000)
+    parser.add_argument('--parallax_border_left',type=float,default=2.0)
+    parser.add_argument('--parallax_border_right',type=float,default=10.0)
     parser.add_argument('--lr_encoder_min',type=float,default=1e-7)
     parser.add_argument('--lr_encoder_max',type=float,default=1e-3)
     parser.add_argument('--min_loss',type=float,default=1e8)

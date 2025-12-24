@@ -286,7 +286,7 @@ def main(args):
                       temperature = 0.07,
                       decay_rate = 0.8,
                       reg_weight = 1e-3,
-                      parallax_border = (2.,8.),
+                      parallax_border = (args.parallax_border_left,args.parallax_border_right),
                       device = args.device)
 
     start_time = time.perf_counter()
@@ -481,6 +481,8 @@ if __name__ == '__main__':
     parser.add_argument('--gru_max_iter',type=int,default=10)
     parser.add_argument('--resume_training',type=str2bool,default=False)
     parser.add_argument('--max_epoch',type=int,default=1000)
+    parser.add_argument('--parallax_border_left',type=float,default=2.0)
+    parser.add_argument('--parallax_border_right',type=float,default=10.0)
     parser.add_argument('--lr_encoder_min',type=float,default=1e-7)
     parser.add_argument('--lr_encoder_max',type=float,default=1e-3)
     parser.add_argument('--lr_gru_min',type=float,default=1e-7)

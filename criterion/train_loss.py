@@ -10,7 +10,7 @@ from .ctx_loss import CtxLoss
 from .utils import invert_affine_matrix,residual_to_conf
 
 class Loss(nn.Module):
-    def __init__(self,img_size = (512,512), downsample_factor = 16,temperature = 0.07,decay_rate = 0.8,reg_weight = 0.001, parallax_border = (2.,8.), device = 'cuda'):
+    def __init__(self,img_size = (512,512), downsample_factor = 16,temperature = 0.07,decay_rate = 0.8,reg_weight = 0.001, parallax_border = (2.,10.), device = 'cuda'):
         super().__init__()
         self.sim_loss = SimLoss(downsample_factor = downsample_factor,
                                 temperature = temperature)
