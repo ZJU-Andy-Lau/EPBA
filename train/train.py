@@ -332,10 +332,10 @@ def main(args):
             
             loss.backward()
 
-            adpater_grad_norm = torch.nn.utils.clip_grad_norm_(encoder.module.adapter.parameters(), max_norm=1.0)
-            gru_grad_norm = torch.nn.utils.clip_grad_norm_(gru.parameters(), max_norm=1.0)
+            # adpater_grad_norm = torch.nn.utils.clip_grad_norm_(encoder.module.adapter.parameters(), max_norm=1.0)
+            # gru_grad_norm = torch.nn.utils.clip_grad_norm_(gru.parameters(), max_norm=1.0)
 
-            print(f"adapter grad norm:{adpater_grad_norm:.6f} \t gru grad norm:{gru_grad_norm:.6f}")
+            # print(f"adapter grad norm:{adpater_grad_norm:.6f} \t gru grad norm:{gru_grad_norm:.6f}")
 
             adapter_optimizer.step()
             gru_optimizer.step()
