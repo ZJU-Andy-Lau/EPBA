@@ -105,11 +105,11 @@ class ConsistLoss(nn.Module):
             
             # Dir 1: || P_recon_a - P_origin ||
             diff_a = points_recon_a[:, :2, :] - points_identity[:, :2, :]
-            loss_cycle_a = (torch.norm(diff_a, p=2, dim=1) * conf_weights).mean() # Mean over points and batch
+            loss_cycle_a = (torch.norm(diff_a, p=2, dim=1) * conf_weights.view(B,1)).mean() # Mean over points and batch
 
             # Dir 2: || P_recon_b - P_origin ||
             diff_b = points_recon_b[:, :2, :] - points_identity[:, :2, :]
-            loss_cycle_b = (torch.norm(diff_b, p=2, dim=1) * conf_weights).mean()
+            loss_cycle_b = (torch.norm(diff_b, p=2, dim=1) * conf_weights.view(B,1)).mean()
 
             # 双向损失取平均
             total_step_loss = (loss_cycle_a + loss_cycle_b) / 2.0

@@ -157,11 +157,15 @@ class SimLoss(nn.Module):
         labels = torch.arange(N, device=feats_a.device).repeat(B) # (B*N)
 
         # 使用 reduction='none' 获取每个样本的 loss
-        loss_per_sample = F.cross_entropy(logits_reshaped, labels, reduction='none') * conf_weights # (B*N)
+        loss_per_sample = F.cross_entropy(logits_reshaped, labels, reduction='none') # (B*N)
+
+        conf_weights = conf_weights.view(B,1).expand(B,N).reshape(-1)
+
+        loss_per_sample_weighted = loss_per_sample * conf_weights
 
         # 7. 应用 Mask 并求平均
         # 只有当 feats_a 中的点确实变换到了 feats_b 内部时，才计算 Loss
-        valid_loss = loss_per_sample * mask_flat
+        valid_loss = loss_per_sample_weighted * mask_flat
         
         num_valid = mask_flat.sum()
         if num_valid > 0:

@@ -124,8 +124,8 @@ class AffineLoss(nn.Module):
             
             # A. 几何距离损失
             pred_points = torch.bmm(current_affine, ref_grid)
-            loss_dist = torch.norm(pred_points - target_points, dim=1) * conf_weights # B,N
-            last_loss = torch.mean(loss_dist * scale.unsqueeze(-1) * conf_weights)
+            loss_dist = torch.norm(pred_points - target_points, dim=1) * conf_weights.view(B,1) # B,N
+            last_loss = torch.mean(loss_dist * scale.unsqueeze(-1) * conf_weights.view(B,1))
             
             # B. 正则化损失
             pred_linear = current_affine[:, :, :2]
