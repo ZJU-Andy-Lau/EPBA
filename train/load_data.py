@@ -261,13 +261,15 @@ def process_image(
     for k in range(K):
         dsize = (output_size, output_size)
         i = 0
-        while i < backup_num:
+        while True:
             residual_test = cv2.warpPerspective(residual2_full_aff, H_bs_xy[i * K + k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
             residual_test = residual_average(residual_test,16)
             mask_1 = residual_test < 3.
             mask_2 = (residual_test > 5.) | np.isnan(residual_test)
             total_num = len(residual_test.ravel())
-            if mask_1.sum() > total_num * 0.2 and mask_2.sum() < total_num * 0.6:
+            if mask_1.sum() > total_num * 0.2 and mask_2.sum() < total_num * 0.7:
+                break
+            if i + 1 >= backup_num:
                 break
             i += 1
         imgs1[k] = cv2.warpPerspective(img1_full, H_as_xy[i * K + k], dsize, flags=cv2.INTER_LINEAR)
