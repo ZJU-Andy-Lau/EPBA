@@ -257,6 +257,8 @@ def process_image(
     # OpenCV 使用 (x, y) 坐标系，所以这里先用 XY 矩阵进行 warp
     img2_full_aff = cv2.warpAffine(img2_full, M_a_b_xy, (W, H), flags=cv2.INTER_LINEAR)
     residual2_full_aff = cv2.warpAffine(residual2_full, M_a_b_xy, (W, H), flags=cv2.INTER_NEAREST, borderValue=np.nan)
+    H_as = []
+    H_bs = []
 
     for k in range(K):
         dsize = (output_size, output_size)
@@ -276,11 +278,14 @@ def process_image(
         imgs2[k] = cv2.warpPerspective(img2_full_aff, H_bs_xy[i * K + k], dsize, flags=cv2.INTER_LINEAR)
         residual1[k] = cv2.warpPerspective(residual1_full, H_as_xy[i * K + k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
         residual2[k] = cv2.warpPerspective(residual2_full_aff, H_bs_xy[i * K + k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
+        H_as.append(H_as_xy[i * K + k])
+        H_bs.append(H_bs_xy[i * K + k])
+    
 
     # [关键修改] 将生成的 XY 坐标系矩阵转换为 Row-Col 坐标系矩阵
     # 以供后续 PyTorch 模型训练使用
-    H_as_rc = xy2rc_mat(H_as_xy)
-    H_bs_rc = xy2rc_mat(H_bs_xy)
+    H_as_rc = xy2rc_mat(torch.stack(H_as,dim=0))
+    H_bs_rc = xy2rc_mat(torch.stack(H_bs,dim=0))
     M_a_b_rc = xy2rc_mat(M_a_b_xy)
 
     return imgs1, imgs2, residual1, residual2, H_as_rc, H_bs_rc, M_a_b_rc
