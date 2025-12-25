@@ -235,6 +235,7 @@ def process_image(
     residual1_full: np.ndarray,
     residual2_full: np.ndarray,
     K: int,
+    backup_num:int = 5,
     min_crop_side: int = 256,
     output_size: int = 512,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -251,7 +252,7 @@ def process_image(
     # print(H,W,min_crop_side,int(H * 0.5))
 
     # 生成 XY 坐标系下的矩阵
-    H_as_xy, H_bs_xy, M_a_b_xy = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.5)),(output_size,output_size),K)
+    H_as_xy, H_bs_xy, M_a_b_xy = generate_affine_matrices((H,W),(min_crop_side,int(H * 0.5)),(output_size,output_size),K * backup_num)
 
     # OpenCV 使用 (x, y) 坐标系，所以这里先用 XY 矩阵进行 warp
     img2_full_aff = cv2.warpAffine(img2_full, M_a_b_xy, (W, H), flags=cv2.INTER_LINEAR)
@@ -259,10 +260,20 @@ def process_image(
 
     for k in range(K):
         dsize = (output_size, output_size)
-        imgs1[k] = cv2.warpPerspective(img1_full, H_as_xy[k], dsize, flags=cv2.INTER_LINEAR)
-        imgs2[k] = cv2.warpPerspective(img2_full_aff, H_bs_xy[k], dsize, flags=cv2.INTER_LINEAR)
-        residual1[k] = cv2.warpPerspective(residual1_full, H_as_xy[k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
-        residual2[k] = cv2.warpPerspective(residual2_full_aff, H_bs_xy[k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
+        i = 0
+        while i < backup_num:
+            residual_test = cv2.warpPerspective(residual2_full_aff, H_bs_xy[i * K + k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
+            residual_test = residual_average(residual_test,16)
+            mask_1 = residual_test < 3.
+            mask_2 = (residual_test > 5.) | np.isnan(residual_test)
+            total_num = len(residual_test.ravel())
+            if mask_1.sum() > total_num * 0.2 and mask_2.sum() < total_num * 0.6:
+                break
+            i += 1
+        imgs1[k] = cv2.warpPerspective(img1_full, H_as_xy[i * K + k], dsize, flags=cv2.INTER_LINEAR)
+        imgs2[k] = cv2.warpPerspective(img2_full_aff, H_bs_xy[i * K + k], dsize, flags=cv2.INTER_LINEAR)
+        residual1[k] = cv2.warpPerspective(residual1_full, H_as_xy[i * K + k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
+        residual2[k] = cv2.warpPerspective(residual2_full_aff, H_bs_xy[i * K + k], dsize, flags=cv2.INTER_NEAREST, borderValue=np.nan)
 
     # [关键修改] 将生成的 XY 坐标系矩阵转换为 Row-Col 坐标系矩阵
     # 以供后续 PyTorch 模型训练使用
@@ -344,13 +355,22 @@ class TrainDataset(Dataset):
         key = self.database_keys[index]
         img_num = len(self.database[key]['images'])
         idx1,idx2 = np.random.choice(img_num,2)
-        # if idx1 == idx2:
-        #     idx2 = (idx1 + 1) % img_num
+        if idx1 == idx2:
+            idx2 = (idx1 + 1) % img_num
 
         image_1_full = self.database[key]['images'][f"{idx1}"][:]
         image_2_full = self.database[key]['images'][f"{idx2}"][:]
         residual_1_full = self.database[key]['parallax'][f"{idx1}"][:]
         residual_2_full = self.database[key]['parallax'][f"{idx2}"][:]
+
+        H,W = image_1_full.shape[:2]
+
+        dsus_ratio = np.random.rand()
+        if dsus_ratio > 0.5:
+            dsus_ratio = (dsus_ratio - 0.5) * 7 + 1.
+            img_1_ds = cv2.resize(image_1_full,(W / dsus_ratio, H / dsus_ratio),interpolation=cv2.INTER_LINEAR)
+            image_1_full = cv2.resize(img_1_ds,(W,H),cv2.INTER_LINEAR)
+
 
         image_1_full = np.stack([image_1_full] * 3,axis=-1)
         image_2_full = np.stack([image_2_full] * 3,axis=-1)
@@ -361,6 +381,7 @@ class TrainDataset(Dataset):
                           residual1_full=residual_1_full,
                           residual2_full=residual_2_full,
                           K=self.batch_size,
+                          backup_num=5,
                           min_crop_side=256,
                           output_size=self.input_size,
                           )
