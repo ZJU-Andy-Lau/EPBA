@@ -368,7 +368,7 @@ class TrainDataset(Dataset):
         dsus_ratio = np.random.rand()
         if dsus_ratio > 0.5:
             dsus_ratio = (dsus_ratio - 0.5) * 7 + 1.
-            img_1_ds = cv2.resize(image_1_full,(W / dsus_ratio, H / dsus_ratio),interpolation=cv2.INTER_LINEAR)
+            img_1_ds = cv2.resize(image_1_full,(int(W / dsus_ratio), int(H / dsus_ratio)),interpolation=cv2.INTER_LINEAR)
             image_1_full = cv2.resize(img_1_ds,(W,H),cv2.INTER_LINEAR)
 
 
