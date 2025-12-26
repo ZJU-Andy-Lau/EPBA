@@ -271,18 +271,18 @@ def main(args):
 
     encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer = load_models(args)
 
-    warmup_epoch = 5.
-    summit_hold_epoch = 0.
+    adapter_warmup_epoch = 50.
+    gru_warmup_epoch = 5.
 
     adapter_scheduler = MultiStageOneCycleLR(optimizer=adapter_optimizer,
                                              total_steps=args.max_epoch * batch_num,
-                                             warmup_ratio=warmup_epoch / args.max_epoch,
-                                             cooldown_ratio=(args.max_epoch - warmup_epoch - summit_hold_epoch) / args.max_epoch)
+                                             warmup_ratio=adapter_warmup_epoch / args.max_epoch,
+                                             cooldown_ratio=(args.max_epoch - adapter_warmup_epoch) / args.max_epoch)
     
     gru_scheduler = MultiStageOneCycleLR(optimizer=gru_optimizer,
                                          total_steps=args.max_epoch * batch_num,
-                                         warmup_ratio=warmup_epoch / args.max_epoch,
-                                         cooldown_ratio=(args.max_epoch - warmup_epoch - summit_hold_epoch) / args.max_epoch)
+                                         warmup_ratio=gru_warmup_epoch / args.max_epoch,
+                                         cooldown_ratio=(args.max_epoch - gru_warmup_epoch) / args.max_epoch)
 
     loss_funcs = Loss(img_size = (dataset.input_size,dataset.input_size),
                       downsample_factor = dataset.DOWNSAMPLE,

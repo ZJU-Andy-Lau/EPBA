@@ -26,7 +26,13 @@ class RSImageMeta():
         self.options = options
         self.root = root
         self.id = id
-        self.dem = np.load(os.path.join(root,'dem.npy'),mmap_mode='r')
+        if os.path.exists(os.path.join(root,'dem.npy')):
+            self.dem = np.load(os.path.join(root,'dem.npy'),mmap_mode='r')
+        elif os.path.exists(os.path.join(root,'dem.tif')):
+            with rasterio.open(os.path.join(root,'dem.tif')) as f:
+                self.dem = f.read(1)
+        else:
+            raise ValueError(f"DEM not found in root:{root}")
         self.device = device
         self.H,self.W = self.dem.shape[:2]
         self.rpc = RPCModelParameterTorch()
@@ -79,7 +85,13 @@ class RSImage():
     def initialize(self):
         self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
         self.image = np.stack([self.image] * 3,axis=-1)
-        self.dem = np.load(os.path.join(self.root,'dem.npy'))
+        if os.path.exists(os.path.join(self.root,'dem.npy')):
+            self.dem = np.load(os.path.join(self.root,'dem.npy'),mmap_mode='r')
+        elif os.path.exists(os.path.join(self.root,'dem.tif')):
+            with rasterio.open(os.path.join(self.root,'dem.tif')) as f:
+                self.dem = f.read(1)
+        else:
+            raise ValueError(f"DEM not found in root:{self.root}")
         if os.path.exists(os.path.join(self.root,'tie_points.txt')):
             self.tie_points = self.__load_tie_points__(os.path.join(self.root,'tie_points.txt'))
         else:
