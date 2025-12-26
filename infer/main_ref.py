@@ -244,8 +244,9 @@ def main(args):
             for image in images:
                 M = all_results[image.id]
                 image.rpc.Update_Adjust(M)
+                image.rpc.Merge_Adjust()
                 if args.output_rpc:
-                    image.rpc.Merge_Adjust()
+                    
                     image.rpc.save_rpc_to_file(os.path.join(args.output_path,f"{image.root.replace('/','_')}_rpc.txt"))
                 # image.rpc.Merge_Adjust()
 
