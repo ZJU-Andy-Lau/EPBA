@@ -166,6 +166,8 @@ def main(args):
         broadcast_container = [ref_metas_all]
         dist.broadcast_object_list(broadcast_container,src=0)
         ref_metas:List[RSImageMeta] = broadcast_container[0]
+
+        dist.barrier()
         
         local_results = {}
         reporter.update(current_task="Ready", progress=f"-", level="-", current_step="Ready")
@@ -233,6 +235,7 @@ def main(args):
             all_results = None
 
         dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
+        dist.barrier()
         
         if rank == 0:
             all_results = {k:v for d in all_results if d for k,v in d.items()}
