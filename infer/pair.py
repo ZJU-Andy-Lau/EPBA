@@ -389,6 +389,13 @@ class Solver():
         img_a_b = make_checkerboard(img_a,img_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_a_b.png'),img_a_b)
 
+        del sample_coords
+        del input_img
+        del sampled_img
+        sample_coords = None
+        input_img = None
+        sample_coords = None
+
 
 
         

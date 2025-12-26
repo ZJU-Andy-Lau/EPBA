@@ -386,3 +386,10 @@ def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size
     img_a_b = make_checkerboard(img_a,img_b)
 
     cv2.imwrite(os.path.join(output_path,f'registration_{image_a.id}_{image_b.id}.png'),img_a_b)
+
+    del sample_coords
+    del input_img
+    del sampled_img
+    sample_coords = None
+    input_img = None
+    sample_coords = None
