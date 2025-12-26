@@ -257,8 +257,7 @@ def main(args):
                     all_distances.append(distances)
                     if distances.max() > 10.:
                         reporter.log(f"image {images[i].id} --- image {images[j].id} max error : {distances.max()}")
-                        vis_img = images[j].vis_checkpoints(ref_points)
-                        cv2.imwrite(os.path.join(args.output_path,f'ckpt_{images[i].id}_{images[j].id}.png'),vis_img)
+                        
                 all_distances = np.concatenate(all_distances)
 
                 report = get_report_dict(all_distances)

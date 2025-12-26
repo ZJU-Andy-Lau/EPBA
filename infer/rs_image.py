@@ -372,34 +372,6 @@ class RSImage_Error_Check():
         ref_points = np.stack([lons,lats,self.heights],axis=-1)
         return ref_points
     
-    def vis_checkpoints(self,ref_points:np.ndarray = None):
-        """
-        ref_points: (N,3) (lon,lat,height) np.ndarray
-        """
-        if not ref_points is None:
-            samps,lines = self.rpc.RPC_OBJ2PHOTO(ref_points[:,1],ref_points[:,0],ref_points[:,2],'numpy')
-            samps,lines = np.round(samps).astype(int),np.round(lines).astype(int)
-            ref_points = np.stack([lines,samps],axis=-1)
-        grid_imgs = []
-        s = 256
-        for i,p in enumerate(self.tie_points):
-            cl,cs = p
-            cl = min(self.H - s // 2,max(s // 2, cl))
-            cs = min(self.W - s // 2,max(s // 2, cs))
-            pl = p[0] - cl + s // 2
-            ps = p[1] - cs + s // 2
-            img = self.image[cl - s // 2 : cl + s // 2, cs - s // 2 : cs + s // 2]
-            cv2.circle(img,(ps,pl),1,(0,255,0),-1)
-            if not ref_points is None:
-                rp = ref_points[i]
-                rpl = rp[0] - p[0] + pl
-                rps = rp[1] - p[1] + ps
-                cv2.circle(img,(rps,rpl),1,(0,0,255),-1)
-
-            grid_imgs.append(img)
-
-        vis_img = create_grid_img(grid_imgs)
-        return vis_img
 
 def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):
     H,W = window_size
