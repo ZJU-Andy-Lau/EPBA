@@ -41,8 +41,6 @@ class RSImageMeta():
         
         self.corner_xys = self.__get_corner_xys__()
 
-        print(f"image meta {self.id} shape:\n{(self.H,self.W)}\t{self.dem.shape} corners:\n{self.corner_xys}\n")
-
         del self.rpc
         del self.dem
         self.rpc = None
@@ -90,6 +88,8 @@ class RSImage():
             if data.shape[0] > 1:
                 weights = np.array([0.299, 0.587, 0.114])
                 data = np.tensordot(weights,data,axes=1).astype(np.uint8)
+            else:
+                data = data[0]
         self.image = np.stack([data] * 3,axis=-1)
             
         # self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
@@ -115,7 +115,6 @@ class RSImage():
         
         self.corner_xys = self.__get_corner_xys__()
 
-        print(f"image {self.id} shape:\n{(self.H,self.W)}\t{self.image.shape}\t{self.dem.shape} corners:\n{self.corner_xys}\n")
 
     def __load_tie_points__(self,path) -> np.ndarray:
         tie_points = np.loadtxt(path,dtype=int)

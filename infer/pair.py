@@ -120,7 +120,6 @@ class Solver():
         corners_b = self.rs_image_b.corner_xys
 
         polygon_corners = find_intersection(np.stack([corners_a,corners_b],axis=0))
-        print(f"corners a:{corners_a}\ncorners b:{corners_b}\ncorners intersect:{polygon_corners}\n")
         window_diags = find_squares(polygon_corners,a_max,a_min,area_ratio) # N,2,2
 
         self.build_window_pairs(window_diags)
