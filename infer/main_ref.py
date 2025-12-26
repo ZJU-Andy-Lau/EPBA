@@ -216,7 +216,7 @@ def main(args):
                         reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
                 
 
-            reporter.update(current_task="Finished", progress=f"{len(pairs)}/{len(pairs)}", level="-", current_step="Cleanup")
+            reporter.update(current_task="Finished", progress=f"{len(adjust_metas)}/{len(adjust_metas)}", level="-", current_step="Cleanup")
             del encoder
             del gru
             for pair in pairs:
@@ -255,6 +255,10 @@ def main(args):
                     ref_points = images[i].get_ref_points()
                     distances = images[j].check_error(ref_points)
                     all_distances.append(distances)
+                    if distances.max() > 10.:
+                        reporter.log(f"image {images[i].id} --- image {images[j].id} max error : {distances.max()}")
+                        vis_img = images[j].vis_checkpoints(ref_points)
+                        cv2.imwrite(os.path.join(args.output_path,f'ckpt_{images[i].id}_{images[j].id}.png'),vis_img)
                 all_distances = np.concatenate(all_distances)
 
                 report = get_report_dict(all_distances)
