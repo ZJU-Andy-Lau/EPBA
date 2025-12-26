@@ -291,7 +291,10 @@ class RSImage_Error_Check():
             with rasterio.open(os.path.join(self.root,'dem.tif')) as f:
                 self.dem = f.read(1)
 
-        self.tie_points = self._load_tie_points()
+        if os.path.exists(os.path.join(self.root,'tie_points.txt')):
+            self.tie_points = self.__load_tie_points__(os.path.join(self.root,'tie_points.txt'))
+        else:
+            self.tie_points = None
         self.heights = self.get_heights_for_tie_points()
     
     def __load_tie_points__(self,path) -> np.ndarray:
