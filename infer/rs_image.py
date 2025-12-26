@@ -41,6 +41,8 @@ class RSImageMeta():
         
         self.corner_xys = self.__get_corner_xys__()
 
+        print(f"image meta {self.id} corners:\n{self.corner_xys}\n")
+
         del self.rpc
         del self.dem
         self.rpc = None
@@ -112,6 +114,8 @@ class RSImage():
         self.affine_list = []
         
         self.corner_xys = self.__get_corner_xys__()
+
+        print(f"image {self.id} corners:\n{self.corner_xys}\n")
 
     def __load_tie_points__(self,path) -> np.ndarray:
         tie_points = np.loadtxt(path,dtype=int)

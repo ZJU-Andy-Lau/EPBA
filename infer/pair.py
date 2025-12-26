@@ -116,8 +116,8 @@ class Solver():
     def init_window_pairs(self,a_max = 8000,a_min = 500,area_ratio = 0.5):
         if self.reporter:
             self.reporter.update(current_step="Init Window Pairs")
-        corners_a = self.rs_image_a.__get_corner_xys__() # (4,2)
-        corners_b = self.rs_image_b.__get_corner_xys__()
+        corners_a = self.rs_image_a.corner_xys # (4,2)
+        corners_b = self.rs_image_b.corner_xys
 
         polygon_corners = find_intersection(np.stack([corners_a,corners_b],axis=0))
         print(f"corners a:{corners_a}\ncorners b:{corners_b}\ncorners intersect:{polygon_corners}\n")
