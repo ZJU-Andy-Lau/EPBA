@@ -210,8 +210,13 @@ def find_squares(corners, a_max, a_min=1.0, target_area_ratio = 0.5):
                 # 生成网格
                 # 注意范围要稍微大一点以覆盖整个多边形
                 epsilon = 1e-9
-                x_range = np.arange(start_x, max_x + epsilon, current_a)
-                y_range = np.arange(start_y, max_y + epsilon, current_a)
+                try:
+                    x_range = np.arange(start_x, max_x + epsilon, current_a)
+                    y_range = np.arange(start_y, max_y + epsilon, current_a)
+                except:
+                    print(start_x,max_x,current_a)
+                    print(poly_area)
+                    print(min_x,min_y,max_x,max_y)
                 
                 for x in x_range:
                     for y in y_range:
