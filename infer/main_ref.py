@@ -216,7 +216,11 @@ def main(args):
                         reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
                 else:
                     for pair in pairs:
-                        vis_registration(pair.rs_image_a,pair.rs_image_b,os.path.join(args.output_path),device=args.device)
+                        try:
+                            vis_registration(pair.rs_image_a,pair.rs_image_b,os.path.join(args.output_path),device=args.device)
+                        except:
+                            reporter.log(f"{pair.rs_image_a.id} --- {pair.rs_image_b.id} vis registration error, pass")
+                            pass
                 
 
             reporter.update(current_task="Finished", progress=f"{len(adjust_metas)}/{len(adjust_metas)}", level="-", current_step="Cleanup")
