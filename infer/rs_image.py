@@ -290,8 +290,6 @@ class RSImage_Error_Check():
         elif os.path.exists(os.path.join(self.root,'dem.tif')):
             with rasterio.open(os.path.join(self.root,'dem.tif')) as f:
                 self.dem = f.read(1)
-        else:
-            raise ValueError(f"DEM not found in root:{self.root}")
 
         self.tie_points = self._load_tie_points()
         self.heights = self.get_heights_for_tie_points()
@@ -315,35 +313,6 @@ class RSImage_Error_Check():
         except Exception as e:
             print(f"警告 (Image {self.id}): 加载 tie_points 失败: {e}")
             return None
-    
-    def _get_dem_values_at_coords(self, lines: np.ndarray, samps: np.ndarray) -> np.ndarray:
-        """
-        [核心功能] 使用内存映射 (mmap) 按需从磁盘加载DEM值。
-        """
-        if not os.path.exists(self.dem_path):
-            print(f"警告 (Image {self.id}): 未找到 dem.npy at {self.dem_path}。将使用RPC平均高程。")
-            return np.full(lines.shape, self.rpc.HEIGHT_OFF.item())
-            
-        try:
-            # 'r' 模式 = 只读。这不会将文件加载到RAM。
-            dem_mmap = np.load(self.dem_path, mmap_mode='r')
-            
-            # 检查坐标是否越界
-            H, W = dem_mmap.shape
-            if np.any(lines < 0) or np.any(lines >= H) or np.any(samps < 0) or np.any(samps >= W):
-                 print(f"警告 (Image {self.id}): 连接点坐标越界。DEM 尺寸: ({H}, {W})")
-                 # 裁剪坐标以防止错误
-                 lines = np.clip(lines, 0, H - 1)
-                 samps = np.clip(samps, 0, W - 1)
-
-            # 仅从磁盘读取这几个点的值
-            heights = dem_mmap[lines, samps]
-            # 必须将结果复制为新数组，否则 mmap 引用会保持打开
-            return np.array(heights)
-        except Exception as e:
-            print(f"警告 (Image {self.id}): 无法从 {self.dem_path} 读取DEM值: {e}")
-            # 回退：使用RPC的平均高程
-            return np.full(lines.shape, self.rpc.HEIGHT_OFF.item())
 
     def _get_corner_xys(self) -> np.ndarray:
         """计算4个角的地理坐标 (用于 find_overlapping_pairs)"""
@@ -360,7 +329,7 @@ class RSImage_Error_Check():
         corner_samps = np.array([0, W - 1, 0, W - 1], dtype=int)
         
         # [关键] 按需加载这4个角点的DEM值
-        corner_heights = self._get_dem_values_at_coords(corner_lines, corner_samps)
+        corner_heights = self.dem[corner_lines,corner_samps]
 
         # 使用RPC计算地理坐标 (转为 tensor 以使用 RPC 类)
         latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ(
@@ -384,7 +353,7 @@ class RSImage_Error_Check():
         
         lines = self.tie_points[:, 0]
         samps = self.tie_points[:, 1]
-        return self._get_dem_values_at_coords(lines, samps)
+        return self.dem[lines,samps]
 
     def check_error(self,ref_points:np.ndarray):
         """
