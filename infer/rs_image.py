@@ -224,14 +224,11 @@ class RSImage():
         grid_col = grid_col.flatten()
         ones = torch.ones_like(grid_row)
         src_grid = torch.stack([grid_row, grid_col, ones], dim=0) # 3,N
-        print(src_grid.shape)
         all_src_list = []
         all_dst_list = []
         
         for affine_mat in self.affine_list:
-            print(f'{affine_mat.cpu().numpy()}\n')
             dst_grid = torch.mm(affine_mat.to(torch.float32), src_grid.to(torch.float32).clone())
-            print(dst_grid.shape)
             all_src_list.append(src_grid[:2])
             all_dst_list.append(dst_grid) 
 
@@ -241,7 +238,6 @@ class RSImage():
         Y = torch.cat(all_dst_list, dim=1).T # (N,2)
         scores = torch.ones(len(X),device=X.device)
         solution = solve_weighted_affine(X,Y,scores)
-        print(f"merged affine:\n{solution.cpu().numpy()}\n")
 
         return solution
 
