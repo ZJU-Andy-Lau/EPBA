@@ -217,8 +217,8 @@ class RSImage():
             return None
         if len(self.affine_list) == 1:
             return self.affine_list[0]
-        rows = torch.arange(0, self.H, self.H // 32, dtype=torch.float32)
-        cols = torch.arange(0, self.W, self.W // 32, dtype=torch.float32)
+        rows = torch.arange(0, self.H, max(self.H // 256,1), dtype=torch.float32)
+        cols = torch.arange(0, self.W, max(self.W // 256,1), dtype=torch.float32)
         grid_row, grid_col = torch.meshgrid(rows, cols, indexing='ij')
         grid_row = grid_row.flatten()
         grid_col = grid_col.flatten()
