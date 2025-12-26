@@ -84,10 +84,11 @@ class RSImage():
     
     def initialize(self):
         with rasterio.open(os.path.join(self.root,'image.png'),'r') as f:
-            data = f.read([1,2,3])
-            weights = np.array([0.299, 0.587, 0.114])
-            gray = np.tensordot(weights,data,axes=1).astype(np.uint8)
-        self.image = np.stack([gray] * 3,axis=-1)
+            data = f.read()
+            if data.shape[0] > 1:
+                weights = np.array([0.299, 0.587, 0.114])
+                data = np.tensordot(weights,data,axes=1).astype(np.uint8)
+        self.image = np.stack([data] * 3,axis=-1)
             
         # self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
         # self.image = np.stack([self.image] * 3,axis=-1)
