@@ -9,7 +9,7 @@ import os
 import cv2
 
 
-from infer.utils import warp_quads,create_grid_img
+from infer.utils import warp_quads,create_grid_img,solve_weighted_affine
 from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
 from shared.visualize import make_checkerboard
 from shared.rpc import RPCModelParameterTorch,project_linesamp
@@ -233,10 +233,11 @@ class RSImage():
             all_src_list.append(src_grid)
             all_dst_list.append(dst_grid) 
         
-        X = torch.cat(all_src_list, dim=1)
-        Y = torch.cat(all_dst_list, dim=1)
-        solution = torch.linalg.lstsq(X.T, Y.T).solution
-        solution = solution.T
+        X = torch.cat(all_src_list, dim=1).T # (N,2)
+        Y = torch.cat(all_dst_list, dim=1).T # (N,2
+        solution = solve_weighted_affine(X,Y)
+        # solution = torch.linalg.lstsq(X.T, Y.T).solution
+        # solution = solution.T
         print(f"merged affine:\n{solution.cpu().numpy()}\n")
 
         return solution

@@ -364,7 +364,7 @@ def apply_M(coords:torch.Tensor,Ms:torch.Tensor,device:str = 'cpu'):
     coords_trans = torch.bmm(Ms,coords_homo) # (B,2,3) @ (B,3,N) -> (B,2,N)
     return coords_trans.permute(0,2,1) # B,N,2
 
-def solve_weighted_affine(src: torch.Tensor, dst: torch.Tensor, scores: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
+def solve_weighted_affine(src: torch.Tensor, dst: torch.Tensor, scores: torch.Tensor = None, eps: float = 1e-10) -> torch.Tensor:
     """
     使用加权最小二乘法计算从 src 到 dst 的仿射变换矩阵。
 
@@ -413,6 +413,8 @@ def solve_weighted_affine(src: torch.Tensor, dst: torch.Tensor, scores: torch.Te
     
     # 计算权重的平方根
     # 注意: 这里的 eps 很重要，防止权重为0时出现数值问题
+    if scores is None:
+        scores = torch.ones(N, 1, device=device, dtype=src.dtype)
     weights_sqrt = torch.sqrt(torch.clamp(scores, min=0) + eps).view(-1, 1) # 形状: (N, 1)
 
     # 利用广播机制对矩阵的每一行进行加权
