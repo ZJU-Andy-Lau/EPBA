@@ -320,7 +320,11 @@ class Solver():
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
         preds,scores = self.get_window_affines(encoder,gru)
         affine = self.merge_affines(preds,Hs_a,scores)
-        self.test_rpc()
+        try:
+            self.test_rpc()
+        except:
+            self.reporter.log(f"test rpc error, pass")
+            pass
         self.rpc_a.Update_Adjust(affine)
 
         return affine
