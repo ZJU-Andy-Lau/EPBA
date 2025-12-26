@@ -271,7 +271,7 @@ class RSImage():
         如果作为ref_image,提供自身的tie_points作为ref_points
         """
         if heights is None:
-            heights = self.heights
+            heights = self.dem[self.tie_points[:,0],self.tie_points[:,1]]
         lats,lons = self.rpc.RPC_PHOTO2OBJ(self.tie_points[:,1],self.tie_points[:,0],heights,'numpy')
         ref_points = np.stack([lons,lats,heights],axis=-1)
         return ref_points
