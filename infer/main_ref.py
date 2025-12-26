@@ -180,7 +180,7 @@ def main(args):
                 reporter.log(f"ref list for img_{adjust_meta.id} : {ref_list}")
                 reporter.update(current_step="Loading Adjust Image")
                 adjust_image = RSImage(adjust_meta,device=args.device)
-                pairs = []
+                pairs:List[Pair] = []
                 for ref_idx in ref_list:
                     reporter.update(current_step="Loading Ref Image")
                     ref_image = RSImage(ref_metas[ref_idx],device=args.device)
@@ -197,8 +197,8 @@ def main(args):
                 adjust_image.rpc.Update_Adjust(total_affine)
                 local_results[adjust_image.id] = total_affine
 
+                reporter.update(current_task="Check Error", level="-", current_step="-")
                 if not adjust_image.tie_points is None:
-                    reporter.update(current_task="Check Error", level="-", current_step="-")
                     for pair in pairs:
                         ref_points = pair.rs_image_b.get_ref_points()
                         dis = pair.rs_image_a.check_error(ref_points)
@@ -214,6 +214,9 @@ def main(args):
                         reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
                         reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
                         reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
+                else:
+                    for pair in pairs:
+                        vis_registration(pair.rs_image_a,pair.rs_image_b,os.path.join(args.output_path),device=args.device)
                 
 
             reporter.update(current_task="Finished", progress=f"{len(adjust_metas)}/{len(adjust_metas)}", level="-", current_step="Cleanup")
@@ -270,9 +273,7 @@ def main(args):
                 reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
                 reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
                 reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
-            else:
-                for i,j in itertools.combinations(range(len(images)),2):
-                    vis_registration(images[i],images[j],os.path.join(args.output_path),device=args.device)
+                
             
     except Exception as e:
         error_msg = traceback.format_exc()
