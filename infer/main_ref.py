@@ -243,7 +243,7 @@ def main(args):
                 image.rpc.Update_Adjust(M)
                 if args.output_rpc:
                     image.rpc.Merge_Adjust()
-                    image.rpc.save_rpc_to_file(os.path.join(args.output_path,f'{image.root.replace('/','_')}_rpc.txt'))
+                    image.rpc.save_rpc_to_file(os.path.join(args.output_path,f"{image.root.replace('/','_')}_rpc.txt"))
                 # image.rpc.Merge_Adjust()
 
             if not images[0].tie_points is None:
