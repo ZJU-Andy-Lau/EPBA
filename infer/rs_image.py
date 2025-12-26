@@ -52,7 +52,7 @@ class RSImageMeta():
         return: [tl,tr,br,bl] [x,y] np.ndarray
         """
         heights = [self.dem[0,0],self.dem[0,-1],self.dem[-1,-1],self.dem[-1,0]]
-        heights = [i if not np.isnan(i) else np.nanmean(self.dem) for i in heights]
+        heights = [i if not np.isnan(i) else 0 for i in heights]
         latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ([0.,self.W-1.,self.W-1.,0],
                                                      [0.,0.,self.H - 1.,self.H - 1.],
                                                      heights),dim=-1)
@@ -128,7 +128,7 @@ class RSImage():
         return: [tl,tr,br,bl] [x,y] np.ndarray
         """
         heights = [self.dem[0,0],self.dem[0,-1],self.dem[-1,-1],self.dem[-1,0]]
-        heights = [i if not np.isnan(i) else np.nanmean(self.dem) for i in heights]
+        heights = [i if not np.isnan(i) else 0 for i in heights]
         latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ([0.,self.W-1.,self.W-1.,0],
                                                      [0.,0.,self.H - 1.,self.H - 1.],
                                                      heights),dim=-1)
