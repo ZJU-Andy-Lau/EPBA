@@ -294,55 +294,14 @@ class RSImage_Error_Check():
         self.tie_points = self._load_tie_points()
         self.heights = self.get_heights_for_tie_points()
     
-    def _load_tie_points(self) -> np.ndarray:
-        """加载 tie_points.txt 文件"""
-        if not os.path.exists(self.tie_points_path):
-            print(f"信息 (Image {self.id}): 未找到 tie_points.txt。")
+    def __load_tie_points__(self,path) -> np.ndarray:
+        tie_points = np.loadtxt(path,dtype=int)
+        if tie_points.ndim == 1:
+            tie_points = tie_points.reshape(1,-1)
+        elif tie_points.shape[1] != 2:
+            print("tie points format error")
             return None
-        
-        try:
-            tie_points = np.loadtxt(self.tie_points_path, dtype=int)
-            if tie_points.ndim == 0: # 空文件
-                return None
-            if tie_points.ndim == 1:
-                tie_points = tie_points.reshape(1, -1)
-            if tie_points.shape[1] != 2:
-                print(f"警告 (Image {self.id}): tie_points 格式错误。")
-                return None
-            return tie_points
-        except Exception as e:
-            print(f"警告 (Image {self.id}): 加载 tie_points 失败: {e}")
-            return None
-
-    def _get_corner_xys(self) -> np.ndarray:
-        """计算4个角的地理坐标 (用于 find_overlapping_pairs)"""
-        try:
-            # 快速读取DEM的形状，而不加载全部内容
-            dem_shape = np.load(self.dem_path, mmap_mode='r').shape
-            H, W = dem_shape
-        except Exception as e:
-            print(f"致命错误 (Image {self.id}): 无法读取 {self.dem_path} 的尺寸: {e}")
-            raise e # 允许 load_imgs_bundle 捕获此异常
-
-        # 定义4个角点的 (line, samp) 坐标
-        corner_lines = np.array([0, 0, H - 1, H - 1], dtype=int)
-        corner_samps = np.array([0, W - 1, 0, W - 1], dtype=int)
-        
-        # [关键] 按需加载这4个角点的DEM值
-        corner_heights = self.dem[corner_lines,corner_samps]
-
-        # 使用RPC计算地理坐标 (转为 tensor 以使用 RPC 类)
-        latlons = torch.stack(self.rpc.RPC_PHOTO2OBJ(
-            torch.from_numpy(corner_samps),
-            torch.from_numpy(corner_lines),
-            torch.from_numpy(corner_heights)
-        ), dim=-1)
-        
-        # 使用RPC内置的方法 (lat,lon) -> (y,x)，然后翻转为 (x,y)
-        # (这取代了对 utils.py 中 project_mercator 的需求)
-        yx = self.rpc.latlon2yx(latlons) # (N, 2) tensor [y, x]
-        xy = yx[:, [1, 0]] # [x, y]
-        return xy.cpu().numpy()
+        return tie_points
 
     def get_heights_for_tie_points(self) -> np.ndarray:
         """

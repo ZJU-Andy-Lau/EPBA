@@ -240,7 +240,7 @@ def main(args):
         if rank == 0:
             all_results = {k:v for d in all_results if d for k,v in d.items()}
             reporter.update(current_step="Loading Images")
-            images = [RSImage_Error_Check(meta,device=args.device) for meta in adjust_metas_all]
+            images = [RSImage(meta,device=args.device) for meta in adjust_metas_all]
             for image in images:
                 M = all_results[image.id]
                 image.rpc.Update_Adjust(M)
@@ -257,6 +257,8 @@ def main(args):
                     all_distances.append(distances)
                     if distances.max() > 10.:
                         reporter.log(f"image {images[i].id} --- image {images[j].id} max error : {distances.max()}")
+                        vis_img = images[j].vis_checkpoints(ref_points)
+                        cv2.imwrite(os.path.join(args.output_path,f'ckpt_{images[i].id}_{images[j].id}.png'),vis_img)
                         
                 all_distances = np.concatenate(all_distances)
 
