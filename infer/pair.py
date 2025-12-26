@@ -321,12 +321,12 @@ class Solver():
         preds,scores = self.get_window_affines(encoder,gru)
         affine = self.merge_affines(preds,Hs_a,scores)
         self.rpc_a.Update_Adjust(affine)
-        self.test_rpc()
-        # try:
-        #     self.test_rpc()
-        # except:
-        #     self.reporter.log(f"test rpc error, pass")
-        #     pass
+        # self.test_rpc()
+        try:
+            self.test_rpc()
+        except:
+            self.reporter.log(f"{self.rs_image_a.id} --- {self.rs_image_b.id} test rpc error, pass")
+            pass
 
         return affine
     
