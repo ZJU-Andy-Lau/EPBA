@@ -266,11 +266,12 @@ class RSImage():
         dis = np.linalg.norm(ref - self.tie_points,axis=-1)
         return dis
 
-    def get_ref_points(self):
+    def get_ref_points(self,heights = None):
         """
         如果作为ref_image,提供自身的tie_points作为ref_points
         """
-        heights = self.dem[self.tie_points[:,0],self.tie_points[:,1]]
+        if heights is None:
+            heights = self.heights
         lats,lons = self.rpc.RPC_PHOTO2OBJ(self.tie_points[:,1],self.tie_points[:,0],heights,'numpy')
         ref_points = np.stack([lons,lats,heights],axis=-1)
         return ref_points
