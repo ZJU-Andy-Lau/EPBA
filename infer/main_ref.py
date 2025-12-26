@@ -65,18 +65,16 @@ def load_images(args,metas:List[RSImageMeta], reporter) -> List[RSImage] :
     images = [RSImage(meta,device=args.device) for meta in metas]
     return images
 
-def get_ref_lists(args,adjust_metas:List[RSImageMeta],ref_metas:List[RSImageMeta], reporter) -> List[List]:
+def get_ref_list(args,adjust_meta:RSImageMeta,ref_metas:List[RSImageMeta], reporter) -> List[List]:
     reporter.update(current_step="Filtering Ref")
-    ref_lists = []
-    for i in range(len(adjust_metas)):
-        ref_list = []
-        for j in range(len(ref_metas)):
-            if is_overlap(adjust_metas[i],ref_metas[j],args.min_window_size ** 2):
-                ref_list.append(j)
-        ref_lists.append(ref_list)
-    return ref_lists
+    ref_list = []
+    for i in range(len(ref_metas)):
+        if is_overlap(adjust_meta,ref_metas[i],args.min_window_size ** 2):
+            ref_list.append(i)
 
-def build_adj_ref_pairs(args,adjust_image:RSImage,ref_images:List[RSImage], reporter) -> List[Pair]:
+    return ref_list
+
+def build_adj_ref_pair(args,adjust_image:RSImage,ref_image:RSImage, reporter) -> Pair:
     reporter.update(current_step="Building Pairs")
     configs = {
         'max_window_num':args.max_window_num,
@@ -84,12 +82,9 @@ def build_adj_ref_pairs(args,adjust_image:RSImage,ref_images:List[RSImage], repo
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
     }
-    pairs = []
-    for ref_image in ref_images:
-        configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
-        pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
-        pairs.append(pair)
-    return pairs
+    configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
+    pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
+    return pair
 
 def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
     reporter.update(current_step="Building Pairs")
@@ -156,91 +151,79 @@ def main(args):
     try:
         init_random_seed(args)
 
-        metas = []
+        ref_metas_all = []
         if rank == 0:
             adjust_metas_all,ref_metas_all = load_images_meta(args, reporter)
-            ref_lists = get_ref_lists(args,adjust_metas_all,ref_metas_all,reporter)
-            reporter.log(f"ref lists:{ref_lists}")
-            ref_metas_lists = [[ref_metas_all[i] for i in sub_list] for sub_list in ref_lists]
             adjust_metas_chunk = np.array_split(np.array(adjust_metas_all,dtype=object),world_size) # (world_size,K)
-            ref_metas_chunk = np.array_split(np.array(ref_metas_lists,dtype=object),world_size) # (world_size,K,N)
             
-        
-        #ddp分发metas
+        #ddp分发adjust metas
         reporter.update(current_step="Syncing Meta")
         scatter_adjust_metas = [None]
         dist.scatter_object_list(scatter_adjust_metas,adjust_metas_chunk if rank == 0 else None, src=0)
-        adjust_metas = scatter_adjust_metas[0] # K
-        scatter_ref_metas = [None]
-        dist.scatter_object_list(scatter_ref_metas,ref_metas_chunk if rank == 0 else None, src=0)
-        ref_metas = scatter_ref_metas[0] # K,N
+        adjust_metas:List[RSImageMeta] = scatter_adjust_metas[0] # K
+
+        #ddp同步ref metas
+        broadcast_container = [ref_metas_all]
+        dist.broadcast_object_list(broadcast_container,src=0)
+        ref_metas:List[RSImageMeta] = broadcast_container[0]
         
         local_results = {}
         reporter.update(current_task="Ready", progress=f"-", level="-", current_step="Ready")
         
         if len(adjust_metas) > 0 and len(ref_metas) > 0:
-            reporter.update(current_task="Loading Images")
-            pairs:List[Pair] = []
-            adjust_images:List[RSImage] = []
-            for i in range(len(adjust_metas)):
-                adjust_image = RSImage(adjust_metas[i],device=args.device)
-                ref_images = [RSImage(ref_meta,device=args.device) for ref_meta in ref_metas[i]]
-                pairs_tmp = build_adj_ref_pairs(args,adjust_image,ref_images,reporter)
-                pairs.extend(pairs_tmp)
-                adjust_images.append(adjust_image)
-
             encoder,gru = load_models(args, reporter)
+            for adjust_idx,adjust_meta in enumerate(adjust_metas):
+                reporter.update(progress=f"{adjust_idx}/{len(adjust_metas)}")
+                ref_list = get_ref_list(args,adjust_meta,ref_metas,reporter)
+                reporter.log(f"ref list for img_{adjust_meta.id} : {ref_list}")
+                reporter.update(current_step="Loading Adjust Image")
+                adjust_image = RSImage(adjust_meta,device=args.device)
+                pairs = []
+                for ref_idx in ref_list:
+                    reporter.update(current_step="Loading Ref Image")
+                    ref_image = RSImage(ref_metas[ref_idx],device=args.device)
 
-            for idx, pair in enumerate(pairs):
-                reporter.update(progress=f"{idx+1}/{len(pairs)}")
-                affine = pair.solve_affines(encoder,gru).detach().cpu()
-                pair.rs_image_a.affine_list.append(affine)
-            
-            reporter.update(current_task="Baking RPC", level="-", current_step="-")
+                    pair = build_adj_ref_pair(args,adjust_image,ref_image,reporter)
+                    pairs.append(pair)
 
-            for idx,adjust_image in enumerate(adjust_images):
-                reporter.update(progress=f"{idx+1}/{len(adjust_images)}")
-                affine = adjust_image.merge_affines()
+                    affine = pair.solve_affines(encoder,gru).detach().cpu()
+                    adjust_image.affine_list.append(affine)
+
+                reporter.update(current_task="Baking RPC", level="-")
+                total_affine = adjust_image.merge_affines()
                 reporter.log(f"Affine Matrix of Image {adjust_image.id}\n{affine}\n")
-                adjust_image.rpc.Update_Adjust(affine)
-                # adjust_image.rpc.Merge_Adjust()
-                local_results[adjust_image.id] = affine
-            
-            reporter.update(current_task="Check Error", level="-", current_step="-")
-            for idx, pair in enumerate(pairs):
-                reporter.update(progress=f"{idx+1}/{len(pairs)}")
-                ref_points = pair.rs_image_b.get_ref_points()
-                dis = pair.rs_image_a.check_error(ref_points)
-                checkpoint_vis = pair.rs_image_a.vis_checkpoints(ref_points)
-                cv2.imwrite(os.path.join(args.output_path,f"ckpts_{pair.id_a}_{pair.id_b}.png"),checkpoint_vis)
-                report = get_report_dict(dis)
-                reporter.log("\n" + f"--- Adj {pair.id_a} => Ref {pair.id_b}  Error Report ---")
-                reporter.log(f"Total tie points checked: {report['count']}")
-                reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
-                reporter.log(f"Median Error: {report['median']:.4f} pix")
-                reporter.log(f"Max Error:    {report['max']:.4f} pix")
-                reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
-                reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
-                reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
-                reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
+                adjust_image.rpc.Update_Adjust(total_affine)
+                local_results[adjust_image.id] = total_affine
 
+                if not adjust_image.tie_points is None:
+                    reporter.update(current_task="Check Error", level="-", current_step="-")
+                    for pair in pairs:
+                        ref_points = pair.rs_image_b.get_ref_points()
+                        dis = pair.rs_image_a.check_error(ref_points)
+                        checkpoint_vis = pair.rs_image_a.vis_checkpoints(ref_points)
+                        cv2.imwrite(os.path.join(args.output_path,f"ckpts_{pair.id_a}_{pair.id_b}.png"),checkpoint_vis)
+                        report = get_report_dict(dis)
+                        reporter.log("\n" + f"--- Adj {pair.id_a} => Ref {pair.id_b}  Error Report ---")
+                        reporter.log(f"Total tie points checked: {report['count']}")
+                        reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
+                        reporter.log(f"Median Error: {report['median']:.4f} pix")
+                        reporter.log(f"Max Error:    {report['max']:.4f} pix")
+                        reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
+                        reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
+                        reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
+                        reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
                 
-                # reporter.log(f"{adjust_image.id}:\n{local_results[adjust_image.id]}")
-            
+
             reporter.update(current_task="Finished", progress=f"{len(pairs)}/{len(pairs)}", level="-", current_step="Cleanup")
- 
             del encoder
             del gru
-            for image in adjust_images:
-                del image
             for pair in pairs:
+                del pair.rs_image_a
                 del pair.rs_image_b
                 del pair
-            pairs = None
-            adjust_images = None
-            ref_images = None
             encoder = None
             gru = None
+            pair = None
             
         # ddp收集results
         reporter.update(current_step="Gathering Results")
@@ -258,25 +241,29 @@ def main(args):
             for image in images:
                 M = all_results[image.id]
                 image.rpc.Update_Adjust(M)
+                if args.output_rpc:
+                    image.rpc.Merge_Adjust()
+                    image.rpc.save_rpc_to_file(os.path.join(args.output_path,f'{image.root.replace('/','_')}_rpc.txt'))
                 # image.rpc.Merge_Adjust()
 
-            all_distances = []
-            for i,j in itertools.combinations(range(len(images)),2):
-                ref_points = images[i].get_ref_points()
-                distances = images[j].check_error(ref_points)
-                all_distances.append(distances)
-            all_distances = np.concatenate(all_distances)
+            if not images[0].tie_points is None:
+                all_distances = []
+                for i,j in itertools.combinations(range(len(images)),2):
+                    ref_points = images[i].get_ref_points()
+                    distances = images[j].check_error(ref_points)
+                    all_distances.append(distances)
+                all_distances = np.concatenate(all_distances)
 
-            report = get_report_dict(all_distances)
-            reporter.log("\n" + "--- Global Error Report (Summary) ---")
-            reporter.log(f"Total tie points checked: {report['count']}")
-            reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
-            reporter.log(f"Median Error: {report['median']:.4f} pix")
-            reporter.log(f"Max Error:    {report['max']:.4f} pix")
-            reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
-            reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
-            reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
-            reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
+                report = get_report_dict(all_distances)
+                reporter.log("\n" + "--- Global Error Report (Summary) ---")
+                reporter.log(f"Total tie points checked: {report['count']}")
+                reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
+                reporter.log(f"Median Error: {report['median']:.4f} pix")
+                reporter.log(f"Max Error:    {report['max']:.4f} pix")
+                reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
+                reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
+                reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
+                reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
             
     except Exception as e:
         error_msg = traceback.format_exc()
@@ -342,6 +329,8 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_id', type=str, default=None)
 
     parser.add_argument('--random_seed',type=int,default=42)
+
+    parser.add_argument('--output_rpc',type=str2bool,default=False)
 
     #==============================================================================
 
