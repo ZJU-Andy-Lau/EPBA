@@ -257,10 +257,6 @@ def main(args):
                     ref_points = images[i].get_ref_points(heights)
                     distances = images[j].check_error(ref_points)
                     all_distances.append(distances)
-                    if distances.max() > 10.:
-                        reporter.log(f"image {images[i].id} --- image {images[j].id} max error : {distances.max()}")
-                        vis_img = images[j].vis_checkpoints(ref_points)
-                        cv2.imwrite(os.path.join(args.output_path,f'ckpt_{images[i].id}_{images[j].id}.png'),vis_img)
                         
                 all_distances = np.concatenate(all_distances)
 
@@ -274,6 +270,9 @@ def main(args):
                 reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
                 reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
                 reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
+            else:
+                for i,j in itertools.combinations(range(len(images)),2):
+                    vis_registration(images[i],images[j],os.path.join(args.output_path),device=args.device)
             
     except Exception as e:
         error_msg = traceback.format_exc()

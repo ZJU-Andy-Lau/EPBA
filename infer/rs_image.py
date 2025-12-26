@@ -228,7 +228,7 @@ class RSImage():
         all_dst_list = []
         
         for affine_mat in self.affine_list:
-            dst_grid = torch.mm(affine_mat, src_grid)
+            dst_grid = torch.mm(affine_mat.to(torch.float32), src_grid.to(torch.float32))
             all_src_list.append(src_grid)
             all_dst_list.append(dst_grid) 
         
@@ -367,12 +367,16 @@ def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size
     #将坐标投影到b上        
     lines_in_b,samps_in_b = project_linesamp(image_a.rpc,image_b.rpc,
                                              coords_flat_in_a[:,0],coords_flat_in_a[:,1],heights_flat)
+    min_line,max_line,min_samp,max_samp = int(max(lines_in_b.min(),0)),int(min(lines_in_b.max(),image_b.H)) + 1,int(max(samps_in_b.min(),0)),int(min(samps_in_b.max(),image_b.W)) + 1
+    img_b = image_b.image[min_line:max_line,min_samp:max_samp]
+    lines_in_b -= min_line
+    samps_in_b -= min_samp
     
     #采样
-    lines_in_b_norm = 2.0 * lines_in_b.to(torch.float32) / (image_b.H - 1) - 1.0
-    samps_in_b_norm = 2.0 * samps_in_b.to(torch.float32) / (image_b.W - 1) - 1.0
+    lines_in_b_norm = 2.0 * lines_in_b.to(torch.float32) / (img_b.shape[0] - 1) - 1.0
+    samps_in_b_norm = 2.0 * samps_in_b.to(torch.float32) / (img_b.shape[1] - 1) - 1.0
     sample_coords = torch.stack([samps_in_b_norm,lines_in_b_norm],dim=-1).reshape(1,H,W,2)
-    input_img = torch.from_numpy(image_b.image).to(dtype=torch.float32,device=device)[None].permute(0,3,1,2) # 1,3,H,W
+    input_img = torch.from_numpy(img_b).to(dtype=torch.float32,device=device)[None].permute(0,3,1,2) # 1,3,H,W
     sampled_img = F.grid_sample(input_img,sample_coords,mode='bilinear',padding_mode='zeros',align_corners=True) # 1,3,H,W
     img_b = sampled_img[0].permute(1,2,0).cpu().numpy()
 

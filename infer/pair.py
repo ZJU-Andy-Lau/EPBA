@@ -372,7 +372,7 @@ class Solver():
         lines_in_b,samps_in_b = project_linesamp(rpc_a,rpc_b,
                                                  coords_flat_in_a[:,0],coords_flat_in_a[:,1],heights_flat)
         
-        min_line,max_line,min_samp,max_samp = int(lines_in_b.min()),int(lines_in_b.max()) + 1,int(samps_in_b.min()),int(samps_in_b.max()) + 1
+        min_line,max_line,min_samp,max_samp = int(max(lines_in_b.min(),0)),int(min(lines_in_b.max(),self.rs_image_b.H)) + 1,int(max(samps_in_b.min(),0)),int(min(samps_in_b.max(),self.rs_image_b.W)) + 1
         img_b = self.rs_image_b.image[min_line:max_line,min_samp:max_samp]
         lines_in_b -= min_line
         samps_in_b -= min_samp
@@ -387,9 +387,6 @@ class Solver():
 
         #棋盘格
         img_a_b = make_checkerboard(img_a,img_b)
-
-        # cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_a.png'),img_a)
-        # cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_b.png'),img_b)
         cv2.imwrite(os.path.join(self.configs['output_path'],f'{self.window_size}m_test_rpc_a_b.png'),img_a_b)
 
 
