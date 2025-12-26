@@ -228,15 +228,18 @@ class RSImage():
         all_dst_list = []
         
         for affine_mat in self.affine_list:
-            dst_grid = torch.mm(affine_mat.to(torch.float32), src_grid.to(torch.float32))
+            print(f'{affine_mat.cpu().numpy()}\n')
+            dst_grid = torch.mm(affine_mat.to(torch.float32), src_grid.to(torch.float32).clone())
             all_src_list.append(src_grid)
             all_dst_list.append(dst_grid) 
         
         X = torch.cat(all_src_list, dim=1)
         Y = torch.cat(all_dst_list, dim=1)
         solution = torch.linalg.lstsq(X.T, Y.T).solution
+        solution = solution.T
+        print(f"merged affine:\n{solution.cpu().numpy()}\n")
 
-        return solution.T
+        return solution
 
     def vis_checkpoints(self,ref_points:np.ndarray = None):
         """
