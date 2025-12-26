@@ -232,17 +232,15 @@ class RSImage():
             print(f'{affine_mat.cpu().numpy()}\n')
             dst_grid = torch.mm(affine_mat.to(torch.float32), src_grid.to(torch.float32).clone())
             print(dst_grid.shape)
-            all_src_list.append(src_grid)
+            all_src_list.append(src_grid[:2])
             all_dst_list.append(dst_grid) 
 
 
         
         X = torch.cat(all_src_list, dim=1).T # (N,2)
         Y = torch.cat(all_dst_list, dim=1).T # (N,2)
-        print(X.shape,Y.shape)
-        solution = solve_weighted_affine(X,Y)
-        # solution = torch.linalg.lstsq(X.T, Y.T).solution
-        # solution = solution.T
+        scores = torch.ones(len(X),device=X.device)
+        solution = solve_weighted_affine(X,Y,scores)
         print(f"merged affine:\n{solution.cpu().numpy()}\n")
 
         return solution
