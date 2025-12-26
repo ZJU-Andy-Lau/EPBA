@@ -251,9 +251,11 @@ def main(args):
                 # image.rpc.Merge_Adjust()
 
             if not images[0].tie_points is None:
+                ref_image = RSImage_Error_Check(ref_metas_all[0],device=args.device)
+                heights = ref_image.heights
                 all_distances = []
                 for i,j in itertools.combinations(range(len(images)),2):
-                    ref_points = images[i].get_ref_points()
+                    ref_points = images[i].get_ref_points(heights)
                     distances = images[j].check_error(ref_points)
                     all_distances.append(distances)
                     if distances.max() > 10.:
