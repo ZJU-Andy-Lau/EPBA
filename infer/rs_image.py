@@ -217,24 +217,29 @@ class RSImage():
             return None
         if len(self.affine_list) == 1:
             return self.affine_list[0]
-        rows = torch.arange(0, self.H, max(self.H // 256,1), dtype=torch.float32)
-        cols = torch.arange(0, self.W, max(self.W // 256,1), dtype=torch.float32)
+        rows = torch.arange(0, self.H, max(self.H // 32,1), dtype=torch.float32)
+        cols = torch.arange(0, self.W, max(self.W // 32,1), dtype=torch.float32)
         grid_row, grid_col = torch.meshgrid(rows, cols, indexing='ij')
         grid_row = grid_row.flatten()
         grid_col = grid_col.flatten()
         ones = torch.ones_like(grid_row)
-        src_grid = torch.stack([grid_row, grid_col, ones], dim=0)
+        src_grid = torch.stack([grid_row, grid_col, ones], dim=0) # 3,N
+        print(src_grid.shape)
         all_src_list = []
         all_dst_list = []
         
         for affine_mat in self.affine_list:
             print(f'{affine_mat.cpu().numpy()}\n')
             dst_grid = torch.mm(affine_mat.to(torch.float32), src_grid.to(torch.float32).clone())
+            print(dst_grid.shape)
             all_src_list.append(src_grid)
             all_dst_list.append(dst_grid) 
+
+
         
         X = torch.cat(all_src_list, dim=1).T # (N,2)
-        Y = torch.cat(all_dst_list, dim=1).T # (N,2
+        Y = torch.cat(all_dst_list, dim=1).T # (N,2)
+        print(X.shape,Y.shape)
         solution = solve_weighted_affine(X,Y)
         # solution = torch.linalg.lstsq(X.T, Y.T).solution
         # solution = solution.T
