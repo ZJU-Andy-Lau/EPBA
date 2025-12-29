@@ -131,7 +131,7 @@ class Solver():
         new_diags = []
         scores = []
         for window_pair in self.window_pairs:
-            new_diag,score = window_pair.quadsplit()
+            new_diag,score = window_pair.quadsplit(split_time=self.configs['quad_split_times'])
             new_diags.append(new_diag)
             scores.append(score)
             window_pair.clear()
