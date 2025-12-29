@@ -195,7 +195,7 @@ def main(args):
                 total_affine = adjust_image.merge_affines()
                 reporter.log(f"Affine Matrix of Image {adjust_image.id}\n{affine}\n")
                 adjust_image.rpc.Update_Adjust(total_affine)
-                local_results[adjust_image.id] = total_affine
+                local_results[adjust_image.id] = total_affine.detach().cpu()
 
                 reporter.update(current_task="Check Error", level="-", current_step="-")
                 if not adjust_image.tie_points is None:
