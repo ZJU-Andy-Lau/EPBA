@@ -8,6 +8,8 @@ from typing import List,Tuple
 import itertools
 import traceback # 新增导入
 import cv2
+import time
+import datetime
 
 
 import torch
@@ -81,6 +83,7 @@ def build_adj_ref_pair(args,adjust_image:RSImage,ref_image:RSImage, reporter) ->
         'min_window_size':args.min_window_size,
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
+        'quad_split_times':args.quad_split_times,
     }
     configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
     pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
@@ -94,6 +97,7 @@ def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
         'min_window_size':args.min_window_size,
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
+        'quad_split_times':args.quad_split_times,
     }
     pairs = []
     for i,j in itertools.combinations(range(images_num),2):
@@ -135,7 +139,7 @@ def main(args):
     world_size = int(os.environ["WORLD_SIZE"])
     local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
-    dist.init_process_group(backend="nccl")
+    dist.init_process_group(backend="nccl",timeout=datetime.timedelta(minutes=120))
     args.device = f"cuda:{local_rank}"
 
     # --- Monitor & Reporter Initialization ---
@@ -171,6 +175,8 @@ def main(args):
         
         local_results = {}
         reporter.update(current_task="Ready", progress=f"-", level="-", current_step="Ready")
+
+        model_time = 0
         
         if len(adjust_metas) > 0 and len(ref_metas) > 0:
             encoder,gru = load_models(args, reporter)
@@ -188,7 +194,12 @@ def main(args):
                     pair = build_adj_ref_pair(args,adjust_image,ref_image,reporter)
                     pairs.append(pair)
 
+                    torch.cuda.synchronize()
+                    start_time = time.perf_counter()
                     affine = pair.solve_affines(encoder,gru).detach().cpu()
+                    torch.cuda.synchronize()
+                    end_time = time.perf_counter()
+                    model_time += end_time - start_time
                     adjust_image.affine_list.append(affine)
 
                 reporter.update(current_task="Baking RPC", level="-")
@@ -224,6 +235,7 @@ def main(args):
                 
 
             reporter.update(current_task="Finished", progress=f"{len(adjust_metas)}/{len(adjust_metas)}", level="-", current_step="Cleanup")
+            reporter.log(f"model time: {model_time} s")
             del encoder
             del gru
             for pair in pairs:
@@ -327,6 +339,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_window_num', type=int, default=256)
 
     parser.add_argument('--min_cover_area_ratio', type=float, default=0.5)
+
+    parser.add_argument('--quad_split_times', type=int, default=1)
 
     #================================================================================
 

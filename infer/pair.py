@@ -26,7 +26,8 @@ default_configs = {
     'min_window_size':500,
     'max_window_size':8000,
     'min_area_ratio':0.5,
-    'output_path':'./results'
+    'output_path':'./results',
+    'quad_split_times':1,
 }
 
 class Pair():
@@ -411,43 +412,35 @@ class WindowPair():
         scores = torch.sqrt(confs_a * confs_b).mean()
         return scores.item()
 
-    def quadsplit(self):
+    def quadsplit(self,split_time = 1):
         """
         Return:
         new_diags: np.ndarray (4,2,2)
         scores: np.ndarray (4,)
         """
+        div_factor = 2 ** split_time
         tlx,tly = self.diag[0]
         brx,bry = self.diag[1]
-        mid_x = (tlx + brx) * 0.5
-        mid_y = (tly + bry) * 0.5
         H,W = self.window_a.confs.shape[-2:]
-        mid_row = H // 2
-        mid_col = W // 2
-        new_diags = np.array([
-            [
-                [tlx,tly],
-                [mid_x,mid_y]
-            ],
-            [
-                [mid_x,tly],
-                [brx,mid_y]
-            ],
-            [
-                [tlx,mid_y],
-                [mid_x,bry]
-            ],
-            [
-                [mid_x,mid_y],
-                [brx,bry]
-            ]
-        ])
-        scores = np.array([
-            self._get_score([0,0],[mid_row,mid_col]),
-            self._get_score([0,mid_col],[mid_row,W]),
-            self._get_score([mid_row,0],[H,mid_col]),
-            self._get_score([mid_row,mid_col],[H,W]),
-        ])
+
+        x_step = (brx - tlx) / div_factor
+        y_step = (bry - tly) / div_factor
+        r_step = int(H / div_factor)
+        c_step = int(W / div_factor)
+
+        new_tlx = np.arange(tlx,(brx - x_step) * (1.0 + 1e-6),x_step)
+        new_tly = np.arange(tly,(bry - y_step) * (1.0 + 1e-6),y_step)
+        new_tlr = np.arange(0,H - r_step,r_step).astype(int)
+        new_tlc = np.arange(0,W - c_step,c_step).astype(int)
+
+        tlxs,tlys = np.meshgrid(new_tlx,new_tly,indexing='xy')
+        new_tlxy = np.stack([tlxs,tlys],axis=-1).reshape(-1,2)
+        new_diags = np.stack([new_tlxy,new_tlxy + [x_step,y_step]],axis=-2)
+
+        tlrs,tlcs = np.meshgrid(new_tlr,new_tlc,indexing='ij')
+        new_tlrc = np.stack([tlrs,tlcs],axis=-1).reshape(-1,2)
+
+        scores = np.array([self._get_score(tlrc,tlrc + [r_step,c_step]) for tlrc in new_tlrc])
         scores_rank = np.argsort(-scores)
         weight = 1.0
         for i in scores_rank:
