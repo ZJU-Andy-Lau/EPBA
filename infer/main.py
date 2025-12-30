@@ -53,8 +53,11 @@ def init_random_seed(args):
 def load_images_meta(args, reporter) -> List[RSImageMeta]:
     reporter.update(current_step="Loading Meta")
     base_path = os.path.join(args.root, 'adjust_images')
-    select_img_idxs = [int(i) for i in args.select_imgs.split(',')]
     img_folders = sorted([d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))])
+    if args.select_imgs != '-1':
+        select_img_idxs = [int(i) for i in args.select_imgs.split(',')]
+    else:
+        select_img_idxs = range(len(img_folders))
     img_folders = [img_folders[i] for i in select_img_idxs] #按照字典序的idx
     metas = []
     for idx,folder in enumerate(img_folders):
@@ -86,6 +89,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
         'min_window_size':args.min_window_size,
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
+        'quad_split_times':args.quad_split_times,
     }
     pairs = []
     if pair_ids is None:
@@ -311,6 +315,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_window_num', type=int, default=256)
 
     parser.add_argument('--min_cover_area_ratio', type=float, default=0.5)
+
+    parser.add_argument('--quad_split_times', type=int, default=1)
 
     parser.add_argument('--solver',type=str,default='global')
 
