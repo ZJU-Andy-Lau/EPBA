@@ -166,7 +166,7 @@ def main(args):
         if rank == 0:
             metas = load_images_meta(args, reporter)
             pairs_ids_all = get_pairs(args,metas)
-            pairs_ids_chunks = partition_pairs(pairs_ids_all,world_size) # TODO:考虑pairs num < world size的情况
+            pairs_ids_chunks = partition_pairs(pairs_ids_all,world_size)
         
         #ddp同步metas
         reporter.update(current_step="Syncing Meta")
@@ -188,7 +188,7 @@ def main(args):
         if len(pairs_ids) > 0:
             image_ids = sorted(set(x for t in pairs_ids for x in t))
 
-            # reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
+            reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
 
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             pairs = build_pairs(args,images, reporter, pairs_ids)
