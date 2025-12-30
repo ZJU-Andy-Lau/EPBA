@@ -34,7 +34,7 @@ from torch.utils.data import Dataset,DataLoader,DistributedSampler
 from torchvision import transforms
 
 from model.encoder import Encoder
-from model.gru import GRUBlock
+from model.gru_mf import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,partition_pairs
