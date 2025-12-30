@@ -9,7 +9,7 @@ import os
 import cv2
 
 
-from infer.utils import warp_quads,create_grid_img,solve_weighted_affine
+from infer.utils import warp_quads,create_grid_img,solve_weighted_affine,find_intersection,get_polygon_centroid
 from shared.utils import project_mercator,mercator2lonlat,bilinear_interpolate,resample_from_quad
 from shared.visualize import make_checkerboard
 from shared.rpc import RPCModelParameterTorch,project_linesamp
@@ -353,11 +353,14 @@ class RSImage_Error_Check():
 
 def vis_registration(image_a:RSImage,image_b:RSImage,output_path:str,window_size = (2048,2048),device = 'cuda'):
     H,W = window_size
-    center_line,center_samp = image_a.H // 2,image_a.W // 2
+    # center_line,center_samp = image_a.H // 2,image_a.W // 2
+    polygon_corners = find_intersection(np.stack([image_a.corner_xys,image_b.corner_xys],axis=0))
+    centroid = get_polygon_centroid(polygon_corners)
+    center_line,center_samp = image_a.xy_to_sampline(centroid)
     diag = np.array([
             [center_line - H // 2, center_samp - W // 2],
             [center_line + H // 2, center_samp + W // 2]
-        ])
+        ]).astype(int)
     img_a = image_a.image[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
     heights = image_a.dem[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
     heights_flat = heights.reshape(-1) # H*W

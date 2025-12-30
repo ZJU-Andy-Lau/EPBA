@@ -277,6 +277,37 @@ def quadsplit_diags(diags:np.ndarray) -> np.ndarray:
     
     return new_diags
 
+def get_polygon_centroid(vertices):
+    """
+    输入: vertices - (N, 2) numpy array
+    输出: (x_centroid, y_centroid)
+    """
+    # 提取 x 和 y
+    x = vertices[:, 0]
+    y = vertices[:, 1]
+
+    # 利用 np.roll 将数组错位，方便计算 (x_i * y_{i+1})
+    # np.roll(arr, -1) 将数组向左滚动，最后一个元素移到第一个，模拟闭合多边形
+    x_next = np.roll(x, -1)
+    y_next = np.roll(y, -1)
+
+    # 计算公共项 (x_i * y_{i+1} - x_{i+1} * y_i)
+    cross_product = x * y_next - x_next * y
+    
+    # 计算有符号面积 A
+    # 注意：如果点是顺时针排列，面积可能为负，但不影响质心计算结果
+    area = 0.5 * np.sum(cross_product)
+    
+    # 避免除以零（即面积为0的情况）
+    if area == 0:
+        return np.mean(vertices, axis=0) # 退化为顶点平均值
+
+    # 计算质心坐标
+    cx = (1 / (6 * area)) * np.sum((x + x_next) * cross_product)
+    cy = (1 / (6 * area)) * np.sum((y + y_next) * cross_product)
+
+    return np.array([cx, cy])
+
 feats_type = Tuple[torch.Tensor,torch.Tensor,torch.Tensor]
 
 @torch.no_grad()

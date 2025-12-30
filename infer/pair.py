@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch,project_linesamp
 from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,quadsplit_diags,affine_xy_to_rowcol
+from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,get_polygon_centroid
 from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
 import shared.visualize as visualizer
@@ -350,16 +350,21 @@ class Solver():
         """
         if self.reporter:
             self.reporter.update(current_step="Visualizing")
+
         # 在rs_image_a中裁切中间的一块512
         H,W = 2048,2048
         rpc_a = deepcopy(self.rpc_a)
         rpc_b = deepcopy(self.rpc_b)
 
-        center_line,center_samp = self.rs_image_a.H // 2,self.rs_image_a.W // 2
+        polygon_corners = find_intersection(np.stack([self.rs_image_a.corner_xys,self.rs_image_b.corner_xys],axis=0))
+        centroid = get_polygon_centroid(polygon_corners)
+        center_line,center_samp = self.rs_image_a.xy_to_sampline(centroid,rpc=rpc_a)
+
+        # center_line,center_samp = self.rs_image_a.H // 2,self.rs_image_a.W // 2
         diag = np.array([
             [center_line - H // 2, center_samp - W // 2],
             [center_line + H // 2, center_samp + W // 2]
-        ])
+        ]).astype(int)
         img_a = self.rs_image_a.image[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
         heights = self.rs_image_a.dem[diag[0,0]:diag[1,0],diag[0,1]:diag[1,1]]
         heights_flat = heights.reshape(-1) # 512*512
