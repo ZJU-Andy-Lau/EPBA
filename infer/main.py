@@ -239,7 +239,7 @@ def main(args):
                 solver = GlobalAffineSolver(images=images,
                                         device='cpu',
                                         anchor_indices=[0],
-                                        max_iter=100,
+                                        max_iter=10,
                                         converge_tol=1e-6)
             else:
                 solver = TopologicalAffineSolver(images=images,
@@ -252,11 +252,7 @@ def main(args):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
                 image.rpc.Update_Adjust(M)
-                image.rpc.Merge_Adjust()
-            
-            reporter.update(current_step="Visualizing")
-            for i,j in itertools.combinations(range(len(images)),2):
-                vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
+                # image.rpc.Merge_Adjust()
             
             report = get_error_report(pairs)
             reporter.log("\n" + "--- Global Error Report (Summary) ---")
@@ -268,6 +264,10 @@ def main(args):
             reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
             reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
             reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
+
+            reporter.update(current_step="Visualizing")
+            for i,j in itertools.combinations(range(len(images)),2):
+                vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
             
     except Exception as e:
         error_msg = traceback.format_exc()
