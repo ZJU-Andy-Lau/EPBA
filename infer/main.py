@@ -239,7 +239,7 @@ def main(args):
                 solver = GlobalAffineSolver(images=images,
                                         device='cpu',
                                         anchor_indices=[0],
-                                        max_iter=10,
+                                        max_iter=args.solver_max_iter,
                                         converge_tol=1e-6)
             else:
                 solver = TopologicalAffineSolver(images=images,
@@ -321,6 +321,8 @@ if __name__ == '__main__':
     parser.add_argument('--solver',type=str,default='global')
 
     parser.add_argument('--solver_config_path', type=str, default='configs/global_solver_config.yaml')
+
+    parser.add_argument('--solver_max_iter', type=int, default=10)
 
     #================================================================================
 
