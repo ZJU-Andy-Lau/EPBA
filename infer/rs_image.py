@@ -26,10 +26,11 @@ class RSImageMeta():
         self.options = options
         self.root = root
         self.id = id
-        if os.path.exists(os.path.join(root,'dem.npy')):
-            self.dem = np.load(os.path.join(root,'dem.npy'),mmap_mode='r')
-        elif os.path.exists(os.path.join(root,'dem.tif')):
-            with rasterio.open(os.path.join(root,'dem.tif')) as f:
+        self.dem_name = 'dem.npy' if not options.usgs_dem else 'dem_usgs.npy'
+        if os.path.exists(os.path.join(root,self.dem_name)):
+            self.dem = np.load(os.path.join(root,self.dem_name),mmap_mode='r')
+        elif os.path.exists(os.path.join(root,self.dem_name)):
+            with rasterio.open(os.path.join(root,self.dem_name)) as f:
                 self.dem = f.read(1)
         else:
             raise ValueError(f"DEM not found in root:{root}")
@@ -79,6 +80,7 @@ class RSImage():
         self.options = meta.options
         self.root = meta.root
         self.id = meta.id
+        self.dem_name = meta.dem_name
         self.device = meta.device if device is None else device
         self.initialize()
     
@@ -94,10 +96,10 @@ class RSImage():
             
         # self.image = cv2.imread(os.path.join(self.root,'image.png'),cv2.IMREAD_GRAYSCALE)
         # self.image = np.stack([self.image] * 3,axis=-1)
-        if os.path.exists(os.path.join(self.root,'dem.npy')):
-            self.dem = np.load(os.path.join(self.root,'dem.npy'),mmap_mode='r')
-        elif os.path.exists(os.path.join(self.root,'dem.tif')):
-            with rasterio.open(os.path.join(self.root,'dem.tif')) as f:
+        if os.path.exists(os.path.join(self.root,self.dem_name)):
+            self.dem = np.load(os.path.join(self.root,self.dem_name),mmap_mode='r')
+        elif os.path.exists(os.path.join(self.root,self.dem_name)):
+            with rasterio.open(os.path.join(self.root,self.dem_name)) as f:
                 self.dem = f.read(1)
         else:
             raise ValueError(f"DEM not found in root:{self.root}")
@@ -294,13 +296,14 @@ class RSImage_Error_Check():
         self.options = meta.options
         self.root = meta.root
         self.id = meta.id
+        self.dem_name = meta.dem_name
         self.device = meta.device if device is None else device
         self.rpc = RPCModelParameterTorch()
         self.rpc.load_from_file(os.path.join(self.root,'rpc.txt'))
         self.rpc.to_gpu(self.device)
         self.tie_points_path = os.path.join(self.root,'tie_points.txt')
-        if os.path.exists(os.path.join(self.root,'dem.npy')):
-            self.dem = np.load(os.path.join(self.root,'dem.npy'),mmap_mode='r')
+        if os.path.exists(os.path.join(self.root,self.dem_name)):
+            self.dem = np.load(os.path.join(self.root,self.dem_name),mmap_mode='r')
         elif os.path.exists(os.path.join(self.root,'dem.tif')):
             with rasterio.open(os.path.join(self.root,'dem.tif')) as f:
                 self.dem = f.read(1)

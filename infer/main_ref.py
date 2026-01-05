@@ -360,6 +360,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--output_rpc',type=str2bool,default=False)
 
+    parser.add_argument('--usgs_dem',type=str2bool,default=False)
+
     #==============================================================================
 
 

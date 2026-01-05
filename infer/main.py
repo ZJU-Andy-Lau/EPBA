@@ -341,6 +341,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--random_seed',type=int,default=42)
 
+    parser.add_argument('--usgs_dem',type=str2bool,default=False)
+
     #==============================================================================
 
 
