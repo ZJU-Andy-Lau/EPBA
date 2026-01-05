@@ -222,9 +222,9 @@ def main(args):
                         reporter.log(f"Median Error: {report['median']:.4f} pix")
                         reporter.log(f"Max Error:    {report['max']:.4f} pix")
                         reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
-                        reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
-                        reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
-                        reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
+                        reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
+                        reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
+                        reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
                 else:
                     for pair in pairs:
                         try:
@@ -286,9 +286,9 @@ def main(args):
                 reporter.log(f"Median Error: {report['median']:.4f} pix")
                 reporter.log(f"Max Error:    {report['max']:.4f} pix")
                 reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
-                reporter.log(f"< 1.0 pix: {report['<1m_percent']:.2f} %")
-                reporter.log(f"< 3.0 pix: {report['<3m_percent']:.2f} %")
-                reporter.log(f"< 5.0 pix: {report['<5m_percent']:.2f} %")
+                reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
+                reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
+                reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
                 
             
     except Exception as e:

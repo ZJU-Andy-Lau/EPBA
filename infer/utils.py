@@ -581,9 +581,9 @@ def get_report_dict(all_distances:np.ndarray):
         'max': float(np.max(all_distances)),
         'rmse': float(np.sqrt(np.mean(all_distances**2))),
         'count': total_points,
-        '<1m_percent': float(((all_distances < 1.0).sum() / total_points) * 100),
-        '<3m_percent': float(((all_distances < 3.0).sum() / total_points) * 100),
-        '<5m_percent': float(((all_distances < 5.0).sum() / total_points) * 100),
+        '<1pix_percent': float(((all_distances < 1.0).sum() / total_points) * 100),
+        '<3pix_percent': float(((all_distances < 3.0).sum() / total_points) * 100),
+        '<5pix_percent': float(((all_distances < 5.0).sum() / total_points) * 100),
     }
     return report
 
