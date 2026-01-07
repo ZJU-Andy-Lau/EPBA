@@ -575,7 +575,6 @@ def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
 
 def get_report_dict(all_distances:np.ndarray):
     total_points = len(all_distances)
-    all_distances[all_distances > 5.0] = 5.1
     report = {
         'mean': float(np.mean(all_distances)),
         'median': float(np.median(all_distances)),
