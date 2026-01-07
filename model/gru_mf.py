@@ -152,7 +152,7 @@ class GRUBlock(nn.Module):
             self.gru = nn.GRUCell(input_size=hidden_dim, hidden_size=hidden_dim)
         else:
             self.gru = nn.Sequential(
-                nn.Conv2d(hidden_dim,hidden_dim,1,1,0),
+                nn.Linear(hidden_dim,hidden_dim),
                 nn.ReLU()
             )
 
