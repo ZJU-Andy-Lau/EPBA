@@ -20,7 +20,7 @@ if __name__ == '__main__':
 
     database = h5py.File(os.path.join(args.root,'train_data.h5'),'r')
     keys = list(database.keys())
-    selected_keys = keys[np.random.choice(len(keys),args.num,replace=False)]
+    selected_keys = [keys[i] for i in np.random.choice(len(keys),args.num,replace=False)]
 
     H,W = database[keys[0]]['images']['0'][:].shape[:2]
     dsize = (1024,1024)
