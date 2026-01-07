@@ -200,13 +200,16 @@ class CrossAttentionBlock(nn.Module):
 # 4. 双流 Adapter (Two-Stream Adapter)
 # --------------------------------------------------------
 class Adapter(nn.Module):
-    def __init__(self, input_dim, embed_dim=256, ctx_dim=128, num_layers=2, num_heads=4):
+    def __init__(self, input_dim, embed_dim=256, ctx_dim=128, num_layers=2, num_heads=4, use_adapter=True, use_conf=True):
         """
         num_layers: 交互层数。每一层包含一次 Self Attention 和一次 Cross Attention。
         """
         super().__init__()
         self.embed_dim = embed_dim
-        
+        self.ctx_dim = ctx_dim
+        self.use_adapter = use_adapter
+        self.use_conf = use_conf
+
         # 特征融合器 (共享)
         self.fuser = nn.Sequential(
             nn.Conv2d(input_dim, input_dim // 4, 1, 1, 0),
@@ -216,27 +219,30 @@ class Adapter(nn.Module):
             nn.Conv2d(embed_dim, embed_dim, 1, 1, 0),
         )
 
-        # RoPE 生成器
-        self.rope = Rope(d_model=embed_dim // num_heads)
-        
-        # 上下文和置信度头 (在交互前生成，保持原始语义)
-        self.ctx_proj = nn.Conv2d(embed_dim, ctx_dim, 1)
-        self.conf_head = nn.Sequential(
-            nn.Conv2d(embed_dim, embed_dim // 2, 3, 1, 1),
-            nn.ReLU(),
-            nn.Conv2d(embed_dim // 2, embed_dim // 4, 1, 1, 0),
-            nn.ReLU(),
-            nn.Conv2d(embed_dim // 4, 1, 1, 1, 0),
-            nn.Sigmoid()
-        )
-        
-        # 交互层 (Interleaved Self & Cross Attention)
-        self.layers = nn.ModuleList()
-        for _ in range(num_layers):
-            self.layers.append(nn.ModuleDict({
-                'self': SelfAttentionBlock(embed_dim, num_heads),
-                'cross': CrossAttentionBlock(embed_dim, num_heads)
-            }))
+        if self.use_adapter:
+            # RoPE 生成器
+            self.rope = Rope(d_model=embed_dim // num_heads)
+            
+            # 上下文和置信度头 (在交互前生成，保持原始语义)
+            self.ctx_proj = nn.Conv2d(embed_dim, ctx_dim, 1)
+            
+            # 交互层 (Interleaved Self & Cross Attention)
+            self.layers = nn.ModuleList()
+            for _ in range(num_layers):
+                self.layers.append(nn.ModuleDict({
+                    'self': SelfAttentionBlock(embed_dim, num_heads),
+                    'cross': CrossAttentionBlock(embed_dim, num_heads)
+                }))
+
+        if self.use_conf:
+            self.conf_head = nn.Sequential(
+                nn.Conv2d(embed_dim, embed_dim // 2, 3, 1, 1),
+                nn.ReLU(),
+                nn.Conv2d(embed_dim // 2, embed_dim // 4, 1, 1, 0),
+                nn.ReLU(),
+                nn.Conv2d(embed_dim // 4, 1, 1, 1, 0),
+                nn.Sigmoid()
+            )
 
     def forward(self, feat0, feat1):
         """
@@ -249,43 +255,53 @@ class Adapter(nn.Module):
         f1 = self.fuser(feat1)
         
         # 2. 提取 Context 和 Confidence (Pre-interaction)
-        # 这一步很重要：保持 Context 的纯洁性，不混入另一张图的信息
-        ctx0 = self.ctx_proj(f0)
-        conf0 = self.conf_head(f0)
         
-        ctx1 = self.ctx_proj(f1)
-        conf1 = self.conf_head(f1)
+        if self.use_conf:
+            conf0 = self.conf_head(f0)
+            conf1 = self.conf_head(f1)
+        else:
+            conf0 = torch.ones((feat0.shape[0],1,feat0.shape[2],feat0.shape[3]),dtype=feat0.dtype,device=feat0.device).detach()
+            conf1 = torch.ones((feat1.shape[0],1,feat1.shape[2],feat1.shape[3]),dtype=feat1.dtype,device=feat1.device).detach()
         
-        # 3. 准备 Transformer 输入
-        B, D, H, W = f0.shape
-        
-        # Flatten: [B, D, H, W] -> [B, H*W, D]
-        f0_flat = f0.flatten(2).transpose(1, 2)
-        f1_flat = f1.flatten(2).transpose(1, 2)
-        
-        # 生成 RoPE
-        rope_cos, rope_sin = self.rope(f0)
-        
-        # 4. 交互循环
-        for i, layer in enumerate(self.layers):
-            # --- Self Attention ---
-            f0_flat = layer['self'](f0_flat, rope_cos, rope_sin)
-            f1_flat = layer['self'](f1_flat, rope_cos, rope_sin)
+        if self.use_adapter:
+            ctx0 = self.ctx_proj(f0)
+            ctx1 = self.ctx_proj(f1)
             
-            # --- Cross Attention (Bidirectional) ---
-            # f0 从 f1 获取信息
-            f0_new = layer['cross'](f0_flat, f1_flat, rope_cos, rope_sin)
-            # f1 从 f0 获取信息
-            f1_new = layer['cross'](f1_flat, f0_flat, rope_cos, rope_sin)
             
-            f0_flat, f1_flat = f0_new, f1_new
+            # 3. 准备 Transformer 输入
+            B, D, H, W = f0.shape
             
-        # 5. 恢复形状并归一化
-        match0 = f0_flat.transpose(1, 2).view(B, D, H, W)
-        match1 = f1_flat.transpose(1, 2).view(B, D, H, W)
+            # Flatten: [B, D, H, W] -> [B, H*W, D]
+            f0_flat = f0.flatten(2).transpose(1, 2)
+            f1_flat = f1.flatten(2).transpose(1, 2)
+            
+            # 生成 RoPE
+            rope_cos, rope_sin = self.rope(f0)
+            
+            # 4. 交互循环
+            for i, layer in enumerate(self.layers):
+                # --- Self Attention ---
+                f0_flat = layer['self'](f0_flat, rope_cos, rope_sin)
+                f1_flat = layer['self'](f1_flat, rope_cos, rope_sin)
+                
+                # --- Cross Attention (Bidirectional) ---
+                # f0 从 f1 获取信息
+                f0_new = layer['cross'](f0_flat, f1_flat, rope_cos, rope_sin)
+                # f1 从 f0 获取信息
+                f1_new = layer['cross'](f1_flat, f0_flat, rope_cos, rope_sin)
+                
+                f0_flat, f1_flat = f0_new, f1_new
+                
+            # 5. 恢复形状并归一化
+            match0 = f0_flat.transpose(1, 2).view(B, D, H, W)
+            match1 = f1_flat.transpose(1, 2).view(B, D, H, W)
+            
+            match0 = F.normalize(match0, p=2, dim=1)
+            match1 = F.normalize(match1, p=2, dim=1)
         
-        match0 = F.normalize(match0, p=2, dim=1)
-        match1 = F.normalize(match1, p=2, dim=1)
+        else:
+            match0,match1 = feat0.detach(),feat1.detach()
+            ctx0,ctx1 = feat0[:,:self.ctx_dim].detach(),feat1[:,:self.ctx_dim].detach()
         
         return match0, ctx0, conf0, match1, ctx1, conf1
 
@@ -307,7 +323,7 @@ class Encoder(nn.Module):
 
         # 输入通道数 = DINO每层通道 * 层数
         input_channels = 1024 * len(layers) 
-        self.adapter = Adapter(input_dim=input_channels, embed_dim=embed_dim, ctx_dim=ctx_dim)
+        self.adapter = Adapter(input_dim=input_channels, embed_dim=embed_dim, ctx_dim=ctx_dim, use_adapter=use_adapter,use_conf=use_conf)
 
         self.use_adapter = use_adapter
         self.use_conf = use_conf
@@ -335,14 +351,7 @@ class Encoder(nn.Module):
         feat0, feat1 = feats_all.chunk(2, dim=0)
         
         # 2. Adapter 交互提取
-        if self.use_adapter or self.use_conf:
-            m0, c0, conf0, m1, c1, conf1 = self.adapter(feat0, feat1)
-        if not self.use_adapter:
-            m0,m1 = feat0.detach(),feat1.detach()
-            c0,c1 = feat0[:,:self.ctx_dim].detach(),feat1[:,:self.ctx_dim].detach()
-        if not self.use_conf:
-            conf0 = torch.ones((feat0.shape[0],1,feat0.shape[2],feat0.shape[3]),dtype=feat0.dtype,device=feat0.device).detach()
-            conf1 = torch.ones((feat1.shape[0],1,feat1.shape[2],feat1.shape[3]),dtype=feat1.dtype,device=feat1.device).detach()
+        m0, c0, conf0, m1, c1, conf1 = self.adapter(feat0, feat1)
         
         # 返回两个元组
         return (m0, c0, conf0), (m1, c1, conf1)
