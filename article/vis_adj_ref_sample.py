@@ -13,6 +13,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, required=True)
     parser.add_argument('--output_path',type=str,default='./results/vis_adj_ref_sample')
     parser.add_argument('--num',type=int,default=10)
+    parser.add_argument('--key',type=str,default=None)
 
     args = parser.parse_args()
 
@@ -20,7 +21,11 @@ if __name__ == '__main__':
 
     database = h5py.File(os.path.join(args.root,'train_data.h5'),'r')
     keys = list(database.keys())
-    selected_keys = [keys[i] for i in np.random.choice(len(keys),args.num,replace=False)]
+    if args.key is None:
+        selected_keys = [keys[i] for i in np.random.choice(len(keys),args.num,replace=False)]
+    else:
+        selected_keys = [args.key]
+        args.num = 1
 
     H,W = database[keys[0]]['images']['0'][:].shape[:2]
     dsize = (1024,1024)
@@ -33,6 +38,7 @@ if __name__ == '__main__':
         img2_full_aff = cv2.warpAffine(img2_full, M_a_b_xy, (W, H), flags=cv2.INTER_LINEAR)
         img1 = cv2.warpPerspective(img1_full, H_as_xy[i], dsize, flags=cv2.INTER_LINEAR)
         img2 = cv2.warpPerspective(img2_full_aff, H_bs_xy[i], dsize, flags=cv2.INTER_LINEAR)
+        img2 = (img2 * 0.7).astype(np.uint8)
         cv2.imwrite(os.path.join(args.output_path,f'{key}_1.png'),img1)
         cv2.imwrite(os.path.join(args.output_path,f'{key}_2.png'),img2)
         img_1_warp = warp_image_by_global_affine(img1,xy2rc_mat(H_as_xy[i]),xy2rc_mat(H_bs_xy[i]),xy2rc_mat(M_a_b_xy),dsize)
