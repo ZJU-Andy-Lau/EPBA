@@ -11,7 +11,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--root', type=str, required=True)
-    parser.add_argument('--output_path',type=str,default='./result/vis_adj_ref_sample')
+    parser.add_argument('--output_path',type=str,default='./results/vis_adj_ref_sample')
     parser.add_argument('--num',type=int,default=10)
 
     args = parser.parse_args()
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     H,W = database[keys[0]]['images']['0'][:].shape[:2]
     dsize = (1024,1024)
 
-    H_as_xy, H_bs_xy, M_a_b_xy = generate_affine_matrices((H,W),(int(H*0.5),int(H*0.7)),dsize,args.num)
+    H_as_xy, H_bs_xy, M_a_b_xy = generate_affine_matrices((H,W),(256,1024),dsize,args.num)
 
     for i,key in enumerate(tqdm(selected_keys)):
         img1_full = database[key]['images']['0'][:]
