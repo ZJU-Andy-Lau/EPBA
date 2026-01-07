@@ -367,7 +367,7 @@ class Encoder(nn.Module):
         return parameters
     
     def load_adapter(self, adapter_path: str):
-        self.adapter.load_state_dict({k.replace("module.", ""): v for k, v in torch.load(adapter_path, map_location='cpu').items()}, strict=True)
+        self.adapter.load_state_dict({k.replace("module.", ""): v for k, v in torch.load(adapter_path, map_location='cpu').items()}, strict=False)
     
     def save_adapter(self, output_path: str):
         state_dict = {k: v.detach().cpu() for k, v in self.adapter.state_dict().items()}

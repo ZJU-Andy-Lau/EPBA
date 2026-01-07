@@ -112,7 +112,7 @@ def check_invalid_tensors(tensor_list: List[torch.Tensor],note = ""):
 def load_model_state_dict(model:nn.Module,state_dict_path:str):
     state_dict = torch.load(state_dict_path,map_location='cpu')
     state_dict = {k.replace("module.",""):v for k,v in state_dict.items()}
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict,strict=False)
     return model
 
 def crop_rect_from_image(image, rect_points, size):
