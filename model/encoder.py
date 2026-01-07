@@ -293,7 +293,7 @@ class Adapter(nn.Module):
 # 5. Siamese Encoder (主入口)
 # --------------------------------------------------------
 class Encoder(nn.Module):
-    def __init__(self, dino_weight_path, embed_dim=256, ctx_dim=128, layers=[5, 11, 17, 23], verbose=1):
+    def __init__(self, dino_weight_path, embed_dim=256, ctx_dim=128, layers=[5, 11, 17, 23],use_adapter = True, use_conf = True, verbose=1):
         super().__init__()
         self.verbose = verbose
         self.layers = layers
@@ -308,6 +308,9 @@ class Encoder(nn.Module):
         # 输入通道数 = DINO每层通道 * 层数
         input_channels = 1024 * len(layers) 
         self.adapter = Adapter(input_dim=input_channels, embed_dim=embed_dim, ctx_dim=ctx_dim)
+
+        self.use_adapter = use_adapter
+        self.use_conf = use_conf
 
     def _extract_dino_features(self, x):
         """
@@ -332,7 +335,14 @@ class Encoder(nn.Module):
         feat0, feat1 = feats_all.chunk(2, dim=0)
         
         # 2. Adapter 交互提取
-        m0, c0, conf0, m1, c1, conf1 = self.adapter(feat0, feat1)
+        if self.use_adapter or self.use_conf:
+            m0, c0, conf0, m1, c1, conf1 = self.adapter(feat0, feat1)
+        if not self.use_adapter:
+            m0,m1 = feat0,feat1
+            c0,c1 = feat0[:,:self.ctx_dim],feat1[:,:self.ctx_dim]
+        if not self.use_conf:
+            conf0 = torch.ones((feat0.shape[0],1,feat0.shape[2],feat0.shape[3]),dtype=feat0.dtype,device=feat0.device)
+            conf1 = torch.ones((feat1.shape[0],1,feat1.shape[2],feat1.shape[3]),dtype=feat1.dtype,device=feat1.device)
         
         # 返回两个元组
         return (m0, c0, conf0), (m1, c1, conf1)

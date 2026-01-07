@@ -102,7 +102,9 @@ class GRUBlock(nn.Module):
                  corr_levels=2, 
                  corr_radius=4, 
                  context_dim=128, 
-                 hidden_dim=128):
+                 hidden_dim=128,
+                 use_mtf=True,
+                 use_gru=True):
         """
         重构后的 GRU 迭代更新模块 (Transformer-based)
         """
@@ -111,6 +113,8 @@ class GRUBlock(nn.Module):
         self.corr_radius = corr_radius
         self.context_dim = context_dim
         self.hidden_dim = hidden_dim
+        self.use_mtf = use_mtf
+        self.use_gru = use_gru
 
         # 1. 计算输入通道数
         self.corr_dim = corr_levels * (2 * corr_radius + 1)**2
@@ -121,15 +125,38 @@ class GRUBlock(nn.Module):
         input_dim = self.corr_dim + self.offset_dim + self.context_dim + self.pos_dim + self.conf_dim
         
         # 2. 运动 Transformer (替换原有的 CNN Encoder)
-        self.encoder = MotionTransformer(
-            input_dim=input_dim, 
-            embed_dim=hidden_dim, 
-            num_layers=4, 
-            num_heads=8
-        )
+        if self.use_mtf:
+            self.encoder = MotionTransformer(
+                input_dim=input_dim, 
+                embed_dim=hidden_dim, 
+                num_layers=4, 
+                num_heads=8
+            )
+        else:
+            self.encoder = nn.Sequential(
+                # Layer 1: [B, input_dim, H, W] -> [B, 256, H/2, W/2]
+                nn.Conv2d(input_dim, 512, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+                
+                # Layer 2: [B, 256, H/2, W/2] -> [B, 192, H/4, W/4]
+                nn.Conv2d(512, 256, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+                
+                # Layer 3: [B, 192, H/4, W/4] -> [B, 128, H/8, W/8]
+                nn.Conv2d(256, hidden_dim, kernel_size=3, stride=2, padding=1),
+                nn.ReLU()
+            )
         
         # 3. GRU 单元
-        self.gru = nn.GRUCell(input_size=hidden_dim, hidden_size=hidden_dim)
+        if self.use_gru:
+            self.gru = nn.GRUCell(input_size=hidden_dim, hidden_size=hidden_dim)
+        else:
+            self.gru = nn.Sequential(
+                nn.Conv2d(hidden_dim,hidden_dim,1,1,0),
+                nn.ReLU()
+            )
+
+        
         
         # 4. 解耦仿射头 (输入维度同步升级)
         self.head_trans = nn.Linear(hidden_dim, 2)
@@ -171,7 +198,10 @@ class GRUBlock(nn.Module):
         x_global = self.encoder(x)
         
         # 4. GRU 状态更新
-        new_hidden_state = self.gru(x_global, hidden_state)
+        if self.use_gru:
+            new_hidden_state = self.gru(x_global, hidden_state)
+        else:
+            new_hidden_state = self.gru(x_global)
         
         # 5. 参数预测与缩放
         raw_trans = self.head_trans(new_hidden_state)   
