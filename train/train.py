@@ -88,8 +88,8 @@ def load_data(args):
 def load_models(args):
     pprint("Loading Models")
     
-    encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128)
-    gru = GRUBlock(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128)
+    encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128,use_adapter=args.use_adapter,use_conf=args.use_conf)
+    gru = GRUBlock(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128,use_gru=args.use_gru,use_mtf=args.use_mtf)
     ctx_decoder = ContextDecoder(ctx_dim=128)
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
@@ -496,6 +496,10 @@ if __name__ == '__main__':
     parser.add_argument('--lr_gru_min',type=float,default=1e-7)
     parser.add_argument('--lr_gru_max',type=float,default=1e-3) 
     parser.add_argument('--min_loss',type=float,default=1e8)
+    parser.add_argument('--use_adapter',type=str2bool,default=True)
+    parser.add_argument('--use_conf',type=str2bool,default=True)
+    parser.add_argument('--use_gru',type=str2bool,default=True)
+    parser.add_argument('--use_mtf',type=str2bool,default=True)
     parser.add_argument('--log_prefix',type=str,default='')
     parser.add_argument("--local_rank", default=os.getenv('LOCAL_RANK', -1), type=int)
 

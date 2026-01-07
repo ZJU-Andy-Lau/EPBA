@@ -338,11 +338,11 @@ class Encoder(nn.Module):
         if self.use_adapter or self.use_conf:
             m0, c0, conf0, m1, c1, conf1 = self.adapter(feat0, feat1)
         if not self.use_adapter:
-            m0,m1 = feat0,feat1
-            c0,c1 = feat0[:,:self.ctx_dim],feat1[:,:self.ctx_dim]
+            m0,m1 = feat0.detach(),feat1.detach()
+            c0,c1 = feat0[:,:self.ctx_dim].detach(),feat1[:,:self.ctx_dim].detach()
         if not self.use_conf:
-            conf0 = torch.ones((feat0.shape[0],1,feat0.shape[2],feat0.shape[3]),dtype=feat0.dtype,device=feat0.device)
-            conf1 = torch.ones((feat1.shape[0],1,feat1.shape[2],feat1.shape[3]),dtype=feat1.dtype,device=feat1.device)
+            conf0 = torch.ones((feat0.shape[0],1,feat0.shape[2],feat0.shape[3]),dtype=feat0.dtype,device=feat0.device).detach()
+            conf1 = torch.ones((feat1.shape[0],1,feat1.shape[2],feat1.shape[3]),dtype=feat1.dtype,device=feat1.device).detach()
         
         # 返回两个元组
         return (m0, c0, conf0), (m1, c1, conf1)
