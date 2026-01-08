@@ -334,8 +334,6 @@ if __name__ == '__main__':
     parser.add_argument('--use_adapter',type=str2bool,default=True)
 
     parser.add_argument('--use_conf',type=str2bool,default=True)
-
-    parser.add_argument('--use_gru',type=str2bool,default=True)
     
     parser.add_argument('--use_mtf',type=str2bool,default=True)
 
