@@ -18,6 +18,7 @@ import torch.distributed as dist
 
 from model.encoder import Encoder
 from model.gru_mf import GRUBlock
+from model.predictor import Predictor
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
 from pair import Pair
@@ -120,11 +121,10 @@ def load_models(args, reporter):
     
     encoder.load_adapter(args.adapter_path)
     
-    gru = GRUBlock(corr_levels=model_configs['gru']['corr_levels'],
+    gru = Predictor(corr_levels=model_configs['gru']['corr_levels'],
                    corr_radius=model_configs['gru']['corr_radius'],
                    context_dim=model_configs['gru']['ctx_dim'],
                    hidden_dim=model_configs['gru']['hidden_dim'],
-                   use_gru=args.use_gru,
                    use_mtf=args.use_mtf)
     
     load_model_state_dict(gru,args.gru_path)

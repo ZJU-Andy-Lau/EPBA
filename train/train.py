@@ -32,6 +32,7 @@ from torchvision import transforms
 from load_data import TrainDataset, ImageSampler
 from model.encoder import Encoder
 from model.gru_mf import GRUBlock
+from model.predictor import Predictor
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
@@ -89,7 +90,7 @@ def load_models(args):
     pprint("Loading Models")
     
     encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128,use_adapter=args.use_adapter,use_conf=args.use_conf)
-    gru = GRUBlock(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128,use_gru=args.use_gru,use_mtf=args.use_mtf)
+    gru = Predictor(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128,use_gru=args.use_gru,use_mtf=args.use_mtf)
     ctx_decoder = ContextDecoder(ctx_dim=128)
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
@@ -126,7 +127,7 @@ def load_models(args):
     
     return encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer
 
-def get_loss(args,encoder:Encoder,gru:GRUBlock,ctx_decoder:ContextDecoder,data,loss_funcs:Loss,epoch,get_debuf_info = False):
+def get_loss(args,encoder:Encoder,gru:Predictor,ctx_decoder:ContextDecoder,data,loss_funcs:Loss,epoch,get_debuf_info = False):
     imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b = data
     imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(device = args.device,dtype = torch.float32) for i in [imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b]]
 

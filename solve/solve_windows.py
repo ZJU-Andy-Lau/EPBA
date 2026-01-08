@@ -8,6 +8,7 @@ import time
 
 from model.encoder import Encoder
 from model.gru import GRUBlock
+from model.predictor import Predictor
 from model.cost_volume import CostVolume
 from shared.rpc import RPCModelParameterTorch,project_linesamp
 from shared.utils import debug_print,check_invalid_tensors,avg_downsample
@@ -16,7 +17,7 @@ from criterion.utils import merge_affine
 
 class WindowSolver():
     def __init__(self,B,H,W,
-                 gru:GRUBlock,
+                 gru:Predictor,
                  feats_a,feats_b,
                  H_as:torch.Tensor,H_bs:torch.Tensor,
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
@@ -376,7 +377,6 @@ class WindowSolver():
         """
         返回 preds = [delta_Ms_0, delta_Ms_1, ... , delta_Ms_N]  (B,steps,2,3)
         """
-        hidden_state = torch.zeros((self.B,self.gru_access.hidden_dim),dtype=self.ctx_feats_a.dtype,device=self.device)
         preds = []
         vis_dict = {}
 
@@ -405,13 +405,12 @@ class WindowSolver():
                     )
 
                 # 4. GRU 预测局部仿射 (输入新增 pos_features)
-                delta_affines_local, hidden_state = self.gru(
+                delta_affines_local = self.gru(
                     corr_simi_ab,
                     corr_offset_ab,
                     self.ctx_feats_a,
                     pos_features_ab, # [新增]
-                    self.confs_a.detach(),
-                    hidden_state
+                    self.confs_a.detach()
                 )
                 
                 # 5. 反归一化局部平移 (恢复物理尺度)
@@ -441,13 +440,12 @@ class WindowSolver():
                 pos_features_ba = self.get_position_features(anchor_coords_ba, centroid_ba, self.norm_factors_b)
 
                 # 4. GRU 预测
-                delta_affines_local, hidden_state = self.gru(
+                delta_affines_local = self.gru(
                     corr_simi_ba,
                     corr_offset_ba,
                     self.ctx_feats_b,
                     pos_features_ba, # [新增]
-                    self.confs_b.detach(),
-                    hidden_state
+                    self.confs_b.detach()
                 )
                 
                 # 5. 反归一化
