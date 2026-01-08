@@ -125,15 +125,11 @@ class Predictor(nn.Module):
         else:
             self.encoder = nn.Sequential(
                 # Layer 1: [B, input_dim, H, W] -> [B, 256, H/2, W/2]
-                nn.Conv2d(input_dim, 512, kernel_size=3, stride=2, padding=1),
+                nn.Conv2d(input_dim, 512, kernel_size=1, stride=1, padding=0),
                 nn.ReLU(),
                 
-                # Layer 2: [B, 256, H/2, W/2] -> [B, 192, H/4, W/4]
-                nn.Conv2d(512, 256, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
-                
-                # Layer 3: [B, 192, H/4, W/4] -> [B, 128, H/8, W/8]
-                nn.Conv2d(256, hidden_dim, kernel_size=3, stride=2, padding=1),
+                # Layer 2: [B, 192, H/4, W/4] -> [B, 128, H/8, W/8]
+                nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=1),
                 nn.ReLU()
             )
         
