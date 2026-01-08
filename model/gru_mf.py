@@ -196,6 +196,10 @@ class GRUBlock(nn.Module):
         # 3. 运动编码 (Transformer 提取全局特征)
         # x_global: [B, hidden_dim]
         x_global = self.encoder(x)
+
+        if not self.use_mtf:
+            x_global = F.adaptive_avg_pool2d(x_global,(1,1))
+            x_global = x_global.view(corr_features.shape[0],-1)
         
         # 4. GRU 状态更新
         if self.use_gru:
