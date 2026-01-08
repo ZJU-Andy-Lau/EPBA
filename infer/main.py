@@ -120,14 +120,18 @@ def load_models(args, reporter):
 
     encoder = Encoder(dino_weight_path=args.dino_path,
                       embed_dim=model_configs['encoder']['embed_dim'],
-                      ctx_dim=model_configs['encoder']['ctx_dim'])
+                      ctx_dim=model_configs['encoder']['ctx_dim'],
+                      use_adapter=args.use_adapter,
+                      use_conf=args.use_conf)
     
     encoder.load_adapter(args.adapter_path)
     
     gru = GRUBlock(corr_levels=model_configs['gru']['corr_levels'],
                    corr_radius=model_configs['gru']['corr_radius'],
                    context_dim=model_configs['gru']['ctx_dim'],
-                   hidden_dim=model_configs['gru']['hidden_dim'])
+                   hidden_dim=model_configs['gru']['hidden_dim'],
+                   use_gru=args.use_gru,
+                   use_mtf=args.use_mtf)
     
     load_model_state_dict(gru,args.gru_path)
     
@@ -302,6 +306,14 @@ if __name__ == '__main__':
     parser.add_argument('--gru_path', type=str, default='weights/gru.pth')
 
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
+
+    parser.add_argument('--use_adapter',type=str2bool,default=True)
+
+    parser.add_argument('--use_conf',type=str2bool,default=True)
+
+    parser.add_argument('--use_gru',type=str2bool,default=True)
+
+    parser.add_argument('--use_mtf',type=str2bool,default=True)
 
     #==============================================================================
 
