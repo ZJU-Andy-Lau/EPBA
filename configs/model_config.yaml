@@ -8,4 +8,4 @@ gru:
   corr_radius: 4
   ctx_dim: 128
   hidden_dim: 128
-  iter_num: 10
+  iter_num: 1
