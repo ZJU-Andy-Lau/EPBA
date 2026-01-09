@@ -136,7 +136,8 @@ def load_models(args, reporter):
     
     load_model_state_dict(gru,args.gru_path)
     
-    args.gru_iter_num = model_configs['gru']['iter_num']
+    if args.gru_iter_num is None:
+        args.gru_iter_num = model_configs['gru']['iter_num']
     
     encoder = encoder.to(args.device).eval().half()
     gru = gru.to(args.device).eval()
@@ -307,6 +308,8 @@ if __name__ == '__main__':
     parser.add_argument('--gru_path', type=str, default='weights/gru.pth')
 
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
+
+    parser.add_argument('--gru_iter_num', type=int, default=None)
 
     parser.add_argument('--use_adapter',type=str2bool,default=True)
 
