@@ -85,6 +85,7 @@ def build_adj_ref_pair(args,adjust_image:RSImage,ref_image:RSImage, reporter) ->
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
+        'iter_num':args.gru_iter_num,
     }
     configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
     pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
@@ -99,6 +100,7 @@ def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
+        'iter_num':args.gru_iter_num,
     }
     pairs = []
     for i,j in itertools.combinations(range(images_num),2):

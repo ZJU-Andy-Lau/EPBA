@@ -28,6 +28,7 @@ default_configs = {
     'min_area_ratio':0.5,
     'output_path':'./results',
     'quad_split_times':1,
+    'iter_num':10,
 }
 
 class Pair():
@@ -270,7 +271,8 @@ class Solver():
                               H_as=Hs_a,H_bs=Hs_b,
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                               height=dems_a,
-                              test_imgs_a=imgs_a,test_imgs_b=imgs_b)
+                              test_imgs_a=imgs_a,test_imgs_b=imgs_b,
+                              gru_max_iter=self.configs['iter_num'])
         preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b

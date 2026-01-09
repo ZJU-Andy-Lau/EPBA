@@ -91,6 +91,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
+        'iter_num':args.gru_iter_num,
     }
     pairs = []
     if pair_ids is None:
