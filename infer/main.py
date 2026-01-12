@@ -136,6 +136,7 @@ def load_models(args, reporter):
     
     load_model_state_dict(gru,args.gru_path)
     
+    reporter.log(f"iter_num:{args.gru_iter_num}")
     if args.gru_iter_num is None:
         args.gru_iter_num = model_configs['gru']['iter_num']
     
