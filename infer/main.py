@@ -135,11 +135,9 @@ def load_models(args, reporter):
                    use_mtf=args.use_mtf)
     
     load_model_state_dict(gru,args.gru_path)
-    
-    reporter.log(f"iter_num:{args.gru_iter_num}")
+
     if args.gru_iter_num is None:
         args.gru_iter_num = model_configs['gru']['iter_num']
-    reporter.log(f"iter_num_af:{args.gru_iter_num} \t cfg:{model_configs['gru']['iter_num']}")
     
     encoder = encoder.to(args.device).eval().half()
     gru = gru.to(args.device).eval()
@@ -198,14 +196,14 @@ def main(args):
         reporter.update(current_task="Ready", progress=f"0/{total_pairs}", level="-", current_step="Ready")
 
         if len(pairs_ids) > 0:
+            encoder,gru = load_models(args, reporter)
             image_ids = sorted(set(x for t in pairs_ids for x in t))
 
             reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
 
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             pairs = build_pairs(args,images, reporter, pairs_ids)
-            encoder,gru = load_models(args, reporter)
-
+            
             for idx, pair in enumerate(pairs):
                 # Update Task info
                 reporter.update(progress=f"{idx+1}/{total_pairs}")
