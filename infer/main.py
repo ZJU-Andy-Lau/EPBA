@@ -258,6 +258,9 @@ def main(args):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
                 image.rpc.Update_Adjust(M)
+                if args.output_rpc:
+                    image.rpc.Merge_Adjust()
+                    image.rpc.save_rpc_to_file(os.path.join(args.output_path,f"{image.root.replace('/','_')}_rpc.txt"))
                 # image.rpc.Merge_Adjust()
             
             report = get_error_report(pairs)
@@ -358,6 +361,8 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_id', type=str, default=None)
 
     parser.add_argument('--random_seed',type=int,default=42)
+
+    parser.add_argument('--output_rpc',type=str2bool,default=False)
 
     parser.add_argument('--usgs_dem',type=str2bool,default=False)
 
