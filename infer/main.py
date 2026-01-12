@@ -139,6 +139,7 @@ def load_models(args, reporter):
     reporter.log(f"iter_num:{args.gru_iter_num}")
     if args.gru_iter_num is None:
         args.gru_iter_num = model_configs['gru']['iter_num']
+    reporter.log(f"iter_num_af:{args.gru_iter_num} \t cfg:{model_configs['gru']['iter_num']}")
     
     encoder = encoder.to(args.device).eval().half()
     gru = gru.to(args.device).eval()
