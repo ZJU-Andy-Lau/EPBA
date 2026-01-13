@@ -332,6 +332,7 @@ def main():
     parser.add_argument('--dino_path',type=str,default='./weights/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth')
     parser.add_argument('--adapter_path',type=str)
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
+    parser.add_argument('--device',type=str,default='cuda')
     
     args = parser.parse_args()
 
@@ -427,7 +428,7 @@ def main():
         coords_2 = np.stack([x_o_feat,y_o_feat],axis=-1)
 
         # 3e. 特征提取
-        feats1, feats2 = extract_features(encoder,input_1,input_2)
+        feats1, feats2 = extract_features(encoder,input_1,input_2,device=args.device)
         match_feat_1,_,_ = feats1
         match_feat_2,_,_ = feats2
         match_feat_1 = match_feat_1.squeeze().permute(1,2,0).cpu().numpy()
