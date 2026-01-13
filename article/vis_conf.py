@@ -24,6 +24,7 @@ def main(args):
     conf = conf.squeeze().detach().cpu().numpy()
 
     conf_overlay = vis_confidence_overlay(img_full,conf)
+    conf_overlay = cv2.cvtColor(conf_overlay,cv2.COLOR_BGR2RGB)
 
     os.makedirs(args.output_path,exist_ok=True)
     cv2.imwrite(os.path.join(args.output_path,args.img_path.split('/')[-1].replace('.png','_conf.png')),conf_overlay)
