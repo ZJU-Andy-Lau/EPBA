@@ -286,6 +286,35 @@ def get_random_affine_transform(orig_w, orig_h, min_area_ratio=0.5, jitter_ratio
     dst_pts = np.float32([O_tl, O_tr, O_bl])
     return cv2.getAffineTransform(src_pts, dst_pts)
 
+def plot_correspondence(data: dict, save_file: Path):
+    """(图1) 绘制对应关系图"""
+    logging.debug(f"绘制图1: {save_file}")
+    resize1 = data['resize1']
+    resize2 = data['resize2']
+    target_pt_f1_uv = data['target_pt_f1'] # (u_f, v_f)
+    target_pt_f2_uv = data['target_pt_f2'] # (u_f, v_f)
+    s = data['s']
+    
+    H_r, W_r = resize1.shape[:2] # (1024, 1024)
+
+    u_r1 = (target_pt_f1_uv[0] + 0.5) * s - 0.5
+    v_r1 = (target_pt_f1_uv[1] + 0.5) * s - 0.5
+    
+    u_r2 = (target_pt_f2_uv[0] + 0.5) * s - 0.5
+    v_r2 = (target_pt_f2_uv[1] + 0.5) * s - 0.5
+
+    plt.imshow(cv2.cvtColor(resize1, cv2.COLOR_BGR2RGB))
+    plt.axis('off')
+    plt.plot(u_r1,v_r1, 'r+', markersize=12, markeredgewidth=2)
+    plt.savefig(str(save_file).replace('.png','_1.png'),bbox_inches='tight', pad_inches=0, dpi=300)
+    plt.close()
+
+    plt.imshow(cv2.cvtColor(resize2, cv2.COLOR_BGR2RGB))
+    plt.axis('off')
+    plt.plot(u_r2,v_r2, 'r+', markersize=12, markeredgewidth=2)
+    plt.savefig(str(save_file).replace('.png','_2.png'),bbox_inches='tight', pad_inches=0, dpi=300)
+    plt.close()
+
 
 # =============================================================================
 # 主函数
@@ -431,6 +460,7 @@ def main():
         logging.info(f"  保存 第 {count} (dist={min_dist:.4f}) 到 {save_path.name}")
         
         try:
+            plot_correspondence(plot_data, save_path / "pos.png")
             plot_similarity_map(plot_data, save_path / "similarity_map.png")
         except Exception as e:
             logging.error(f"为 No.{count} 绘图时发生错误: {e}")
