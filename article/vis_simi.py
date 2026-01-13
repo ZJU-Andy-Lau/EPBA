@@ -437,6 +437,12 @@ def main():
         min_dist, target_pt_f1_uv, target_pt_f2_uv = find_min_dist_pair(
             match_feat_1, match_feat_2, coords_1,coords_2
         )
+
+        e = max(((target_pt_f1_uv[0] - w_f * 0.5) ** 2 + (target_pt_f1_uv[1] - h_f * 0.5) ** 2) ** 0.5,
+                ((target_pt_f2_uv[0] - w_f * 0.5) ** 2 + (target_pt_f2_uv[1] - h_f * 0.5) ** 2) ** 0.5)
+        
+        if min_dist > 0.5 or e > ((h_f * 0.25) ** 2 + (w_f * 0.25) ** 2) ** 0.5:
+            continue
         
         # 3g. 存储结果
         plot_data = {
@@ -449,8 +455,7 @@ def main():
             "s": s
         }
 
-        if min_dist > 0.5:
-            continue
+        
         
         count += 1
         
@@ -462,6 +467,8 @@ def main():
         try:
             plot_correspondence(plot_data, save_path / "pos.png")
             plot_similarity_map(plot_data, save_path / "similarity_map.png")
+            cv2.imwrite(save_path / "img_1.png",resize1)
+            cv2.imwrite(save_path / "img_2.png",resize2)
         except Exception as e:
             logging.error(f"为 No.{count} 绘图时发生错误: {e}")
 
