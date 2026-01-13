@@ -5,6 +5,7 @@ from infer.utils import extract_features
 from shared.utils import load_config
 from shared.visualize import vis_confidence_overlay
 import os
+import numpy as np
 
 def main(args):
     img = cv2.imread(args.img_path,cv2.IMREAD_GRAYSCALE)
@@ -16,7 +17,8 @@ def main(args):
                       ctx_dim=model_configs['encoder']['ctx_dim'])
     encoder.load_adapter(args.adapter_path)
 
-    feat,_ = extract_features(encoder,img[None],img[None])
+    img = np.stack([img] * 3,axis=-1)[None]
+    feat,_ = extract_features(encoder,img,img)
 
     _,_,conf = feat
     conf = conf.squeeze().detach().cpu().numpy()
