@@ -37,8 +37,11 @@ class MatchSolver():
     def run_sift_matching(self, img_a_np, img_b_np):
         sift = cv2.SIFT_create()
 
-        kp1, des1 = sift.detectAndCompute(img_a_np, None)
-        kp2, des2 = sift.detectAndCompute(img_b_np, None)
+        gray_a = cv2.cvtColor(img_a_np, cv2.COLOR_RGB2GRAY)
+        gray_b = cv2.cvtColor(img_b_np, cv2.COLOR_RGB2GRAY)
+
+        kp1, des1 = sift.detectAndCompute(gray_a, None)
+        kp2, des2 = sift.detectAndCompute(gray_b, None)
 
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(des1, des2, k=2)
@@ -48,8 +51,8 @@ class MatchSolver():
             if m.distance < 0.75 * n.distance:
                 good.append(m)
             
-        pts_a = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-        pts_b = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+        pts_a = np.float32([kp1[m.queryIdx].pt for m in good])
+        pts_b = np.float32([kp2[m.trainIdx].pt for m in good])
         
         return pts_a,pts_b
     
