@@ -88,6 +88,7 @@ class MatchSolver():
             pts_b_global = apply_H(pts_b_rc_t, H_b_inv, self.device).squeeze(0).cpu().numpy()
 
             idxs_b = pts_b_rc.astype(int)
+            print(heights.shape,idxs_b[:,0].max(),idxs_b[:,1].max())
             heights = self.height[idxs_b[:,0],idxs_b[:,1]]
 
             pts_b_global_to_a = np.stack(project_linesamp(self.rpc_b,self.rpc_a,
