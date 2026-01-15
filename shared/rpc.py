@@ -282,9 +282,7 @@ class RPCModelParameterTorch:
         corners = np.array([[0.,0.],[100.,0.],[0.,100.]],dtype=np.float32) #line samp
         offset_line = self.raw_adjust_params[0] + self.raw_adjust_params[1] * corners[:,1] + self.raw_adjust_params[2] * corners[:,0]
         offset_samp = self.raw_adjust_params[3] + self.raw_adjust_params[4] * corners[:,1] + self.raw_adjust_params[5] * corners[:,0]
-        
-        # 注意：这里的 offset_corners 计算逻辑是 (原始 - 偏移)
-        # 这意味着 af_trans 是 (调整后 -> 原始) 的变换
+
         offset_corners = corners - np.stack([offset_line,offset_samp],axis=1) 
         
         af_trans = cv2.getAffineTransform(corners,offset_corners)
@@ -307,9 +305,6 @@ class RPCModelParameterTorch:
         if torch.allclose(self.adjust_params, identity_adjust, atol=1e-8):
             print("Adjust parameters are already identity. No merge needed.")
             return
-
-        # print("Merging affine adjustment into RPC coefficients...")
-
         # 2. 生成 3D 虚拟格网 (物方)
         #    Create_Virtual_3D_Grid 内部会调用 RPC_OBJ2PHOTO
         #    RPC_OBJ2PHOTO 内部会 *自动应用* 当前的 self.adjust_params_inv
@@ -581,113 +576,6 @@ class RPCModelParameterTorch:
             y = y.cpu().numpy()
 
         return x,y
-    
-    def _project_xyh_to_linesamp_for_jacobian(self, xyh_tensor: torch.Tensor) -> torch.Tensor:
-        """
-        A helper function that takes a single (N, 3) tensor for xyh
-        and returns a (N, 2) tensor for line/samp.
-        This format is required by torch.autograd.functional.jacobian.
-        """
-        x, y, h = xyh_tensor[..., 0], xyh_tensor[..., 1], xyh_tensor[..., 2]
-        
-        # Chain the transformations
-        latlon = self.yx2latlon(torch.stack([y, x], dim=-1))
-        samp, line = self.RPC_OBJ2PHOTO(latlon[:, 0], latlon[:, 1], h)
-        
-        return torch.stack([line, samp], dim=-1)
-
-    def _vjp_projection_core(self, mu_xyh: torch.Tensor, sigma_xyh: torch.Tensor):
-        """
-        【私有核心函数】执行VJP投影计算。
-        假定输入的张量块能完全载入显存。
-        """
-        # 确保 mu_xyh 可以追踪梯度，这是 autograd.grad 的要求
-        mu_xyh.requires_grad_(True)
-        if mu_xyh.grad is not None:
-            mu_xyh.grad.zero_()
-
-        # --- 均值传播 ---
-        line, samp = self.RPC_XY2LINESAMP(mu_xyh[:, 0], mu_xyh[:, 1], mu_xyh[:, 2])
-        mu_linesamp = torch.stack([line, samp], dim=-1)
-
-        # --- 方差传播 (VJP方法) ---
-        grad_line, = torch.autograd.grad(
-            outputs=line, inputs=mu_xyh,
-            grad_outputs=torch.ones_like(line),
-            create_graph=True, retain_graph=True,
-        )
-        grad_samp, = torch.autograd.grad(
-            outputs=samp, inputs=mu_xyh,
-            grad_outputs=torch.ones_like(samp),
-            create_graph=False, retain_graph=False, # 最后一次调用可以关闭图保留
-        )
-        
-        var_xyh = sigma_xyh.pow(2)
-        var_line = (grad_line.pow(2) * var_xyh).sum(dim=-1)
-        var_samp = (grad_samp.pow(2) * var_xyh).sum(dim=-1)
-        var_linesamp = torch.stack([var_line, var_samp], dim=-1)
-            
-        return mu_linesamp, var_linesamp
-
-    def xy_distribution_to_linesamp(self, mu_xyh: torch.Tensor, sigma_xyh: torch.Tensor, chunk_size: int = 524288):
-        """
-        【最终版公开接口】一个鲁棒且高效的投影函数，集成了VJP方法和自动分块机制。
-
-        Args:
-            mu_xyh (torch.Tensor): 形状为 (N, 3) 或 (3,) 的张量，表示 (x, y, h) 的均值。
-            sigma_xyh (torch.Tensor): 形状为 (N, 3) 或 (3,) 的张量，表示 (x, y, h) 的标准差。
-            chunk_size (int, optional): 处理块的大小。如果输入点的总数 N 超过此值，
-                                        将自动启用分块计算。默认为 524288 (512 * 1024)。
-                                        您可以根据您的GPU显存大小调整此值。
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor]:
-                - mu_linesamp (torch.Tensor): 投影后的像方均值 (line, samp)，形状为 (N, 2) 或 (2,)。
-                - sigma_linesamp (torch.Tensor): 投影后的像方标准差 (line, samp)，形状为 (N, 2) 或 (2,)。
-        """
-        # 确保输入是批处理格式
-        is_batched = mu_xyh.dim() == 2
-        if not is_batched:
-            mu_xyh = mu_xyh.unsqueeze(0)
-            sigma_xyh = sigma_xyh.unsqueeze(0)
-        
-        num_points = mu_xyh.shape[0]
-
-        # --- 调度逻辑：根据输入点数决定是否分块 ---
-        if num_points <= chunk_size:
-            # 点数不多，直接调用核心VJP函数一次性计算，效率最高
-            # print(f"点数 ({num_points}) 未超过阈值 ({chunk_size})，执行直接计算。")
-            mu_linesamp, var_linesamp = self._vjp_projection_core(mu_xyh, sigma_xyh)
-        else:
-            # 点数过多，启用分块计算以保证稳定性
-            print(f"警告: 点数 ({num_points}) 超过阈值 ({chunk_size})，自动启用分块计算。")
-            mu_results = []
-            var_results = []
-            
-            # 使用 torch.split 进行安全分块
-            mu_chunks = torch.split(mu_xyh, chunk_size)
-            sigma_chunks = torch.split(sigma_xyh, chunk_size)
-
-            for mu_chunk, sigma_chunk in zip(mu_chunks, sigma_chunks):
-                # 对每个块调用核心VJP函数
-                mu_chunk_out, var_chunk_out = self._vjp_projection_core(mu_chunk, sigma_chunk)
-                
-                # 收集结果 (分离计算图以节省内存)
-                mu_results.append(mu_chunk_out.detach())
-                var_results.append(var_chunk_out.detach())
-
-            # 将所有块的结果拼接起来
-            mu_linesamp = torch.cat(mu_results, dim=0)
-            var_linesamp = torch.cat(var_results, dim=0)
-        
-        sigma_linesamp = torch.sqrt(var_linesamp)
-        # 如果原始输入不是批处理格式，则恢复其形状
-        if not is_batched:
-            mu_linesamp = mu_linesamp.squeeze(0)
-            sigma_linesamp = sigma_linesamp.squeeze(0)
-
-        return mu_linesamp, sigma_linesamp
-    
 
     def to_gpu(self,device = None):
         if device is None:
