@@ -290,7 +290,8 @@ class Solver():
                                  rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                                  height=dems_b,
                                  method=self.configs['match'],
-                                 device=self.device)
+                                 device=self.device,
+                                 reporter=self.reporter)
             preds = solver.solve()
             scores = np.ones((preds.shape[0]),dtype=preds.dtype)
         

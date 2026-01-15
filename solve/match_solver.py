@@ -15,7 +15,8 @@ class MatchSolver():
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
                  height:torch.Tensor = None,
                  method = 'loftr',
-                 device = 'cuda'):
+                 device = 'cuda',
+                 reporter = None):
         self.imgs_a = imgs_a
         self.imgs_b = imgs_b
         self.H_as = H_as
@@ -25,6 +26,7 @@ class MatchSolver():
         self.height = height
         self.method = method
         self.device = device
+        self.reporter = reporter
         self.N,self.H,self.W = imgs_a.shape[:3]
         if method == 'loftr':
             self.matcher = LoFTR(pretrained=None)
@@ -88,8 +90,11 @@ class MatchSolver():
             pts_b_global = apply_H(pts_b_rc_t, H_b_inv, self.device).squeeze(0).cpu().numpy()
 
             idxs_b = pts_b_rc.astype(int)
-            print(self.height.shape,idxs_b[:,0].max(),idxs_b[:,1].max())
-            heights = self.height[idxs_b[:,0],idxs_b[:,1]]
+            self.reporter.log(self.height.shape,idxs_b[:,0].max(),idxs_b[:,1].max())
+            try:
+                heights = self.height[idxs_b[:,0],idxs_b[:,1]]
+            except:
+                exit()
 
             pts_b_global_to_a = np.stack(project_linesamp(self.rpc_b,self.rpc_a,
                                                           pts_b_global[:,0],pts_b_global[:,1],heights,'numpy'),
