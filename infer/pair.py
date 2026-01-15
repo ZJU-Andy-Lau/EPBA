@@ -264,7 +264,7 @@ class Solver():
         self.distribute_feats(feats_a,feats_b)
         
         if self.reporter:
-            self.reporter.update(current_step="GInference")
+            self.reporter.update(current_step="Inference")
         solver = WindowSolver(B,H,W,
                               predictor=predictor,
                               feats_a=feats_a,feats_b=feats_b,
