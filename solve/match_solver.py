@@ -28,7 +28,7 @@ class MatchSolver():
         self.N,self.H,self.W = imgs_a.shape[:3]
         if method == 'loftr':
             self.matcher = LoFTR(pretrained=None)
-            ckpt = torch.load('weights/loftr_outdoor.ckpt')
+            ckpt = torch.load('weights/loftr_outdoor.ckpt')['state_dict']
             self.matcher.load_state_dict(ckpt)
             self.matcher.to(device).eval()
     
