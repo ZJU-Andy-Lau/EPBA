@@ -90,7 +90,7 @@ class MatchSolver():
             pts_b_global = apply_H(pts_b_rc_t, H_b_inv, self.device).squeeze(0).cpu().numpy()
 
             idxs_b = pts_b_rc.astype(int)
-            self.reporter.log(self.height.shape,idxs_b[:,0].max(),idxs_b[:,1].max())
+            self.reporter.log(f'{self.height.shape}\t{idxs_b[:,0].max()}\t{idxs_b[:,1].max()}')
             try:
                 heights = self.height[idxs_b[:,0],idxs_b[:,1]]
             except:
