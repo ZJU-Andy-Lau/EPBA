@@ -81,7 +81,14 @@ class MatchSolver():
                 pts_a,pts_b = self.run_loftr_matching(img_a,img_b)
             else:
                 pts_a,pts_b = self.run_sift_matching(img_a,img_b)
-            self.reporter.log(f'{pts_a.shape} \t {pts_b.shape}')
+
+            if pts_a.shape[0] == 0 or pts_b.shape[0] == 0:
+                results.append(np.array([
+                    [1.0,0.0,0.0],
+                    [0.0,1.0,0.0]
+                ]))
+                continue
+
             pts_a_rc,pts_b_rc = pts_a[:,[1,0]],pts_b[:,[1,0]]
 
             pts_a_rc_t = torch.from_numpy(pts_a_rc).unsqueeze(0).to(self.device)
