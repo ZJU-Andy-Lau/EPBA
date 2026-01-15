@@ -100,7 +100,7 @@ class MatchSolver():
             
             results.append(M)
         
-        results = np.stack(results,axis=0)
+        results = torch.from_numpy(np.stack(results,axis=0)).to(self.device)
 
         return results
             
