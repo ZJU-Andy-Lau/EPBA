@@ -85,7 +85,7 @@ class MatchSolver():
             else:
                 pts_a,pts_b = self.run_sift_matching(img_a,img_b)
 
-            if pts_a.shape[0] < 3 or pts_b.shape[0] < 3:
+            if pts_a.shape[0] < 10 or pts_b.shape[0] < 10:
                 results.append(np.array([
                     [1.0,0.0,0.0],
                     [0.0,1.0,0.0]
