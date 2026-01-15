@@ -293,7 +293,7 @@ class Solver():
                                  device=self.device,
                                  reporter=self.reporter)
             preds = solver.solve()
-            scores = np.ones((preds.shape[0]),dtype=preds.dtype)
+            scores = torch.ones((preds.shape[0]),dtype=preds.dtype,device=preds.device)
         
         return preds,scores
     
