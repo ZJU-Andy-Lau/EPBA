@@ -34,7 +34,6 @@ from torch.utils.data import Dataset,DataLoader,DistributedSampler
 from torchvision import transforms
 
 from model.encoder import Encoder
-from model.gru_mf import GRUBlock
 from model.predictor import Predictor
 from model.ctx_decoder import ContextDecoder
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
@@ -91,7 +90,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
-        'iter_num':args.gru_iter_num,
+        'iter_num':args.predictor_iter_num,
     }
     pairs = []
     if pair_ids is None:
@@ -128,26 +127,26 @@ def load_models(args, reporter):
     
     encoder.load_adapter(args.adapter_path)
     
-    gru = Predictor(corr_levels=model_configs['gru']['corr_levels'],
-                   corr_radius=model_configs['gru']['corr_radius'],
-                   context_dim=model_configs['gru']['ctx_dim'],
-                   hidden_dim=model_configs['gru']['hidden_dim'],
+    predictor = Predictor(corr_levels=model_configs['predictor']['corr_levels'],
+                   corr_radius=model_configs['predictor']['corr_radius'],
+                   context_dim=model_configs['predictor']['ctx_dim'],
+                   hidden_dim=model_configs['predictor']['hidden_dim'],
                    use_mtf=args.use_mtf)
     
-    load_model_state_dict(gru,args.gru_path)
+    load_model_state_dict(predictor,args.predictor_path)
 
-    if args.gru_iter_num is None:
-        args.gru_iter_num = model_configs['gru']['iter_num']
+    if args.predictor_iter_num is None:
+        args.predictor_iter_num = model_configs['predictor']['iter_num']
     
     encoder = encoder.to(args.device).eval().half()
-    gru = gru.to(args.device).eval()
+    predictor = predictor.to(args.device).eval()
 
     # encoder = torch.compile(encoder,mode='max-autotune')
-    # gru = torch.compile(gru,mode="max-autotune")
+    # predictor = torch.compile(predictor,mode="max-autotune")
 
     # reporter.log(f"Models Loaded")
 
-    return encoder,gru
+    return encoder,predictor
 
 @torch.no_grad()
 def main(args):
@@ -196,7 +195,7 @@ def main(args):
         reporter.update(current_task="Ready", progress=f"0/{total_pairs}", level="-", current_step="Ready")
 
         if len(pairs_ids) > 0:
-            encoder,gru = load_models(args, reporter)
+            encoder,predictor = load_models(args, reporter)
             image_ids = sorted(set(x for t in pairs_ids for x in t))
 
             reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
@@ -209,7 +208,7 @@ def main(args):
                 reporter.update(progress=f"{idx+1}/{total_pairs}")
                 # reporter.log(f"Solving Pair {pair.id_a} - {pair.id_b}")
                 
-                affine_ab,affine_ba = pair.solve_affines(encoder,gru)
+                affine_ab,affine_ba = pair.solve_affines(encoder,predictor)
                 result = {
                     pair.id_a:affine_ab.detach().cpu(),
                     pair.id_b:affine_ba.detach().cpu()
@@ -220,11 +219,11 @@ def main(args):
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
             
             del encoder
-            del gru
+            del predictor
             for image in images:
                 del image
             encoder = None
-            gru = None
+            predictor = None
             images = None
 
         # ddp收集results
@@ -304,17 +303,17 @@ if __name__ == '__main__':
 
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
 
-    parser.add_argument('--gru_path', type=str, default='weights/gru.pth')
+    parser.add_argument('--predictor_path', type=str, default='weights/predictor.pth')
 
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
 
-    parser.add_argument('--gru_iter_num', type=int, default=None)
+    parser.add_argument('--predictor_iter_num', type=int, default=None)
 
     parser.add_argument('--use_adapter',type=str2bool,default=True)
 
     parser.add_argument('--use_conf',type=str2bool,default=True)
 
-    parser.add_argument('--use_gru',type=str2bool,default=True)
+    parser.add_argument('--use_predictor',type=str2bool,default=True)
 
     parser.add_argument('--use_mtf',type=str2bool,default=True)
 

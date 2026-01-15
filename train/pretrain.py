@@ -31,7 +31,6 @@ from torchvision import transforms
 
 from load_data import TrainDataset, ImageSampler
 from model.encoder import Encoder
-from model.gru import GRUBlock
 from model.ctx_decoder import ContextDecoder
 from criterion.pretrain_loss import Loss
 from scheduler import MultiStageOneCycleLR

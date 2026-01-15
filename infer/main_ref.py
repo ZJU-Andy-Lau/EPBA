@@ -17,7 +17,6 @@ import torch.distributed as dist
 
 
 from model.encoder import Encoder
-from model.gru_mf import GRUBlock
 from model.predictor import Predictor
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
@@ -85,7 +84,7 @@ def build_adj_ref_pair(args,adjust_image:RSImage,ref_image:RSImage, reporter) ->
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
-        'iter_num':args.gru_iter_num,
+        'iter_num':args.predictor_iter_num,
     }
     configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
     pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
@@ -100,7 +99,7 @@ def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
         'max_window_size':args.max_window_size,
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
-        'iter_num':args.gru_iter_num,
+        'iter_num':args.predictor_iter_num,
     }
     pairs = []
     for i,j in itertools.combinations(range(images_num),2):
@@ -123,21 +122,21 @@ def load_models(args, reporter):
     
     encoder.load_adapter(args.adapter_path)
     
-    gru = Predictor(corr_levels=model_configs['gru']['corr_levels'],
-                   corr_radius=model_configs['gru']['corr_radius'],
-                   context_dim=model_configs['gru']['ctx_dim'],
-                   hidden_dim=model_configs['gru']['hidden_dim'],
+    predictor = Predictor(corr_levels=model_configs['predictor']['corr_levels'],
+                   corr_radius=model_configs['predictor']['corr_radius'],
+                   context_dim=model_configs['predictor']['ctx_dim'],
+                   hidden_dim=model_configs['predictor']['hidden_dim'],
                    use_mtf=args.use_mtf)
     
-    load_model_state_dict(gru,args.gru_path)
+    load_model_state_dict(predictor,args.predictor_path)
     
-    if args.gru_iter_num is None:
-        args.gru_iter_num = model_configs['gru']['iter_num']
+    if args.predictor_iter_num is None:
+        args.predictor_iter_num = model_configs['predictor']['iter_num']
     
     encoder = encoder.to(args.device).eval().half()
-    gru = gru.to(args.device).eval()
+    predictor = predictor.to(args.device).eval()
 
-    return encoder,gru
+    return encoder,predictor
 
 @torch.no_grad()
 def main(args):
@@ -186,7 +185,7 @@ def main(args):
         model_time = 0
         
         if len(adjust_metas) > 0 and len(ref_metas) > 0:
-            encoder,gru = load_models(args, reporter)
+            encoder,predictor = load_models(args, reporter)
             for adjust_idx,adjust_meta in enumerate(adjust_metas):
                 reporter.update(progress=f"{adjust_idx}/{len(adjust_metas)}")
                 ref_list = get_ref_list(args,adjust_meta,ref_metas,reporter)
@@ -203,7 +202,7 @@ def main(args):
 
                     torch.cuda.synchronize()
                     start_time = time.perf_counter()
-                    affine = pair.solve_affines(encoder,gru).detach().cpu()
+                    affine = pair.solve_affines(encoder,predictor).detach().cpu()
                     torch.cuda.synchronize()
                     end_time = time.perf_counter()
                     model_time += end_time - start_time
@@ -244,13 +243,13 @@ def main(args):
             reporter.update(current_task="Finished", progress=f"{len(adjust_metas)}/{len(adjust_metas)}", level="-", current_step="Cleanup")
             reporter.log(f"model time: {model_time} s")
             del encoder
-            del gru
+            del predictor
             for pair in pairs:
                 del pair.rs_image_a
                 del pair.rs_image_b
                 del pair
             encoder = None
-            gru = None
+            predictor = None
             pair = None
             
         # ddp收集results
@@ -330,11 +329,11 @@ if __name__ == '__main__':
 
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
 
-    parser.add_argument('--gru_path', type=str, default='weights/gru.pth')
+    parser.add_argument('--predictor_path', type=str, default='weights/predictor.pth')
 
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
 
-    parser.add_argument('--gru_iter_num', type=int, default=None)
+    parser.add_argument('--predictor_iter_num', type=int, default=None)
 
     parser.add_argument('--use_adapter',type=str2bool,default=True)
 

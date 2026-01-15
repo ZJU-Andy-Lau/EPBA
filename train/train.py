@@ -31,7 +31,6 @@ from torchvision import transforms
 
 from load_data import TrainDataset, ImageSampler
 from model.encoder import Encoder
-from model.gru_mf import GRUBlock
 from model.predictor import Predictor
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
@@ -90,44 +89,44 @@ def load_models(args):
     pprint("Loading Models")
     
     encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128,use_adapter=args.use_adapter,use_conf=args.use_conf)
-    gru = Predictor(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128,use_mtf=args.use_mtf)
+    predictor = Predictor(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128,use_mtf=args.use_mtf)
     ctx_decoder = ContextDecoder(ctx_dim=128)
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
-    gru_optimizer = optim.AdamW(params = gru.parameters(),lr = args.lr_gru_max)
+    predictor_optimizer = optim.AdamW(params = predictor.parameters(),lr = args.lr_predictor_max)
     
     if not args.adapter_path is None:
         encoder.load_adapter(os.path.join(args.adapter_path))
         pprint("Encoder Loaded")
     
-    if not args.gru_path is None:
-        load_model_state_dict(gru,args.gru_path)
-        pprint("GRU Loaded")
+    if not args.predictor_path is None:
+        load_model_state_dict(predictor,args.predictor_path)
+        pprint("predictor Loaded")
     
     if not args.decoder_path is None:
         load_model_state_dict(ctx_decoder,args.decoder_path)
         pprint("Decoder Loaded")
     
     encoder = encoder.to(args.device)
-    gru = gru.to(args.device)
+    predictor = predictor.to(args.device)
     ctx_decoder = ctx_decoder.to(args.device)
     
     for state in adapter_optimizer.state.values():
         for k, v in state.items():
             if isinstance(v, torch.Tensor):
                 state[k] = v.to(args.device)
-    for state in gru_optimizer.state.values():
+    for state in predictor_optimizer.state.values():
         for k, v in state.items():
             if isinstance(v, torch.Tensor):
                 state[k] = v.to(args.device)
     
     encoder = distibute_model(encoder,args.local_rank)
-    gru = distibute_model(gru,args.local_rank)
+    predictor = distibute_model(predictor,args.local_rank)
     ctx_decoder = distibute_model(ctx_decoder,args.local_rank)
     
-    return encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer
+    return encoder,predictor,ctx_decoder,adapter_optimizer,predictor_optimizer
 
-def get_loss(args,encoder:Encoder,gru:Predictor,ctx_decoder:ContextDecoder,data,loss_funcs:Loss,epoch,get_debuf_info = False):
+def get_loss(args,encoder:Encoder,predictor:Predictor,ctx_decoder:ContextDecoder,data,loss_funcs:Loss,epoch,get_debuf_info = False):
     imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b = data
     imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b = [i.squeeze(0).to(device = args.device,dtype = torch.float32) for i in [imgs1_train,imgs2_train,imgs1_label,imgs2_label,residual1,residual2,Hs_a,Hs_b,M_a_b]]
 
@@ -140,7 +139,7 @@ def get_loss(args,encoder:Encoder,gru:Predictor,ctx_decoder:ContextDecoder,data,
     imgs_pred_1 = ctx_decoder(ctx_feats_1)
     imgs_pred_2 = ctx_decoder(ctx_feats_2)
     
-    windowsolver = WindowSolver(B,H,W,gru,feats_1,feats_2,Hs_a,Hs_b,gru_max_iter=args.gru_max_iter)
+    windowsolver = WindowSolver(B,H,W,predictor,feats_1,feats_2,Hs_a,Hs_b,predictor_max_iter=args.predictor_max_iter)
     
     preds_ab = windowsolver.solve(flag = 'ab')
     preds_ba = windowsolver.solve(flag = 'ba')
@@ -270,20 +269,20 @@ def main(args):
     args.dataset_num = dataset.dataset_num
     batch_num = len(dataloader)
 
-    encoder,gru,ctx_decoder,adapter_optimizer,gru_optimizer = load_models(args)
+    encoder,predictor,ctx_decoder,adapter_optimizer,predictor_optimizer = load_models(args)
 
     adapter_warmup_epoch = 50.
-    gru_warmup_epoch = 5.
+    predictor_warmup_epoch = 5.
 
     adapter_scheduler = MultiStageOneCycleLR(optimizer=adapter_optimizer,
                                              total_steps=args.max_epoch * batch_num,
                                              warmup_ratio=adapter_warmup_epoch / args.max_epoch,
                                              cooldown_ratio=(args.max_epoch - adapter_warmup_epoch) / args.max_epoch)
     
-    gru_scheduler = MultiStageOneCycleLR(optimizer=gru_optimizer,
+    predictor_scheduler = MultiStageOneCycleLR(optimizer=predictor_optimizer,
                                          total_steps=args.max_epoch * batch_num,
-                                         warmup_ratio=gru_warmup_epoch / args.max_epoch,
-                                         cooldown_ratio=(args.max_epoch - gru_warmup_epoch) / args.max_epoch)
+                                         warmup_ratio=predictor_warmup_epoch / args.max_epoch,
+                                         cooldown_ratio=(args.max_epoch - predictor_warmup_epoch) / args.max_epoch)
 
     loss_funcs = Loss(img_size = (dataset.input_size,dataset.input_size),
                       downsample_factor = dataset.DOWNSAMPLE,
@@ -313,16 +312,16 @@ def main(args):
             "loss_ctx":0,
         }
         encoder.train()
-        gru.train()
+        predictor.train()
 
         for batch_idx,data in enumerate(dataloader):
             adapter_optimizer.zero_grad()
-            gru_optimizer.zero_grad()
+            predictor_optimizer.zero_grad()
 
             # [修改] 触发条件：Rank 0, 指定 Epoch, 第一个 Batch
             is_vis_step = (rank == 0) and (epoch % VIS_FREQ == 0) and (batch_idx == 0)
 
-            loss,loss_details,debug_info = get_loss(args,encoder,gru,ctx_decoder,data,loss_funcs,epoch, get_debuf_info = is_vis_step)
+            loss,loss_details,debug_info = get_loss(args,encoder,predictor,ctx_decoder,data,loss_funcs,epoch, get_debuf_info = is_vis_step)
 
             loss_is_nan = not torch.isfinite(loss).all()
             loss_status_tensor = torch.tensor([loss_is_nan], dtype=torch.float32, device=rank)
@@ -331,21 +330,21 @@ def main(args):
                 pprint(f"--- 检测到 NaN！Epoch {epoch}, batch {batch_idx}. 所有进程将一起跳过此次更新。---")
                 del loss,loss_details
                 adapter_scheduler.step()
-                gru_scheduler.step()
+                predictor_scheduler.step()
                 continue 
             
             loss.backward()
 
             # adpater_grad_norm = torch.nn.utils.clip_grad_norm_(encoder.module.adapter.parameters(), max_norm=1.0)
-            # gru_grad_norm = torch.nn.utils.clip_grad_norm_(gru.parameters(), max_norm=1.0)
+            # predictor_grad_norm = torch.nn.utils.clip_grad_norm_(predictor.parameters(), max_norm=1.0)
 
-            # print(f"adapter grad norm:{adpater_grad_norm:.6f} \t gru grad norm:{gru_grad_norm:.6f}")
+            # print(f"adapter grad norm:{adpater_grad_norm:.6f} \t predictor grad norm:{predictor_grad_norm:.6f}")
 
             adapter_optimizer.step()
-            gru_optimizer.step()
+            predictor_optimizer.step()
 
             adapter_scheduler.step()
-            gru_scheduler.step()
+            predictor_scheduler.step()
 
             for key in loss_details.keys():
                 dist.all_reduce(loss_details[key],dist.ReduceOp.AVG)
@@ -407,7 +406,7 @@ def main(args):
                     img_conf_over = visualizer.vis_confidence_overlay(img_a_np, conf_np)
                     logger.add_image('Visual_Adv/C1_Confidence_Overlay', img_conf_over, epoch, dataformats='HWC')
                     
-                    img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np, level_num=gru.module.corr_levels)
+                    img_resp = visualizer.vis_pyramid_response(feat_a_np, feat_b_np, level_num=predictor.module.corr_levels)
                     logger.add_image('Visual_Adv/C2_Pyramid_Response', img_resp, epoch, dataformats='HWC')
 
                     # --- Panel D: 轨迹 (使用 Fixed Size + Zoom Inset) ---
@@ -436,7 +435,7 @@ def main(args):
                     f"l_cons:{loss_details['loss_consist'].item():.2f} \t"
                     f"l_ctx:{loss_details['loss_ctx'].item():.2f} \t"
                     f"lr_enc:{adapter_scheduler.get_last_lr()[0]:.2e} "
-                    f"lr_gru:{gru_scheduler.get_last_lr()[0]:.2e} \t"
+                    f"lr_predictor:{predictor_scheduler.get_last_lr()[0]:.2e} \t"
                     f"time:{str(datetime.timedelta(seconds=round(cost_time)))} "
                     f"ETA:{str(datetime.timedelta(seconds=round(remain_time)))} \t"
                 )
@@ -460,7 +459,7 @@ def main(args):
             for key in records:
                 logger.add_scalar(f"loss/{key}",records[key].item(),epoch)
             logger.add_scalar(f"lr/adp_lr",adapter_scheduler.get_lr()[0],epoch)
-            logger.add_scalar(f"lr/gru_lr",gru_scheduler.get_lr()[0],epoch)
+            logger.add_scalar(f"lr/predictor_lr",predictor_scheduler.get_lr()[0],epoch)
 
             
             if 'values' in debug_info:
@@ -470,7 +469,7 @@ def main(args):
             if records['loss_affine_last'] < min_loss:
                 min_loss = records['loss_affine_last']
                 encoder.module.save_adapter(os.path.join(args.model_save_path,'adapter.pth'))
-                torch.save(gru.state_dict(),os.path.join(args.model_save_path,'gru.pth'))
+                torch.save(predictor.state_dict(),os.path.join(args.model_save_path,'predictor.pth'))
                 torch.save(ctx_decoder.state_dict(),os.path.join(args.model_save_path,'ctx_decoder.pth'))
                 print("Best Updated")
 
@@ -481,21 +480,21 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_select',type=str,default=None)
     parser.add_argument('--dino_weight_path',type=str,default=None)
     parser.add_argument('--adapter_path',type=str,default=None)
-    parser.add_argument('--gru_path',type=str,default=None)
+    parser.add_argument('--predictor_path',type=str,default=None)
     parser.add_argument('--decoder_path',type=str,default=None)
     parser.add_argument('--model_save_path',type=str,default=f'./weights/{get_current_time()}')
     parser.add_argument('--checkpoints_path',type=str,default=None)
     parser.add_argument('--vis_img_path',type=str,default=None)
     parser.add_argument('--batch_size',type=int,default=8)
-    parser.add_argument('--gru_max_iter',type=int,default=10)
+    parser.add_argument('--predictor_max_iter',type=int,default=10)
     parser.add_argument('--resume_training',type=str2bool,default=False)
     parser.add_argument('--max_epoch',type=int,default=1000)
     parser.add_argument('--parallax_border_left',type=float,default=2.0)
     parser.add_argument('--parallax_border_right',type=float,default=10.0)
     parser.add_argument('--lr_encoder_min',type=float,default=1e-7)
     parser.add_argument('--lr_encoder_max',type=float,default=1e-3)
-    parser.add_argument('--lr_gru_min',type=float,default=1e-7)
-    parser.add_argument('--lr_gru_max',type=float,default=1e-3) 
+    parser.add_argument('--lr_predictor_min',type=float,default=1e-7)
+    parser.add_argument('--lr_predictor_max',type=float,default=1e-3) 
     parser.add_argument('--min_loss',type=float,default=1e8)
     parser.add_argument('--use_adapter',type=str2bool,default=True)
     parser.add_argument('--use_conf',type=str2bool,default=True)

@@ -17,7 +17,7 @@ import shared.visualize as visualizer
 from criterion.utils import invert_affine_matrix
 from window import Window
 from model.encoder import Encoder
-from model.gru import GRUBlock
+from model.predictor import Predictor
 from solve.solve_windows import WindowSolver
 import time
 
@@ -71,17 +71,17 @@ class Pair():
                 self.solver_ba = None
             
 
-    def solve_affines(self,encoder:Encoder,gru:GRUBlock):
+    def solve_affines(self,encoder:Encoder,predictor:Predictor):
         if self.reporter:
             self.reporter.update(current_task=f"{self.id_a}=>{self.id_b}")
-        affine_ab = self.solver_ab.solve_affine(encoder,gru)
+        affine_ab = self.solver_ab.solve_affine(encoder,predictor)
 
         if not self.dual:
             return affine_ab
         
         if self.reporter:
             self.reporter.update(current_task=f"{self.id_b}=>{self.id_a}")
-        affine_ba = self.solver_ba.solve_affine(encoder,gru)
+        affine_ba = self.solver_ba.solve_affine(encoder,predictor)
         return affine_ab,affine_ba
     
     
@@ -253,7 +253,7 @@ class Solver():
             window_pair.window_a.load_feats((match_feats_a[idx],ctx_feats_a[idx],confs_a[idx]))
             window_pair.window_b.load_feats((match_feats_b[idx],ctx_feats_b[idx],confs_b[idx]))
     
-    def get_window_affines(self,encoder:Encoder,gru:GRUBlock):
+    def get_window_affines(self,encoder:Encoder,predictor:Predictor):
         if self.reporter:
             self.reporter.update(current_step="Extracting Features")
         imgs_a,imgs_b = self.collect_imgs()
@@ -264,15 +264,15 @@ class Solver():
         self.distribute_feats(feats_a,feats_b)
         
         if self.reporter:
-            self.reporter.update(current_step="GRU Inference")
+            self.reporter.update(current_step="GInference")
         solver = WindowSolver(B,H,W,
-                              gru=gru,
+                              predictor=predictor,
                               feats_a=feats_a,feats_b=feats_b,
                               H_as=Hs_a,H_bs=Hs_b,
                               rpc_a=self.rpc_a,rpc_b=self.rpc_b,
                               height=dems_a,
                               test_imgs_a=imgs_a,test_imgs_b=imgs_b,
-                              gru_max_iter=self.configs['iter_num'])
+                              predictor_max_iter=self.configs['iter_num'])
         preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
         _,_,confs_a = feats_a
         _,_,confs_b = feats_b
@@ -315,13 +315,13 @@ class Solver():
 
         return merged_affine
 
-    def solve_level_affine(self,encoder:Encoder,gru:GRUBlock):
+    def solve_level_affine(self,encoder:Encoder,predictor:Predictor):
         """
         Returns:
             affine: torch.Tensor, (2,3)
         """
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
-        preds,scores = self.get_window_affines(encoder,gru)
+        preds,scores = self.get_window_affines(encoder,predictor)
         affine = self.merge_affines(preds,Hs_a,scores)
         self.rpc_a.Update_Adjust(affine)
         # self.test_rpc()
@@ -334,7 +334,7 @@ class Solver():
         return affine
     
     @torch.no_grad()
-    def solve_affine(self,encoder:Encoder,gru:GRUBlock):
+    def solve_affine(self,encoder:Encoder,predictor:Predictor):
         self.init_window_pairs(a_max=self.configs['max_window_size'],
                                a_min=self.configs['min_window_size'],
                                area_ratio=self.configs['min_area_ratio'])
@@ -342,7 +342,7 @@ class Solver():
             # 更新层级信息
             if self.reporter:
                 self.reporter.update(level=f"{int(self.window_size)}m")
-            self.solve_level_affine(encoder,gru)
+            self.solve_level_affine(encoder,predictor)
             self.quadsplit_windows()
         return self.rpc_a.adjust_params
     

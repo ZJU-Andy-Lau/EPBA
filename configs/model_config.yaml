@@ -3,7 +3,7 @@ encoder:
   ctx_dim: 128
   
 
-gru:
+predictor:
   corr_levels: 2
   corr_radius: 4
   ctx_dim: 128

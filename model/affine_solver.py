@@ -22,8 +22,8 @@ class AffineSolver(nn.Module):
         Args:
             patch_coords: [B, N, 2] Patch 中心在全图的归一化坐标 (x, y)
                           N 是 Patch 的数量。
-            predicted_flow: [B, N, 2] GRU 预测的局部残差位移 (du, dv)
-            weights: [B, N, 1] GRU 预测的置信度权重
+            predicted_flow: [B, N, 2] predictor 预测的局部残差位移 (du, dv)
+            weights: [B, N, 1] predictor 预测的置信度权重
             
         Returns:
             delta_affine: [B, 6] 全局仿射参数增量 [da, db, dc, dd, dtx, dty]

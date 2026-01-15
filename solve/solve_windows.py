@@ -6,8 +6,6 @@ import cv2
 import os
 import time
 
-from model.encoder import Encoder
-from model.gru import GRUBlock
 from model.predictor import Predictor
 from model.cost_volume import CostVolume
 from shared.rpc import RPCModelParameterTorch,project_linesamp
@@ -17,15 +15,15 @@ from criterion.utils import merge_affine
 
 class WindowSolver():
     def __init__(self,B,H,W,
-                 gru:Predictor,
+                 predictor:Predictor,
                  feats_a,feats_b,
                  H_as:torch.Tensor,H_bs:torch.Tensor,
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
                  height:torch.Tensor = None,
                  test_imgs_a = None, test_imgs_b = None,
-                 gru_max_iter:int = 10):
-        self.gru = gru
-        self.gru_access = gru.module if hasattr(gru,'module') else gru
+                 predictor_max_iter:int = 10):
+        self.predictor = predictor
+        self.predictor_access = predictor.module if hasattr(predictor,'module') else predictor
         self.match_feats_a, self.ctx_feats_a, self.confs_a = feats_a
         self.match_feats_b, self.ctx_feats_b, self.confs_b = feats_b
         self.cost_volume_ab = None
@@ -36,7 +34,7 @@ class WindowSolver():
         self.rpc_b = rpc_b
         self.height = height # B,h,w
         self.height_ds = avg_downsample(height,16) if not height is None else None
-        self.gru_max_iter = gru_max_iter
+        self.predictor_max_iter = predictor_max_iter
         self.B,self.H,self.W = B,H,W
         self.h,self.w = self.ctx_feats_a.shape[-2:]
         self.device = self.ctx_feats_a.device
@@ -44,8 +42,8 @@ class WindowSolver():
         self.test_imgs_a = test_imgs_a
         self.test_imgs_b = test_imgs_b
 
-        self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b,num_levels=self.gru_access.corr_levels)
-        self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a,num_levels=self.gru_access.corr_levels)
+        self.cost_volume_ab = CostVolume(self.match_feats_a,self.match_feats_b,num_levels=self.predictor_access.corr_levels)
+        self.cost_volume_ba = CostVolume(self.match_feats_b,self.match_feats_a,num_levels=self.predictor_access.corr_levels)
 
         self.Ms_a_b = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(B,2,3)
 
@@ -154,10 +152,10 @@ class WindowSolver():
 
     def convert_local_to_global(self, delta_local, centroid, norm_factor):
         """
-        [新增] 将 GRU 预测的局部仿射增量转换为全局仿射增量。
+        [新增] 将 predictor 预测的局部仿射增量转换为全局仿射增量。
         
         Args:
-            delta_local: (B, 2, 3) GRU 输出 [A_loc | t_loc_norm]
+            delta_local: (B, 2, 3) predictor 输出 [A_loc | t_loc_norm]
             centroid: (B, 2) 局部原点 O_loc
             norm_factor: (B,)
         Returns:
@@ -169,7 +167,7 @@ class WindowSolver():
         # 1. 分解局部参数
         A_loc = delta_local[:, :, :2] # (B, 2, 2)
         
-        # 注意：GRU 输出的 t 是经过 coord_norm_inv 处理后的物理尺度吗？
+        # 注意：predictor 输出的 t 是经过 coord_norm_inv 处理后的物理尺度吗？
         # 在 solve 循环里，我们在调用此函数前，会先执行 coord_norm_inv。
         # 所以这里的 t_loc 应该是物理尺度的。
         t_loc = delta_local[:, :, 2] # (B, 2)
@@ -380,7 +378,7 @@ class WindowSolver():
         preds = []
         vis_dict = {}
 
-        for iter in range(self.gru_max_iter):
+        for iter in range(self.predictor_max_iter):
             # 计算a->b的仿射
             if flag == 'ab':
                 # 1. 准备数据 (接收新增的 anchor_coords)
@@ -400,12 +398,12 @@ class WindowSolver():
                         corr_simi_ab, 
                         corr_offset_ab, 
                         self.norm_factors_a,
-                        num_levels=self.gru_access.corr_levels,
-                        radius=self.gru_access.corr_radius
+                        num_levels=self.predictor_access.corr_levels,
+                        radius=self.predictor_access.corr_radius
                     )
 
-                # 4. GRU 预测局部仿射 (输入新增 pos_features)
-                delta_affines_local = self.gru(
+                # 4. predictor 预测局部仿射 (输入新增 pos_features)
+                delta_affines_local = self.predictor(
                     corr_simi_ab,
                     corr_offset_ab,
                     self.ctx_feats_a,
@@ -439,8 +437,8 @@ class WindowSolver():
                 # 3. 生成位置特征
                 pos_features_ba = self.get_position_features(anchor_coords_ba, centroid_ba, self.norm_factors_b)
 
-                # 4. GRU 预测
-                delta_affines_local = self.gru(
+                # 4. predictor 预测
+                delta_affines_local = self.predictor(
                     corr_simi_ba,
                     corr_offset_ba,
                     self.ctx_feats_b,
@@ -463,7 +461,7 @@ class WindowSolver():
 
         if final_only:
             final = torch.eye(2, 3, dtype=torch.float32, device=self.device).unsqueeze(0).expand(self.B,2,3)
-            for t in range(self.gru_max_iter):
+            for t in range(self.predictor_max_iter):
                 pred = preds[:,t]
                 final = self.merge_M(final,pred)
             preds = final
