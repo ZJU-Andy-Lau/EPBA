@@ -91,6 +91,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
         'iter_num':args.predictor_iter_num,
+        'match':args.match,
     }
     pairs = []
     if pair_ids is None:
@@ -337,6 +338,8 @@ if __name__ == '__main__':
     parser.add_argument('--solver_config_path', type=str, default='configs/global_solver_config.yaml')
 
     parser.add_argument('--solver_max_iter', type=int, default=10)
+
+    parser.add_argument('--match',type=str,default=None)
 
     #================================================================================
 

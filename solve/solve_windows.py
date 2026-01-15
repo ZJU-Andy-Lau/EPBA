@@ -19,7 +19,8 @@ class WindowSolver():
                  feats_a,feats_b,
                  H_as:torch.Tensor,H_bs:torch.Tensor,
                  rpc_a:RPCModelParameterTorch = None,rpc_b:RPCModelParameterTorch = None,
-                 height:torch.Tensor = None,
+                 height_a:torch.Tensor = None,
+                 height_b:torch.Tensor = None,
                  test_imgs_a = None, test_imgs_b = None,
                  predictor_max_iter:int = 10):
         self.predictor = predictor
@@ -32,8 +33,10 @@ class WindowSolver():
         self.H_bs = H_bs
         self.rpc_a = rpc_a
         self.rpc_b = rpc_b
-        self.height = height # B,h,w
-        self.height_ds = avg_downsample(height,16) if not height is None else None
+        self.height_a = height_a # B,h,w
+        self.height_b = height_b
+        self.height_a_ds = avg_downsample(height_a,16) if not height_a is None else None
+        self.height_b_ds = avg_downsample(height_b,16) if not height_b is None else None
         self.predictor_max_iter = predictor_max_iter
         self.B,self.H,self.W = B,H,W
         self.h,self.w = self.ctx_feats_a.shape[-2:]
@@ -303,10 +306,10 @@ class WindowSolver():
         coords_in_a_flat = coords_in_a.flatten(1,2) # B,H*W,2
         coords_in_big_a_flat = self.apply_H(coords_in_a_flat,torch.linalg.inv(self.H_as),device=self.device)
         coords_in_big_a_flat_af = self.apply_M(coords_in_big_a_flat,Ms,device=self.device) # B,H*W,2
-        if not self.rpc_a is None and not self.rpc_b is None and not self.height is None:
+        if not self.rpc_a is None and not self.rpc_b is None and not self.height_a is None and not self.height_b is None:
             lines_in_big_a_af = coords_in_big_a_flat_af[...,0].ravel() # B*H*W
             samps_in_big_a_af = coords_in_big_a_flat_af[...,1].ravel()
-            lines_in_big_b,samps_in_big_b = project_linesamp(self.rpc_a,self.rpc_b,lines_in_big_a_af,samps_in_big_a_af,self.height.ravel())
+            lines_in_big_b,samps_in_big_b = project_linesamp(self.rpc_a,self.rpc_b,lines_in_big_a_af,samps_in_big_a_af,self.height_a.ravel())
             coords_in_big_b_flat = torch.stack([lines_in_big_b,samps_in_big_b],dim=-1).reshape(B,-1,2).to(torch.float32) # B,H*W,2
         else:
             coords_in_big_b_flat = coords_in_big_a_flat_af
@@ -324,7 +327,9 @@ class WindowSolver():
         return imgs_a,sampled_img     
 
             
-    def prepare_data(self,cost_volume:CostVolume,Hs_1:torch.Tensor,Hs_2:torch.Tensor,Ms:torch.Tensor,norm_factor:torch.Tensor,rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None,height:torch.Tensor = None):
+    def prepare_data(self,cost_volume:CostVolume,Hs_1:torch.Tensor,Hs_2:torch.Tensor,Ms:torch.Tensor,norm_factor:torch.Tensor,
+                     rpc_1:RPCModelParameterTorch = None,rpc_2:RPCModelParameterTorch = None,
+                     height_a:torch.Tensor = None,height_b:torch.Tensor = None):
         """
         [修改] 返回值增加 anchor_coords_in_big_1_af (用于位置编码)
         """
@@ -338,7 +343,7 @@ class WindowSolver():
         if not rpc_1 is None and not rpc_2 is None:
             anchor_lines_in_big_1_af = anchor_coords_in_big_1_flat_af[...,0].ravel()
             anchor_samps_in_big_1_af = anchor_coords_in_big_1_flat_af[...,1].ravel()
-            anchor_lines_in_big_2, anchor_samps_in_big_2 = project_linesamp(rpc_1,rpc_2,anchor_lines_in_big_1_af,anchor_samps_in_big_1_af,height.ravel())
+            anchor_lines_in_big_2, anchor_samps_in_big_2 = project_linesamp(rpc_1,rpc_2,anchor_lines_in_big_1_af,anchor_samps_in_big_1_af,height_a.ravel())
             anchor_coords_in_big_2_flat = torch.stack([anchor_lines_in_big_2,anchor_samps_in_big_2],dim=-1).reshape(self.B,-1,2).to(torch.float32) # B,h*w,2
         else:
             anchor_coords_in_big_2_flat = anchor_coords_in_big_1_flat_af # B,h*w,2
@@ -354,7 +359,7 @@ class WindowSolver():
         corr_coords_in_big_2_flat = self.apply_H(corr_coords_in_2_flat,torch.linalg.inv(Hs_2),device=self.device) # B,h*w*N,2
 
         if not rpc_1 is None and not rpc_2 is None:
-            corr_heights = self.sample_from_coords(corr_coords_in_2_flat,height,self.H,self.W) # B,h*w*N
+            corr_heights = self.sample_from_coords(corr_coords_in_2_flat,height_b,self.H,self.W) # B,h*w*N
             corr_lines_in_big_2 = corr_coords_in_big_2_flat[...,0].ravel() # B*h*w*N
             corr_samps_in_big_2 = corr_coords_in_big_2_flat[...,1].ravel()
             corr_lines_in_big_1, corr_samps_in_big_1 = project_linesamp(rpc_2,rpc_1,corr_lines_in_big_2,corr_samps_in_big_2,corr_heights.ravel())
@@ -384,7 +389,7 @@ class WindowSolver():
                 # 1. 准备数据 (接收新增的 anchor_coords)
                 corr_simi_ab, corr_offset_ab, anchor_coords_ab = self.prepare_data(
                     self.cost_volume_ab, self.H_as, self.H_bs, self.Ms_a_b, 
-                    self.norm_factors_a, self.rpc_a, self.rpc_b, self.height_ds
+                    self.norm_factors_a, self.rpc_a, self.rpc_b, self.height_a_ds, self.height_b_ds
                 )
                 
                 # 2. 计算当前局部原点 (O_loc)
@@ -428,7 +433,7 @@ class WindowSolver():
                 # 1. 准备数据
                 corr_simi_ba, corr_offset_ba, anchor_coords_ba = self.prepare_data(
                     self.cost_volume_ba, self.H_bs, self.H_as, self.Ms_b_a, 
-                    self.norm_factors_b, self.rpc_b, self.rpc_a, self.height_ds
+                    self.norm_factors_b, self.rpc_b, self.rpc_a, self.height_a_ds, self.height_b_ds
                 )
                 
                 # 2. 计算当前局部原点

@@ -85,6 +85,7 @@ def build_adj_ref_pair(args,adjust_image:RSImage,ref_image:RSImage, reporter) ->
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
         'iter_num':args.predictor_iter_num,
+        'match':args.match,
     }
     configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
     pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
@@ -100,6 +101,7 @@ def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:
         'min_area_ratio':args.min_cover_area_ratio,
         'quad_split_times':args.quad_split_times,
         'iter_num':args.predictor_iter_num,
+        'match':args.match,
     }
     pairs = []
     for i,j in itertools.combinations(range(images_num),2):
@@ -355,6 +357,8 @@ if __name__ == '__main__':
     parser.add_argument('--min_cover_area_ratio', type=float, default=0.5)
 
     parser.add_argument('--quad_split_times', type=int, default=1)
+
+    parser.add_argument('--match',type=str,default=None)
 
     #================================================================================
 
