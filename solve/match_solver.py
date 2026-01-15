@@ -81,8 +81,8 @@ class MatchSolver():
             pts_a_rc_t = torch.from_numpy(pts_a_rc).unsqueeze(0).to(self.device)
             pts_b_rc_t = torch.from_numpy(pts_b_rc).unsqueeze(0).to(self.device)
             
-            H_a_inv = torch.from_numpy(np.linalg.inv(self.H_as[i])).unsqueeze(0).to(self.device, dtype=torch.float32)
-            H_b_inv = torch.from_numpy(np.linalg.inv(self.H_bs[i])).unsqueeze(0).to(self.device, dtype=torch.float32)
+            H_a_inv = torch.inverse(self.H_as[i]).unsqueeze(0).to(self.device, dtype=torch.float32)
+            H_b_inv = torch.inverse(self.H_bs[i]).unsqueeze(0).to(self.device, dtype=torch.float32)
             
             pts_a_global = apply_H(pts_a_rc_t, H_a_inv, self.device).squeeze(0).cpu().numpy()
             pts_b_global = apply_H(pts_b_rc_t, H_b_inv, self.device).squeeze(0).cpu().numpy()
