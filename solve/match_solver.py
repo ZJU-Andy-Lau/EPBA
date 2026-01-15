@@ -43,6 +43,9 @@ class MatchSolver():
         kp1, des1 = sift.detectAndCompute(gray_a, None)
         kp2, des2 = sift.detectAndCompute(gray_b, None)
 
+        if des1 is None or des2 is None or len(kp1) < 2 or len(kp2) < 2:
+            return np.empty((0, 2)), np.empty((0, 2))
+
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(des1, des2, k=2)
         
