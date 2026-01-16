@@ -1370,7 +1370,7 @@ def sample_points_in_overlap(corners_a, corners_b, K, shrink=0.9, seed=None, max
             "（重叠区域可能太小/过于狭长，可增大 max_iter_factor 或减小 K）"
         )
     
-    return pts
+    return np.asarray(pts, dtype=float)
 
 
 class Status(Enum):
