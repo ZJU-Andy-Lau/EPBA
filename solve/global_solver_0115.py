@@ -6,10 +6,13 @@ from typing import List, Dict, Any, Tuple
 
 from shared.rpc import RPCModelParameterTorch,project_linesamp
 from shared.utils import sample_points_in_overlap
-from infer.rs_image import RSImageMeta
+from infer.rs_image import RSImage
 from infer.monitor import StatusReporter
+from infer.utils import create_grid_img
 
 from copy import deepcopy
+import os
+import cv2
 
 
 
@@ -73,19 +76,23 @@ class PBASolveReport:
 class PBAAffineSolver:
     def __init__(
         self,
-        metas:list[RSImageMeta],
+        images:list[RSImage],
         results,
         fixed_id: int,
         device: str = "cuda",
-        reporter: StatusReporter = None
+        reporter: StatusReporter = None,
+        output_path = None
     ):
-        self.ties,self.rpcs = self._process_data(metas,results)
+        self.ties,self.rpcs = self._process_data(images,results)
         self.M = len(self.rpcs)
         if not (0 <= fixed_id < self.M):
             raise ValueError("fixed_id out of range")
         self.fixed_id = fixed_id
         self.device = device
         self.reporter = reporter
+        if not output_path is None:
+            self.output_path = os.path.join(output_path,'pba_solver_output')
+            os.makedirs(self.output_path,exist_ok=True)
 
         # RPC 放到指定 device；并清空其内部 adjust（本类不使用它）
         for rpc in self.rpcs:
@@ -103,24 +110,38 @@ class PBAAffineSolver:
         self.var_ids = [m for m in range(self.M) if m != self.fixed_id]
         self.id2pos = {m: k for k, m in enumerate(self.var_ids)}  # image -> block index
 
-    def _process_data(self,metas:list[RSImageMeta],results,sample_points_num = 256):
+    def _process_data(self,images:list[RSImage],results,sample_points_num = 256):
         ties = []
-        rpcs = [meta.rpc for meta in metas]
+        rpcs = [image.rpc for image in images]
         for match in results:
             i,j = match.keys()
-            meta_i:RSImageMeta = metas[i]
-            meta_j:RSImageMeta = metas[j]
-            rpc_i_adj = deepcopy(meta_i.rpc)
+            image_i:RSImage = images[i]
+            image_j:RSImage = images[j]
+            rpc_i_adj = deepcopy(image_i.rpc)
             rpc_i_adj.Update_Adjust(match[i])
-            rpc_j_adj = deepcopy(meta_j.rpc)
+            rpc_j_adj = deepcopy(image_j.rpc)
             rpc_j_adj.Update_Adjust(match[j])
-            sampled_xys = sample_points_in_overlap(meta_i.corner_xys,meta_j.corner_xys,K=sample_points_num)
-            linesamp_i_1 = meta_i.xy_to_sampline(sampled_xys)[:,[1,0]]
-            heights = meta_i.dem[linesamp_i_1[:,0].astype(int),linesamp_i_1[:,1].astype(int)]
-            linesamp_j = np.stack(project_linesamp(rpc_i_adj,meta_j.rpc,linesamp_i_1[:,0],linesamp_i_1[:,1],heights,output_type='numpy'),axis=-1)
-            linesamp_i_2 = np.stack(project_linesamp(rpc_j_adj,meta_i.rpc,linesamp_j[:,0],linesamp_j[:,1],heights,output_type='numpy'),axis=-1)
+            sampled_xys = sample_points_in_overlap(image_i.corner_xys,image_j.corner_xys,K=sample_points_num)
+            linesamp_i_1 = image_i.xy_to_sampline(sampled_xys)[:,[1,0]]
+            heights = image_i.dem[linesamp_i_1[:,0].astype(int),linesamp_i_1[:,1].astype(int)]
+            linesamp_j = np.stack(project_linesamp(rpc_i_adj,image_j.rpc,linesamp_i_1[:,0],linesamp_i_1[:,1],heights,output_type='numpy'),axis=-1)
+            linesamp_i_2 = np.stack(project_linesamp(rpc_j_adj,image_i.rpc,linesamp_j[:,0],linesamp_j[:,1],heights,output_type='numpy'),axis=-1)
             linesamp_i = (linesamp_i_1 + linesamp_i_2) * 0.5
             self.reporter.log(f"{i}-{j} dis: \t {np.linalg.norm(linesamp_i - linesamp_j,axis=-1).mean()}")
+            
+            debug_imgs = []
+            for i in range(8):
+                ls_i = linesamp_i[i].astype(int)
+                ls_j = linesamp_j[i].astype(int)
+                img_i = image_i.image[ls_i[0] - 256:ls_i[0] + 256,ls_i[1] - 256:ls_i[1] + 256]
+                img_j = image_j.image[ls_j[0] - 256:ls_j[0] + 256,ls_j[1] - 256:ls_j[1] + 256]
+                cv2.circle(img_i,(256,256),1,(0,255,0),-1)
+                cv2.circle(img_j,(256,256),1,(0,255,0),-1)
+                debug_imgs.append(img_i)
+                debug_imgs.append(img_j)
+            debug_img = create_grid_img(debug_imgs)
+            cv2.imwrite(os.path.join(self.output_path,f'debug_{i}_{j}.png'),debug_img)
+            
             tie = {
                 'i':i,
                 'j':j,

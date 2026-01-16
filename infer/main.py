@@ -240,8 +240,8 @@ def main(args):
             reporter.update(current_task="Global Solving", current_step="Global Optimization")
             all_results = [item for sublist in all_results for item in sublist]
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
-            # images = load_images(args,[metas[i] for i in image_ids], reporter)
-            images = [metas[i] for i in image_ids]
+            images = load_images(args,[metas[i] for i in image_ids], reporter)
+            # images = [metas[i] for i in image_ids]
             if False:
                 solver = GlobalAffineSolver(images=images,
                                         device='cpu',
