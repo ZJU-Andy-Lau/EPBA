@@ -258,6 +258,8 @@ class RPCModelParameterTorch:
         self.Inverse_Adjust()
 
     def Update_Adjust(self,new_adjust_params:torch.Tensor):
+        if isinstance(new_adjust_params,np.ndarray):
+            new_adjust_params = torch.from_numpy(new_adjust_params)
         new_adjust_params = new_adjust_params.to(self.adjust_params.device).to(torch.double)
         def merge_adjust(A:torch.Tensor,B:torch.Tensor) -> torch.Tensor:
             device = A.device

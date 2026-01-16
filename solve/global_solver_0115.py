@@ -231,7 +231,7 @@ class PBAAffineSolver:
         step_eps: float = 1e-4,
         damping: float = 1e-6,
         verbose: bool = True,
-    ) -> Tuple[np.ndarray, PBASolveReport]:
+    ):
         """
         Gauss-Newton（有限差分雅可比），返回：
           - A_est: (M,2,3)
