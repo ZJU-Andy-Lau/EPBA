@@ -131,13 +131,13 @@ class PBAAffineSolver:
             self.reporter.log(f"{i}-{j} dis: \t {np.linalg.norm(linesamp_i_1 - linesamp_i_2,axis=-1).mean()}")
             
             debug_imgs = []
-            for i in range(8):
-                ls_i = linesamp_i[i].astype(int)
-                ls_j = linesamp_j[i].astype(int)
+            for k in range(8):
+                ls_i = linesamp_i[k].astype(int)
+                ls_j = linesamp_j[k].astype(int)
                 img_i = image_i.image[ls_i[0] - 256:ls_i[0] + 256,ls_i[1] - 256:ls_i[1] + 256]
                 img_j = image_j.image[ls_j[0] - 256:ls_j[0] + 256,ls_j[1] - 256:ls_j[1] + 256]
                 cv2.circle(img_i,(256,256),1,(0,255,0),-1)
-                cv2.circle(img_j,(256,256),1,(0,255,0),-1)
+                cv2.circle(img_j,(256,256),1,(0,0,255),-1)
                 debug_imgs.append(img_i)
                 debug_imgs.append(img_j)
             debug_img = create_grid_img(debug_imgs)
@@ -194,10 +194,10 @@ class PBAAffineSolver:
 
         for d in self.ties:
             i = int(d["i"]); j = int(d["j"])
-            pts_i_ls = xy_to_line_samp(d["pts_i"])
-            pts_j_ls = xy_to_line_samp(d["pts_j"])
-            # pts_i_ls = d["pts_i"]
-            # pts_j_ls = d["pts_j"]
+            # pts_i_ls = xy_to_line_samp(d["pts_i"])
+            # pts_j_ls = xy_to_line_samp(d["pts_j"])
+            pts_i_ls = d["pts_i"]
+            pts_j_ls = d["pts_j"]
             h = np.asarray(d["heights"], dtype=np.float64).reshape(-1)
 
             if pts_i_ls.shape[0] != pts_j_ls.shape[0] or pts_i_ls.shape[0] != h.shape[0]:
