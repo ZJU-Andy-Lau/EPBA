@@ -258,7 +258,7 @@ def main(args):
                                          reporter=reporter,
                                          output_path=args.output_path)
                 Ms = solver.solve()
-
+            reporter.log(f'{Ms.shape} \t {Ms.dtype}')
             for i,image in enumerate(images):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
