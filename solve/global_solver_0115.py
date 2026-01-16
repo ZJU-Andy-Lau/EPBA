@@ -83,16 +83,17 @@ class PBAAffineSolver:
         reporter: StatusReporter = None,
         output_path = None
     ):
-        self.ties,self.rpcs = self._process_data(images,results)
-        self.M = len(self.rpcs)
-        if not (0 <= fixed_id < self.M):
-            raise ValueError("fixed_id out of range")
         self.fixed_id = fixed_id
         self.device = device
         self.reporter = reporter
         if not output_path is None:
             self.output_path = os.path.join(output_path,'pba_solver_output')
             os.makedirs(self.output_path,exist_ok=True)
+
+        self.ties,self.rpcs = self._process_data(images,results)
+        self.M = len(self.rpcs)
+        if not (0 <= fixed_id < self.M):
+            raise ValueError("fixed_id out of range")
 
         # RPC 放到指定 device；并清空其内部 adjust（本类不使用它）
         for rpc in self.rpcs:
