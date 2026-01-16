@@ -251,11 +251,11 @@ class PBAAffineSolver:
                 self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={r0.size}, params={n_params}")
 
             if prev is not None and abs(prev - rms0) < tol:
-                return A.copy(), PBASolveReport(iters=it, rms_per_iter=rms_hist)
+                return torch.from_numpy(A)
             prev = rms0
 
             if r0.size == 0:
-                return A.copy(), PBASolveReport(iters=it, rms_per_iter=rms_hist)
+                return torch.from_numpy(A)
 
             # Normal equations: H dx = -g
             H = np.zeros((n_params, n_params), dtype=np.float64)
@@ -315,5 +315,4 @@ class PBAAffineSolver:
             A[self.fixed_id] = np.array([[1.0, 0.0, 0.0],
                                          [0.0, 1.0, 0.0]], dtype=np.float64)
 
-        return torch.from_numpy(A)#, PBASolveReport(iters=max_iters, rms_per_iter=rms_hist)
-
+        return torch.from_numpy(A)
