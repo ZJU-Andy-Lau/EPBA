@@ -40,6 +40,7 @@ from shared.utils import str2bool,get_current_time,load_model_state_dict,load_co
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,partition_pairs
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver
+from solve.global_solver_0115 import PBAAffineSolver
 from rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
 
@@ -239,16 +240,23 @@ def main(args):
             reporter.update(current_task="Global Solving", current_step="Global Optimization")
             all_results = [item for sublist in all_results for item in sublist]
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
-            images = load_images(args,[metas[i] for i in image_ids], reporter)
-            pairs = build_pairs(args,images, reporter)
-            solver = GlobalAffineSolver(images=images,
-                                    device='cpu',
-                                    anchor_indices=[0],
-                                    max_iter=args.solver_max_iter,
-                                    converge_tol=1e-6)
-            
-            Ms = solver.solve(all_results)
-            Ms = Ms[:,:2,]
+            # images = load_images(args,[metas[i] for i in image_ids], reporter)
+            images = [metas[i] for i in image_ids]
+            if False:
+                solver = GlobalAffineSolver(images=images,
+                                        device='cpu',
+                                        anchor_indices=[0],
+                                        max_iter=args.solver_max_iter,
+                                        converge_tol=1e-6)
+                
+                Ms = solver.solve(all_results)
+                Ms = Ms[:,:2,]
+            else:
+                solver = PBAAffineSolver(images,all_results,
+                                         fixed_id=0,
+                                         device=args.device,
+                                         reporter=reporter)
+                Ms = solver.solve()
 
             for i,image in enumerate(images):
                 M = Ms[i]
@@ -258,7 +266,8 @@ def main(args):
                     image.rpc.Merge_Adjust()
                     image.rpc.save_rpc_to_file(os.path.join(args.output_path,f"{image.root.replace('/','_')}_rpc.txt"))
                 # image.rpc.Merge_Adjust()
-            
+
+            pairs = build_pairs(args,images, reporter)
             report = get_error_report(pairs)
             reporter.log("\n" + "--- Global Error Report (Summary) ---")
             reporter.log(f"Total tie points checked: {report['count']}")

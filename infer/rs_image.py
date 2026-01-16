@@ -59,6 +59,36 @@ class RSImageMeta():
                                                      heights),dim=-1)
         xys = project_mercator(latlons)
         return xys.cpu().numpy()[:,[1,0]] # y,x -> x,y
+    
+    def dem_interp(self,sampline:np.ndarray):
+        if sampline.ndim == 1:
+            sampline = sampline[None]
+        return bilinear_interpolate(self.dem,sampline)
+
+    @torch.no_grad()
+    def xy_to_sampline(self,xy:np.ndarray,max_iter = 100,rpc:RPCModelParameterTorch = None) -> np.ndarray:
+        """
+        args:
+            xy : (N,2) (x,y) ndarray
+        return :
+            sampline : (N,2) (samp,line) ndarray
+        """
+        if xy.ndim == 1:
+            xy = xy[None]
+        if rpc is None:
+            rpc = self.rpc
+        latlon = mercator2lonlat(xy[:,[1,0]])
+        sampline = np.array([self.W,self.H],dtype=np.float32) * (xy - self.corner_xys[0]) / (self.corner_xys[3] - self.corner_xys[0])
+        dem = self.dem_interp(sampline)
+        invalid_mask = np.full(dem.shape,True,dtype=bool)
+        for iter in range(max_iter):
+            sampline_new = np.stack(rpc.RPC_OBJ2PHOTO(latlon[invalid_mask,0],latlon[invalid_mask,1],dem[invalid_mask],'numpy'),axis=-1)
+            dis = np.linalg.norm(sampline_new - sampline[invalid_mask],axis=-1)
+            sampline[invalid_mask] = sampline_new
+            invalid_mask[invalid_mask] = dis > 1.
+            if invalid_mask.sum() == 0:
+                break
+        return sampline.squeeze()
 
 class RSImage():
     def __init__(self,options,root:str,id:int,device:str='cuda'):

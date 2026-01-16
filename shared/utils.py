@@ -24,7 +24,8 @@ from sklearn.preprocessing import MinMaxScaler
 from matplotlib.patches import ConnectionPatch
 from matplotlib import pyplot as plt
 import io
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
+from shapely.affinity import scale
 import math
 from typing import List
 import yaml
@@ -1268,65 +1269,109 @@ def visualize_obj_error(obj_P2: np.ndarray, pred_P2: np.ndarray, canvas_size: tu
     ax_scatter.grid(True)
     visualizations['scatter'] = fig_to_numpy(fig_scatter)
     plt.close(fig_scatter)
-
-    # # --- 1. 矢量场图 (Quiver Plot) ---
-    # fig_quiver, ax_quiver = plt.subplots(figsize=(10, 10))
-    # # 绘制箭头，从真实点指向预测点
-    # ax_quiver.quiver(obj_scaled[:, 0], obj_scaled[:, 1], 
-    #                  pred_scaled[:, 0] - obj_scaled[:, 0], 
-    #                  pred_scaled[:, 1] - obj_scaled[:, 1],
-    #                  angles='xy', scale_units='xy', scale=1, color='r', width=0.002)
-    # # 绘制真实点
-    # ax_quiver.scatter(obj_scaled[:, 0], obj_scaled[:, 1], c='blue', s=5, label='Ground Truth')
-    # ax_quiver.set_title('Error Vector Field (Quiver Plot)')
-    # ax_quiver.set_xlabel('X coordinate')
-    # ax_quiver.set_ylabel('Y coordinate')
-    # ax_quiver.set_aspect('equal', adjustable='box')
-    # ax_quiver.legend()
-    # ax_quiver.grid(True)
-    # visualizations['quiver'] = fig_to_numpy(fig_quiver)
-    # plt.close(fig_quiver)
-
-    # # --- 2. 误差热力图 (Error Heatmap) ---
-    # # 使用 scipy.stats.binned_statistic_2d 来创建热力图
-    # from scipy.stats import binned_statistic_2d
-    
-    # # 创建二维网格统计
-    # stat, x_edge, y_edge, _ = binned_statistic_2d(
-    #     x=obj_P2[:, 0], y=obj_P2[:, 1], values=error_magnitudes,
-    #     statistic='mean', bins=50)
-
-    # fig_heatmap, ax_heatmap = plt.subplots(figsize=(10, 8))
-    # # 使用 pcolormesh 绘制热力图
-    # im = ax_heatmap.pcolormesh(x_edge, y_edge, stat.T, cmap='viridis', shading='auto')
-    # ax_heatmap.set_title('Spatial Distribution of Error (Heatmap)')
-    # ax_heatmap.set_xlabel('X coordinate')
-    # ax_heatmap.set_ylabel('Y coordinate')
-    # ax_heatmap.set_aspect('equal', adjustable='box')
-    # fig_heatmap.colorbar(im, ax=ax_heatmap, label='Mean Error Magnitude')
-    # visualizations['heatmap'] = fig_to_numpy(fig_heatmap)
-    # plt.close(fig_heatmap)
-
-    # # --- 3. 误差向量直方图 (Error Vector Histogram) ---
-    # fig_hist, ax_hist = plt.subplots(figsize=(10, 8))
-    # # 使用 LogNorm 可以更好地观察离群点
-    # from matplotlib.colors import LogNorm
-    # counts, xedges, yedges, im = ax_hist.hist2d(
-    #     error_vectors[:, 0], error_vectors[:, 1], bins=100, cmap='viridis', norm=LogNorm())
-    # ax_hist.set_title('2D Histogram of Error Vectors (dx, dy)')
-    # ax_hist.set_xlabel('Error in X (dx)')
-    # ax_hist.set_ylabel('Error in Y (dy)')
-    # ax_hist.set_aspect('equal', adjustable='box')
-    # # 添加一个十字线标记 (0,0)
-    # ax_hist.axhline(0, color='r', linestyle='--', linewidth=0.8)
-    # ax_hist.axvline(0, color='r', linestyle='--', linewidth=0.8)
-    # fig_hist.colorbar(im, ax=ax_hist, label='Number of Points')
-    # visualizations['histogram'] = fig_to_numpy(fig_hist)
-    # plt.close(fig_hist)
-
-    
     
     return visualizations
+
+def sample_points_in_overlap(corners_a, corners_b, K, shrink=0.9, seed=None, max_iter_factor=200):
+    """
+    在两个四边形的重叠区域内采样 K 个均匀随机点，并将重叠区域相对质心缩放 shrink 倍后再采样。
+
+    参数
+    ----
+    corners_a: (4,2) 或 (1,4,2)
+    corners_b: (4,2) 或 (1,4,2)
+    K: int, 需要采样的点数
+    shrink: float, 缩放系数（例如 0.9）
+    seed: int|None
+    max_iter_factor: int, 拒绝采样的最大尝试次数系数（最大尝试次数=K*max_iter_factor）
+
+    返回
+    ----
+    pts: (K,2) numpy.ndarray
+
+    异常
+    ----
+    ValueError: 无重叠/重叠面积为0/缩放后面积为0/采样失败
+    """
+    rng = np.random.default_rng(seed)
+
+    corners_a = np.asarray(corners_a, dtype=float)
+    corners_b = np.asarray(corners_b, dtype=float)
+
+    # 兼容 (1,4,2)/(4,2)
+    if corners_a.ndim == 3:
+        corners_a = corners_a[0]
+    if corners_b.ndim == 3:
+        corners_b = corners_b[0]
+
+    if corners_a.shape != (4, 2) or corners_b.shape != (4, 2):
+        raise ValueError(f"corners 必须可解析为 (4,2)。当前: A={corners_a.shape}, B={corners_b.shape}")
+
+    poly_a = Polygon(corners_a)
+    poly_b = Polygon(corners_b)
+
+    if (not poly_a.is_valid) or (not poly_b.is_valid):
+        # 对极少数自交/退化情况做修复
+        poly_a = poly_a.buffer(0)
+        poly_b = poly_b.buffer(0)
+
+    inter = poly_a.intersection(poly_b)
+
+    # 交集可能是 Polygon / MultiPolygon / GeometryCollection / LineString / empty
+    if inter.is_empty or inter.area <= 1e-12:
+        raise ValueError("两个四边形没有有效的面状重叠区域（交集为空或面积≈0）。")
+
+    # 如果是 MultiPolygon，取面积最大的那块（最常用、也最合理的默认）
+    if inter.geom_type == "MultiPolygon":
+        inter = max(inter.geoms, key=lambda g: g.area)
+
+    if inter.geom_type != "Polygon":
+        # 例如 GeometryCollection 中可能包含 Polygon + LineString 等
+        # 这里抽取其中面积最大的 Polygon
+        polys = [g for g in getattr(inter, "geoms", []) if g.geom_type == "Polygon" and g.area > 1e-12]
+        if not polys:
+            raise ValueError(f"交集不是可用的 Polygon（当前类型: {inter.geom_type}）。")
+        inter = max(polys, key=lambda g: g.area)
+
+    # 相对质心缩放 shrink 倍
+    c = inter.centroid
+    inter_shrunk = scale(inter, xfact=shrink, yfact=shrink, origin=(c.x, c.y))
+
+    if inter_shrunk.is_empty or inter_shrunk.area <= 1e-12:
+        raise ValueError("重叠区域缩放后面积≈0，无法采样。请检查 shrink 或输入四边形。")
+
+    # 拒绝采样：在缩放后多边形的包围盒内均匀采样，再筛选落在多边形内
+    minx, miny, maxx, maxy = inter_shrunk.bounds
+
+    pts = []
+    need = K
+    max_tries = K * max_iter_factor
+    tries = 0
+
+    # 为提升效率：每次批量采样
+    while need > 0 and tries < max_tries:
+        batch = max(need * 5, 256)  # 自适应批量大小
+        xs = rng.uniform(minx, maxx, size=batch)
+        ys = rng.uniform(miny, maxy, size=batch)
+
+        for x, y in zip(xs, ys):
+            tries += 1
+            if inter_shrunk.contains(Point(x, y)):
+                pts.append((x, y))
+                need -= 1
+                if need == 0:
+                    break
+            if tries >= max_tries:
+                break
+
+    if len(pts) != K:
+        raise ValueError(
+            f"采样失败：在最大尝试次数 {max_tries} 内仅采到 {len(pts)} 个点。"
+            "（重叠区域可能太小/过于狭长，可增大 max_iter_factor 或减小 K）"
+        )
+    
+    return pts
+
 
 class Status(Enum):
     NOT_INIT = 0
