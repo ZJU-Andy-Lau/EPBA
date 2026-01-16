@@ -128,7 +128,7 @@ class PBAAffineSolver:
             linesamp_j = np.stack(project_linesamp(rpc_i_adj,image_j.rpc,linesamp_i_1[:,0],linesamp_i_1[:,1],heights,output_type='numpy'),axis=-1)
             linesamp_i_2 = np.stack(project_linesamp(rpc_j_adj,image_i.rpc,linesamp_j[:,0],linesamp_j[:,1],heights,output_type='numpy'),axis=-1)
             linesamp_i = (linesamp_i_1 + linesamp_i_2) * 0.5
-            self.reporter.log(f"{i}-{j} dis: \t {np.linalg.norm(linesamp_i - linesamp_j,axis=-1).mean()}")
+            self.reporter.log(f"{i}-{j} dis: \t {np.linalg.norm(linesamp_i_1 - linesamp_i_2,axis=-1).mean()}")
             
             debug_imgs = []
             for i in range(8):

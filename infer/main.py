@@ -255,7 +255,8 @@ def main(args):
                 solver = PBAAffineSolver(images,all_results,
                                          fixed_id=0,
                                          device=args.device,
-                                         reporter=reporter)
+                                         reporter=reporter,
+                                         output_path=args.output_path)
                 Ms = solver.solve()
 
             for i,image in enumerate(images):
