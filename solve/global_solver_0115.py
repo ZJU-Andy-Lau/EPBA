@@ -315,5 +315,5 @@ class PBAAffineSolver:
             A[self.fixed_id] = np.array([[1.0, 0.0, 0.0],
                                          [0.0, 1.0, 0.0]], dtype=np.float64)
 
-        return A.copy()#, PBASolveReport(iters=max_iters, rms_per_iter=rms_hist)
+        return torch.from_numpy(A)#, PBASolveReport(iters=max_iters, rms_per_iter=rms_hist)
 
