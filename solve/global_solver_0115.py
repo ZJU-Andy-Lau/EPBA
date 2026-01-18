@@ -308,15 +308,12 @@ class PBAAffineSolver:
             return torch.zeros((0,), dtype=torch.float64, device=A_all.device)
         return torch.cat(res_list, dim=0)
 
-    def residual_vector_torch_chunk(self, A_all: torch.Tensor, d: dict) -> torch.Tensor:
+    def residual_vector_torch_chunk(self, A_i: torch.Tensor, A_j: torch.Tensor, d: dict) -> torch.Tensor:
         i = d["i"]
         j = d["j"]
         pts_i_ls = d["pts_i"]
         pts_j_ls = d["pts_j"]
         h = d["heights"].reshape(-1)
-
-        A_i = A_all[i]
-        A_j = A_all[j]
 
         pred_j = self._predict_obs_from_i_to_j_torch(i, j, pts_i_ls, h, A_i, A_j)
         pred_i = self._predict_obs_from_i_to_j_torch(j, i, pts_j_ls, h, A_j, A_i)
@@ -380,16 +377,17 @@ class PBAAffineSolver:
                 if j != self.fixed_id and j != i:
                     involved.append(j)
 
-                A_base = A.detach().clone()
                 params = {}
+                A_i = A[i]
+                A_j = A[j]
                 if i != self.fixed_id:
                     params[i] = A[i].detach().reshape(-1).requires_grad_(True)
-                    A_base[i] = params[i].reshape(2, 3)
+                    A_i = params[i].reshape(2, 3)
                 if j != self.fixed_id:
                     params[j] = A[j].detach().reshape(-1).requires_grad_(True)
-                    A_base[j] = params[j].reshape(2, 3)
+                    A_j = params[j].reshape(2, 3)
 
-                r_chunk = self.residual_vector_torch_chunk(A_base, chunk)
+                r_chunk = self.residual_vector_torch_chunk(A_i, A_j, chunk)
                 sum_sq += float(torch.sum(r_chunk.detach() ** 2).item())
                 count += int(r_chunk.numel())
 
@@ -407,11 +405,14 @@ class PBAAffineSolver:
                 Jm_cols = {}
                 for m in involved:
                     base = A[m].detach().reshape(-1)
+                    other_i = A_i
+                    other_j = A_j
+                    is_i = m == i
 
                     def residual_for_param(p):
-                        A_tmp = A.detach().clone()
-                        A_tmp[m] = p.reshape(2, 3)
-                        return self.residual_vector_torch_chunk(A_tmp, chunk)
+                        if is_i:
+                            return self.residual_vector_torch_chunk(p.reshape(2, 3), other_j, chunk)
+                        return self.residual_vector_torch_chunk(other_i, p.reshape(2, 3), chunk)
 
                     cols = []
                     for k in range(6):
