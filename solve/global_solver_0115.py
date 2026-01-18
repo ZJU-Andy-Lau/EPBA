@@ -355,117 +355,118 @@ class PBAAffineSolver:
         Gauss-Newton（自动微分雅可比），返回：
           - A_est: (M,2,3)
         """
-        A = torch.tensor(self.A, dtype=torch.float64, device=self.device)
-        rms_hist = []
-        prev = None
+        with torch.enable_grad():
+            A = torch.tensor(self.A, dtype=torch.float64, device=self.device)
+            rms_hist = []
+            prev = None
 
-        n_params = 6 * (self.M - 1)
+            n_params = 6 * (self.M - 1)
 
-        for it in range(1, max_iters + 1):
-            sum_sq = 0.0
-            count = 0
+            for it in range(1, max_iters + 1):
+                sum_sq = 0.0
+                count = 0
 
-            H = torch.zeros((n_params, n_params), dtype=torch.float64, device=self.device)
-            g = torch.zeros((n_params,), dtype=torch.float64, device=self.device)
+                H = torch.zeros((n_params, n_params), dtype=torch.float64, device=self.device)
+                g = torch.zeros((n_params,), dtype=torch.float64, device=self.device)
 
-            for chunk in self._iter_tie_slices(chunk_points):
-                i = chunk["i"]
-                j = chunk["j"]
-                involved = []
-                if i != self.fixed_id:
-                    involved.append(i)
-                if j != self.fixed_id and j != i:
-                    involved.append(j)
+                for chunk in self._iter_tie_slices(chunk_points):
+                    i = chunk["i"]
+                    j = chunk["j"]
+                    involved = []
+                    if i != self.fixed_id:
+                        involved.append(i)
+                    if j != self.fixed_id and j != i:
+                        involved.append(j)
 
-                params = {}
-                A_i = A[i]
-                A_j = A[j]
-                if i != self.fixed_id:
-                    params[i] = A[i].detach().reshape(-1).requires_grad_(True)
-                    A_i = params[i].reshape(2, 3)
-                if j != self.fixed_id:
-                    params[j] = A[j].detach().reshape(-1).requires_grad_(True)
-                    A_j = params[j].reshape(2, 3)
+                    params = {}
+                    A_i = A[i]
+                    A_j = A[j]
+                    if i != self.fixed_id:
+                        params[i] = A[i].detach().reshape(-1).requires_grad_(True)
+                        A_i = params[i].reshape(2, 3)
+                    if j != self.fixed_id:
+                        params[j] = A[j].detach().reshape(-1).requires_grad_(True)
+                        A_j = params[j].reshape(2, 3)
 
-                r_chunk = self.residual_vector_torch_chunk(A_i, A_j, chunk)
-                sum_sq += float(torch.sum(r_chunk.detach() ** 2).item())
-                count += int(r_chunk.numel())
+                    r_chunk = self.residual_vector_torch_chunk(A_i, A_j, chunk)
+                    sum_sq += float(torch.sum(r_chunk.detach() ** 2).item())
+                    count += int(r_chunk.numel())
 
-                for m in involved:
-                    grad_m = torch.autograd.grad(
-                        r_chunk,
-                        params[m],
-                        grad_outputs=r_chunk,
-                        retain_graph=True,
-                        create_graph=False,
-                    )[0]
+                    for m in involved:
+                        grad_m = torch.autograd.grad(
+                            r_chunk,
+                            params[m],
+                            grad_outputs=r_chunk,
+                            retain_graph=True,
+                            create_graph=False,
+                        )[0]
+                        pos = self.id2pos[m]
+                        g[6 * pos: 6 * pos + 6] += grad_m
+
+                    Jm_cols = {}
+                    for m in involved:
+                        base = A[m].detach().reshape(-1)
+                        other_i = A_i
+                        other_j = A_j
+                        is_i = m == i
+
+                        def residual_for_param(p):
+                            if is_i:
+                                return self.residual_vector_torch_chunk(p.reshape(2, 3), other_j, chunk)
+                            return self.residual_vector_torch_chunk(other_i, p.reshape(2, 3), chunk)
+
+                        cols = []
+                        for k in range(6):
+                            v = torch.zeros((6,), dtype=torch.float64, device=self.device)
+                            v[k] = 1.0
+                            _, jvp = torch.autograd.functional.jvp(residual_for_param, base, v, create_graph=False)
+                            cols.append(jvp)
+                        Jm_cols[m] = torch.stack(cols, dim=1)
+
+                    for m in involved:
+                        pos_m = self.id2pos[m]
+                        Jm = Jm_cols[m]
+                        idx_m = slice(6 * pos_m, 6 * pos_m + 6)
+                        H[idx_m, idx_m] += Jm.T @ Jm
+
+                    if len(involved) == 2:
+                        m, n = involved
+                        pos_m = self.id2pos[m]
+                        pos_n = self.id2pos[n]
+                        Jm = Jm_cols[m]
+                        Jn = Jm_cols[n]
+                        Im = slice(6 * pos_m, 6 * pos_m + 6)
+                        In = slice(6 * pos_n, 6 * pos_n + 6)
+                        Hmn = Jm.T @ Jn
+                        H[Im, In] += Hmn
+                        H[In, Im] += Hmn.T
+
+                rms0 = float(math.sqrt(sum_sq / count)) if count else 0.0
+                rms_hist.append(rms0)
+
+                if verbose:
+                    if self.reporter:
+                        self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={count}, params={n_params}")
+
+                if prev is not None and abs(prev - rms0) < tol:
+                    return A.detach().cpu()
+                prev = rms0
+
+                if count == 0:
+                    return A.detach().cpu()
+
+                H += damping * torch.eye(n_params, dtype=torch.float64, device=self.device)
+
+                dx = -torch.linalg.solve(H, g)
+
+                # Update blocks
+                for m in self.var_ids:
                     pos = self.id2pos[m]
-                    g[6 * pos: 6 * pos + 6] += grad_m
+                    delta = dx[6 * pos: 6 * pos + 6]
+                    A[m] = (A[m].reshape(-1) + delta).reshape(2, 3)
 
-                Jm_cols = {}
-                for m in involved:
-                    base = A[m].detach().reshape(-1)
-                    other_i = A_i
-                    other_j = A_j
-                    is_i = m == i
+                # Keep fixed as identity
+                A[self.fixed_id] = torch.tensor([[1.0, 0.0, 0.0],
+                                                [0.0, 1.0, 0.0]], dtype=torch.float64, device=self.device)
 
-                    def residual_for_param(p):
-                        if is_i:
-                            return self.residual_vector_torch_chunk(p.reshape(2, 3), other_j, chunk)
-                        return self.residual_vector_torch_chunk(other_i, p.reshape(2, 3), chunk)
-
-                    cols = []
-                    for k in range(6):
-                        v = torch.zeros((6,), dtype=torch.float64, device=self.device)
-                        v[k] = 1.0
-                        _, jvp = torch.autograd.functional.jvp(residual_for_param, base, v, create_graph=False)
-                        cols.append(jvp)
-                    Jm_cols[m] = torch.stack(cols, dim=1)
-
-                for m in involved:
-                    pos_m = self.id2pos[m]
-                    Jm = Jm_cols[m]
-                    idx_m = slice(6 * pos_m, 6 * pos_m + 6)
-                    H[idx_m, idx_m] += Jm.T @ Jm
-
-                if len(involved) == 2:
-                    m, n = involved
-                    pos_m = self.id2pos[m]
-                    pos_n = self.id2pos[n]
-                    Jm = Jm_cols[m]
-                    Jn = Jm_cols[n]
-                    Im = slice(6 * pos_m, 6 * pos_m + 6)
-                    In = slice(6 * pos_n, 6 * pos_n + 6)
-                    Hmn = Jm.T @ Jn
-                    H[Im, In] += Hmn
-                    H[In, Im] += Hmn.T
-
-            rms0 = float(math.sqrt(sum_sq / count)) if count else 0.0
-            rms_hist.append(rms0)
-
-            if verbose:
-                if self.reporter:
-                    self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={count}, params={n_params}")
-
-            if prev is not None and abs(prev - rms0) < tol:
-                return A.detach().cpu()
-            prev = rms0
-
-            if count == 0:
-                return A.detach().cpu()
-
-            H += damping * torch.eye(n_params, dtype=torch.float64, device=self.device)
-
-            dx = -torch.linalg.solve(H, g)
-
-            # Update blocks
-            for m in self.var_ids:
-                pos = self.id2pos[m]
-                delta = dx[6 * pos: 6 * pos + 6]
-                A[m] = (A[m].reshape(-1) + delta).reshape(2, 3)
-
-            # Keep fixed as identity
-            A[self.fixed_id] = torch.tensor([[1.0, 0.0, 0.0],
-                                             [0.0, 1.0, 0.0]], dtype=torch.float64, device=self.device)
-
-        return A.detach().cpu()
+            return A.detach().cpu()
