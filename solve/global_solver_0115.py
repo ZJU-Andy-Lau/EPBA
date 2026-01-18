@@ -149,7 +149,7 @@ class PBAAffineSolver:
             image_i = images[i]
             image_j = images[j]
             rpc_i_adj = deepcopy(image_i.rpc)
-            rpc_i_adj.Update_Adjust(match[i])
+            rpc_i_adj.Update_Adjust(match['M'])
             sampled_xys = sample_points_in_overlap(image_i.corner_xys,image_j.corner_xys,K=sample_points_num)
             linesamp_i = image_i.xy_to_sampline(sampled_xys)[:,[1,0]]
             heights = image_i.dem[linesamp_i[:,0].astype(int),linesamp_i[:,1].astype(int)]
