@@ -266,7 +266,7 @@ def main(args):
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             solver = PBAAffineSolver(images,all_results,
                                     fixed_id=0,
-                                    sample_points_num=args.sample_points.num,
+                                    sample_points_num=args.sample_points_num,
                                     device=args.device,
                                     reporter=reporter,
                                     output_path=args.output_path)
