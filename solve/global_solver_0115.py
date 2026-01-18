@@ -110,7 +110,7 @@ class PBAAffineSolver:
             self.output_path = os.path.join(output_path,'pba_solver_output')
             os.makedirs(self.output_path,exist_ok=True)
 
-        self.ties,self.rpcs = self._process_data(images,results)
+        self.ties,self.rpcs = self._process_data(images,results,sample_points_num)
         self.M = len(self.rpcs)
         if not (0 <= fixed_id < self.M):
             raise ValueError("fixed_id out of range")
@@ -308,6 +308,38 @@ class PBAAffineSolver:
             return torch.zeros((0,), dtype=torch.float64, device=A_all.device)
         return torch.cat(res_list, dim=0)
 
+    def residual_vector_torch_chunk(self, A_all: torch.Tensor, d: dict) -> torch.Tensor:
+        i = d["i"]
+        j = d["j"]
+        pts_i_ls = d["pts_i"]
+        pts_j_ls = d["pts_j"]
+        h = d["heights"].reshape(-1)
+
+        A_i = A_all[i]
+        A_j = A_all[j]
+
+        pred_j = self._predict_obs_from_i_to_j_torch(i, j, pts_i_ls, h, A_i, A_j)
+        pred_i = self._predict_obs_from_i_to_j_torch(j, i, pts_j_ls, h, A_j, A_i)
+
+        rj = (pred_j - pts_j_ls).reshape(-1)
+        ri = (pred_i - pts_i_ls).reshape(-1)
+        return torch.cat([rj, ri], dim=0)
+
+    def _iter_tie_slices(self, max_points: int):
+        for d in self.tie_tensors:
+            n = d["pts_i"].shape[0]
+            start = 0
+            while start < n:
+                end = min(start + max_points, n)
+                yield {
+                    "i": d["i"],
+                    "j": d["j"],
+                    "pts_i": d["pts_i"][start:end],
+                    "pts_j": d["pts_j"][start:end],
+                    "heights": d["heights"][start:end],
+                }
+                start = end
+
     def rms(self, A_all: np.ndarray) -> float:
         r = self.residual_vector(A_all)
         if r.size == 0:
@@ -319,6 +351,7 @@ class PBAAffineSolver:
         max_iters: int = 15,
         tol: float = 1e-6,
         damping: float = 1e-6,
+        chunk_points: int = 65536,
         verbose: bool = True,
     ):
         """
@@ -332,66 +365,94 @@ class PBAAffineSolver:
         n_params = 6 * (self.M - 1)
 
         for it in range(1, max_iters + 1):
-            r0 = self.residual_vector_torch(A)
-            rms0 = float(torch.sqrt(torch.mean(r0**2)).item()) if r0.numel() else 0.0
+            sum_sq = 0.0
+            count = 0
+
+            H = torch.zeros((n_params, n_params), dtype=torch.float64, device=self.device)
+            g = torch.zeros((n_params,), dtype=torch.float64, device=self.device)
+
+            for chunk in self._iter_tie_slices(chunk_points):
+                i = chunk["i"]
+                j = chunk["j"]
+                involved = []
+                if i != self.fixed_id:
+                    involved.append(i)
+                if j != self.fixed_id and j != i:
+                    involved.append(j)
+
+                A_base = A.detach().clone()
+                params = {}
+                if i != self.fixed_id:
+                    params[i] = A[i].detach().reshape(-1).requires_grad_(True)
+                    A_base[i] = params[i].reshape(2, 3)
+                if j != self.fixed_id:
+                    params[j] = A[j].detach().reshape(-1).requires_grad_(True)
+                    A_base[j] = params[j].reshape(2, 3)
+
+                r_chunk = self.residual_vector_torch_chunk(A_base, chunk)
+                sum_sq += float(torch.sum(r_chunk.detach() ** 2).item())
+                count += int(r_chunk.numel())
+
+                for m in involved:
+                    grad_m = torch.autograd.grad(
+                        r_chunk,
+                        params[m],
+                        grad_outputs=r_chunk,
+                        retain_graph=True,
+                        create_graph=False,
+                    )[0]
+                    pos = self.id2pos[m]
+                    g[6 * pos: 6 * pos + 6] += grad_m
+
+                Jm_cols = {}
+                for m in involved:
+                    base = A[m].detach().reshape(-1)
+
+                    def residual_for_param(p):
+                        A_tmp = A.detach().clone()
+                        A_tmp[m] = p.reshape(2, 3)
+                        return self.residual_vector_torch_chunk(A_tmp, chunk)
+
+                    cols = []
+                    for k in range(6):
+                        v = torch.zeros((6,), dtype=torch.float64, device=self.device)
+                        v[k] = 1.0
+                        _, jvp = torch.autograd.functional.jvp(residual_for_param, base, v, create_graph=False)
+                        cols.append(jvp)
+                    Jm_cols[m] = torch.stack(cols, dim=1)
+
+                for m in involved:
+                    pos_m = self.id2pos[m]
+                    Jm = Jm_cols[m]
+                    idx_m = slice(6 * pos_m, 6 * pos_m + 6)
+                    H[idx_m, idx_m] += Jm.T @ Jm
+
+                if len(involved) == 2:
+                    m, n = involved
+                    pos_m = self.id2pos[m]
+                    pos_n = self.id2pos[n]
+                    Jm = Jm_cols[m]
+                    Jn = Jm_cols[n]
+                    Im = slice(6 * pos_m, 6 * pos_m + 6)
+                    In = slice(6 * pos_n, 6 * pos_n + 6)
+                    Hmn = Jm.T @ Jn
+                    H[Im, In] += Hmn
+                    H[In, Im] += Hmn.T
+
+            rms0 = float(math.sqrt(sum_sq / count)) if count else 0.0
             rms_hist.append(rms0)
 
             if verbose:
                 if self.reporter:
-                    self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={r0.numel()}, params={n_params}")
+                    self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={count}, params={n_params}")
 
             if prev is not None and abs(prev - rms0) < tol:
                 return A.detach().cpu()
             prev = rms0
 
-            if r0.numel() == 0:
+            if count == 0:
                 return A.detach().cpu()
 
-            # Normal equations: H dx = -g
-            H = torch.zeros((n_params, n_params), dtype=torch.float64, device=self.device)
-            g = torch.zeros((n_params,), dtype=torch.float64, device=self.device)
-
-            J_cache = {}
-
-            for m in self.var_ids:
-                pos = self.id2pos[m]
-                base = A[m].detach().reshape(-1)
-
-                def residual_for_param(p):
-                    A_tmp = A.detach().clone()
-                    A_tmp[m] = p.reshape(2, 3)
-                    return self.residual_vector_torch(A_tmp)
-
-                try:
-                    Jm = torch.autograd.functional.jacobian(residual_for_param, base, vectorize=True)
-                except TypeError:
-                    Jm = torch.autograd.functional.jacobian(residual_for_param, base)
-
-                J_cache[m] = Jm
-
-                idx = slice(6 * pos, 6 * pos + 6)
-                H[idx, idx] += Jm.T @ Jm
-                g[idx] += Jm.T @ r0
-
-            # Cross terms
-            for a in range(len(self.var_ids)):
-                ma = self.var_ids[a]
-                Ja = J_cache[ma]
-                ia = self.id2pos[ma]
-                Ia = slice(6 * ia, 6 * ia + 6)
-                for mb in self.neighbors.get(ma, []):
-                    if mb <= ma or mb == self.fixed_id:
-                        continue
-                    if mb not in J_cache:
-                        continue
-                    Jb = J_cache[mb]
-                    ib = self.id2pos[mb]
-                    Ib = slice(6 * ib, 6 * ib + 6)
-                    Hab = Ja.T @ Jb
-                    H[Ia, Ib] += Hab
-                    H[Ib, Ia] += Hab.T
-
-            # Levenberg damping
             H += damping * torch.eye(n_params, dtype=torch.float64, device=self.device)
 
             dx = -torch.linalg.solve(H, g)
