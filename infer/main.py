@@ -100,7 +100,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
             if is_overlap(images[i],images[j],args.min_window_size ** 2):
                 configs['output_path'] = os.path.join(args.output_path,f"pair_{images[i].id}_{images[j].id}")
                 # 传递 reporter 给 Pair
-                pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,device=args.device, reporter=reporter)
+                pair = Pair(images[i],images[j],images[i].id,images[j].id,configs,mutual=args.mutual,device=args.device, reporter=reporter)
                 pairs.append(pair)
     else:
         for i,j in pair_ids:
@@ -210,12 +210,35 @@ def main(args):
                 reporter.update(progress=f"{idx+1}/{total_pairs}")
                 # reporter.log(f"Solving Pair {pair.id_a} - {pair.id_b}")
                 
-                affine_ab,affine_ba = pair.solve_affines(encoder,predictor)
-                result = {
-                    pair.id_a:affine_ab.detach().cpu(),
-                    pair.id_b:affine_ba.detach().cpu()
-                }
-                local_results.append(result)
+                if args.mutual:
+                     affine_ab,affine_ba = pair.solve_affines(encoder,predictor)
+                     result_ab = {
+                         'i':pair.id_a,
+                         'j':pair.id_b,
+                         'M':affine_ab.detach().cpu()
+                     }
+                     result_ba = {
+                         'i':pair.id_b,
+                         'j':pair.id_a,
+                         'M':affine_ba.detach().cpu()
+                     }
+                     local_results.append(result_ab)
+                     local_results.append(result_ba)
+                else:
+                    affine_ab = pair.solve_affines(encoder,predictor)
+                    result_ab = {
+                        'i':pair.id_a,
+                        'j':pair.id_b,
+                        'M':affine_ab.detach().cpu()
+                    }
+                    local_results.append(result_ab)
+
+                # result = {
+                #     pair.id_a:affine_ab.detach().cpu(),
+                #     pair.id_b:affine_ba.detach().cpu()
+                # }
+                
+                # local_results.append(result)
             
             # 任务完成，清理状态
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
@@ -241,25 +264,13 @@ def main(args):
             all_results = [item for sublist in all_results for item in sublist]
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args,[metas[i] for i in image_ids], reporter)
-            # images = [metas[i] for i in image_ids]
-            if False:
-                solver = GlobalAffineSolver(images=images,
-                                        device='cpu',
-                                        anchor_indices=[0],
-                                        max_iter=args.solver_max_iter,
-                                        converge_tol=1e-6)
-                
-                Ms = solver.solve(all_results)
-                Ms = Ms[:,:2,]
-            else:
-                solver = PBAAffineSolver(images,all_results,
-                                         fixed_id=0,
-                                         sample_points_num=16,
-                                         device=args.device,
-                                         reporter=reporter,
-                                         output_path=args.output_path)
-                Ms = solver.solve()
-            reporter.log(f'{Ms.shape} \t {Ms.dtype}')
+            solver = PBAAffineSolver(images,all_results,
+                                    fixed_id=0,
+                                    sample_points_num=args.sample_points.num,
+                                    device=args.device,
+                                    reporter=reporter,
+                                    output_path=args.output_path)
+            Ms = solver.solve()
             for i,image in enumerate(images):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
@@ -344,9 +355,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--quad_split_times', type=int, default=1)
 
-    parser.add_argument('--solver',type=str,default='global')
+    parser.add_argument('--mutual', type=str2bool, default=True)
 
-    parser.add_argument('--solver_config_path', type=str, default='configs/global_solver_config.yaml')
+    parser.add_argument('--sample_points_num',type=int,default=16)
 
     parser.add_argument('--solver_max_iter', type=int, default=10)
 

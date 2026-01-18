@@ -88,7 +88,7 @@ def build_adj_ref_pair(args,adjust_image:RSImage,ref_image:RSImage, reporter) ->
         'match':args.match,
     }
     configs['output_path'] = os.path.join(args.output_path,f"pair_{adjust_image.id}_{ref_image.id}")
-    pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,dual=False,reporter=reporter)
+    pair = Pair(adjust_image,ref_image,adjust_image.id,ref_image.id,configs,device=args.device,mutual=False,reporter=reporter)
     return pair
 
 def build_pairs(args,images:List[RSImage], reporter) -> List[Pair]:

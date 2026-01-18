@@ -112,7 +112,7 @@ class PBAAffineSolver:
         self.var_ids = [m for m in range(self.M) if m != self.fixed_id]
         self.id2pos = {m: k for k, m in enumerate(self.var_ids)}  # image -> block index
 
-    def _process_data(self,images:list[RSImage],results,sample_points_num = 256):
+    def _process_data_old(self,images:list[RSImage],results,sample_points_num = 256):
         ties = []
         rpcs = [image.rpc for image in images]
         for match in results:
@@ -140,7 +140,30 @@ class PBAAffineSolver:
             }
             ties.append(tie)
         return ties,rpcs
-            
+
+    def _process_data(self,images:list[RSImage],results,sample_points_num = 256):
+        ties = []
+        rpcs = [image.rpc for image in images]
+        for match in results:
+            i,j = int(match['i']),int(match['j'])
+            image_i = images[i]
+            image_j = images[j]
+            rpc_i_adj = deepcopy(image_i.rpc)
+            rpc_i_adj.Update_Adjust(match[i])
+            sampled_xys = sample_points_in_overlap(image_i.corner_xys,image_j.corner_xys,K=sample_points_num)
+            linesamp_i = image_i.xy_to_sampline(sampled_xys)[:,[1,0]]
+            heights = image_i.dem[linesamp_i[:,0].astype(int),linesamp_i[:,1].astype(int)]
+            linesamp_j = np.stack(project_linesamp(rpc_i_adj,image_j.rpc,linesamp_i[:,0],linesamp_i[:,1],heights,output_type='numpy'),axis=-1)
+
+            tie = {
+                'i':i,
+                'j':j,
+                'pts_i':linesamp_i,
+                'pts_j':linesamp_j,
+                'heights':heights
+            }
+            ties.append(tie)
+        return ties,rpcs    
 
     def _predict_obs_from_i_to_j(
         self,

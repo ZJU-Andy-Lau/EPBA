@@ -34,14 +34,14 @@ default_configs = {
 }
 
 class Pair():
-    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,id_a:int,id_b:int,configs = {},device:str = 'cuda', dual = True, check_error_only = False, reporter=None):
+    def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,id_a:int,id_b:int,configs = {},device:str = 'cuda', mutual = True, check_error_only = False, reporter=None):
         self.rs_image_a = rs_image_a
         self.rs_image_b = rs_image_b
         self.id_a = id_a
         self.id_b = id_b
         self.configs = {**default_configs,**configs}
         self.device = device
-        self.dual = dual
+        self.mutual = mutual
         self.reporter = reporter # 接收 reporter
         self.window_pairs:List[WindowPair] = []
         self.window_size = -1
@@ -51,13 +51,13 @@ class Pair():
                                     configs={
                                         **self.configs,
                                         **{
-                                            'output_path':os.path.join(self.configs['output_path'],'solve_ab') if dual else self.configs['output_path']
+                                            'output_path':os.path.join(self.configs['output_path'],'solve_ab') if mutual else self.configs['output_path']
                                         },
                                         
                                     },
                                     device=device,
                                     reporter=reporter)
-            if dual:
+            if mutual:
                 self.solver_ba = Solver(rs_image_a=rs_image_b,
                                     rs_image_b=rs_image_a,
                                     configs={
@@ -78,7 +78,7 @@ class Pair():
             self.reporter.update(current_task=f"{self.id_a}=>{self.id_b}")
         affine_ab = self.solver_ab.solve_affine(encoder,predictor)
 
-        if not self.dual:
+        if not self.mutual:
             return affine_ab
         
         if self.reporter:
