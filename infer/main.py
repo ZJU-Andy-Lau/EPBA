@@ -254,6 +254,7 @@ def main(args):
             else:
                 solver = PBAAffineSolver(images,all_results,
                                          fixed_id=0,
+                                         sample_points_num=16,
                                          device=args.device,
                                          reporter=reporter,
                                          output_path=args.output_path)

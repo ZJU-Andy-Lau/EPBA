@@ -79,6 +79,7 @@ class PBAAffineSolver:
         images:list[RSImage],
         results,
         fixed_id: int,
+        sample_points_num: int = 256,
         device: str = "cuda",
         reporter: StatusReporter = None,
         output_path = None
