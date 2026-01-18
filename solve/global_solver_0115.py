@@ -91,7 +91,7 @@ class PBAAffineSolver:
             self.output_path = os.path.join(output_path,'pba_solver_output')
             os.makedirs(self.output_path,exist_ok=True)
 
-        self.ties,self.rpcs = self._process_data(images,results)
+        self.ties,self.rpcs = self._process_data(images,results,sample_points_num=sample_points_num)
         self.M = len(self.rpcs)
         if not (0 <= fixed_id < self.M):
             raise ValueError("fixed_id out of range")
