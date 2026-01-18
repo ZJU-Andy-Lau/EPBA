@@ -111,7 +111,7 @@ def build_pairs(args,images:List[RSImage], reporter, pair_ids = None) -> List[Pa
                 raise ValueError(f"pair id {i}-{j} not found in images")
             configs['output_path'] = os.path.join(args.output_path,f"pair_{i}_{j}")
             # 传递 reporter 给 Pair
-            pair = Pair(image_i,image_j,i,j,configs,device=args.device, reporter=reporter)
+            pair = Pair(image_i,image_j,i,j,configs,mutual=args.mutual,device=args.device, reporter=reporter)
             pairs.append(pair)
 
     # reporter.log(f"Totally {len(pairs)} Pairs")
