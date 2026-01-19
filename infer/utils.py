@@ -590,7 +590,7 @@ def get_report_dict(all_distances:np.ndarray):
 def get_error_report(pairs:List['Pair']):
     all_distances_list = []
     for pair in pairs:
-        distances = pair.check_error()
+        distances = pair.check_error_pix()
         all_distances_list.append(distances)
     all_distances = np.concatenate(all_distances_list)
     report = get_report_dict(all_distances)

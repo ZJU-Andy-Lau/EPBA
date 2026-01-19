@@ -87,7 +87,7 @@ class Pair():
         return affine_ab,affine_ba
     
     
-    def check_error(self):
+    def check_error_m(self):
         lines_i = self.rs_image_a.tie_points[:,0]
         samps_i = self.rs_image_a.tie_points[:,1]
         heights_i = self.rs_image_a.dem[lines_i,samps_i]
@@ -103,6 +103,10 @@ class Pair():
         distances = haversine_distance(coords_i, coords_j)
         return distances
     
+    def check_error_pix(self):
+        ref_points = self.rs_image_b.get_ref_points()
+        distances = self.rs_image_a.check_error(ref_points)
+        return distances
 
 class Solver():
     def __init__(self,rs_image_a:RSImage,rs_image_b:RSImage,configs:dict,device:str = 'cuda', reporter=None):

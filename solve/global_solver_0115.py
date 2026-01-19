@@ -175,12 +175,12 @@ class PBAAffineSolver:
         min_area = 1e11
         for match in results:
             if match['overlap_area'] < min_area:
-                min_area = overlap_area
+                min_area = match['overlap_area']
         for match in results:
             i,j = int(match['i']),int(match['j'])
             image_i = images[i]
             image_j = images[j]
-            overlap_area = get_overlap_area(image_i.corner_xys,image_j.corner_xys)
+            overlap_area = match['overlap_area']
             K = int(sample_points_num * (overlap_area / min_area))
             rpc_i_adj = deepcopy(image_i.rpc)
             rpc_i_adj.Update_Adjust(match['M'])
