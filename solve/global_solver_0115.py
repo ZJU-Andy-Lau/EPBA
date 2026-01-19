@@ -97,7 +97,7 @@ class PBAAffineSolver:
         self,
         images:list[RSImage],
         results,
-        fixed_id: int,
+        fixed_id: int = None,
         sample_points_num: int = 256,
         device: str = "cuda",
         reporter: StatusReporter = None,
@@ -110,10 +110,12 @@ class PBAAffineSolver:
             self.output_path = os.path.join(output_path,'pba_solver_output')
             os.makedirs(self.output_path,exist_ok=True)
 
+        results = self._get_matches_overlap_area(images,results)
+        if fixed_id is None or fixed_id < 0 or fixed_id >= len(images):
+            self.fixed_id = self._get_fixed_id(images,results)
+            reporter.log(f"Set fixed id from {fixed_id} to {self.fixed_id}")
         self.ties,self.rpcs = self._process_data(images,results,sample_points_num)
         self.M = len(self.rpcs)
-        if not (0 <= fixed_id < self.M):
-            raise ValueError("fixed_id out of range")
 
         # RPC 放到指定 device；并清空其内部 adjust（本类不使用它）
         for rpc in self.rpcs:
@@ -131,6 +133,24 @@ class PBAAffineSolver:
         self.var_ids = [m for m in range(self.M) if m != self.fixed_id]
         self.id2pos = {m: k for k, m in enumerate(self.var_ids)}  # image -> block index
         self._prepare_tie_tensors()
+
+    def _get_matches_overlap_area(self,images:list[RSImage],results):
+        for match in results:
+            i,j = int(match['i']),int(match['j'])
+            image_i = images[i]
+            image_j = images[j]
+            overlap_area = get_overlap_area(image_i.corner_xys,image_j.corner_xys)
+            match['overlap_area'] = overlap_area
+        return results
+
+    def _get_fixed_id(self,images:list[RSImage],results):
+        overlap_area_sum = np.zeros((len(images),))
+        for match in results:
+            i,j = int(match['i']),int(match['j'])
+            overlap_area = match['overlap_area']
+            overlap_area_sum[i] += overlap_area
+            overlap_area_sum[j] += overlap_area
+        return int(np.argmax(overlap_area_sum))
 
     def _prepare_tie_tensors(self):
         self.tie_tensors = []
@@ -154,11 +174,7 @@ class PBAAffineSolver:
         rpcs = [image.rpc for image in images]
         min_area = 1e11
         for match in results:
-            i,j = int(match['i']),int(match['j'])
-            image_i = images[i]
-            image_j = images[j]
-            overlap_area = get_overlap_area(image_i.corner_xys,image_j.corner_xys)
-            if overlap_area < min_area:
+            if match['overlap_area'] < min_area:
                 min_area = overlap_area
         for match in results:
             i,j = int(match['i']),int(match['j'])

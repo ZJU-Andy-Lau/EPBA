@@ -265,7 +265,7 @@ def main(args):
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             solver = PBAAffineSolver(images,all_results,
-                                    fixed_id=0,
+                                    fixed_id=args.fixed_id,
                                     sample_points_num=args.sample_points_num,
                                     device=args.device,
                                     reporter=reporter,
@@ -359,6 +359,8 @@ if __name__ == '__main__':
     parser.add_argument('--mutual', type=str2bool, default=True)
 
     parser.add_argument('--sample_points_num',type=int,default=16)
+
+    parser.add_argument('--fixed_id',type=int,default=None)
 
     parser.add_argument('--solver_max_iter', type=int, default=10)
 
