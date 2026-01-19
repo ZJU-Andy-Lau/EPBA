@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple
 
 from shared.rpc import RPCModelParameterTorch,project_linesamp
-from shared.utils import sample_points_in_overlap
+from shared.utils import sample_points_in_overlap,get_overlap_area
 from infer.rs_image import RSImage
 from infer.monitor import StatusReporter
 from infer.utils import create_grid_img
@@ -149,45 +149,26 @@ class PBAAffineSolver:
             }
             self.tie_tensors.append(tie)
 
-    def _process_data_old(self,images:list[RSImage],results,sample_points_num = 256):
-        ties = []
-        rpcs = [image.rpc for image in images]
-        for match in results:
-            i,j = match.keys()
-            image_i:RSImage = images[i]
-            image_j:RSImage = images[j]
-            rpc_i_adj = deepcopy(image_i.rpc)
-            rpc_i_adj.Update_Adjust(match[i])
-            rpc_j_adj = deepcopy(image_j.rpc)
-            rpc_j_adj.Update_Adjust(match[j])
-            sampled_xys = sample_points_in_overlap(image_i.corner_xys,image_j.corner_xys,K=sample_points_num)
-            linesamp_i_1 = image_i.xy_to_sampline(sampled_xys)[:,[1,0]]
-            heights = image_i.dem[linesamp_i_1[:,0].astype(int),linesamp_i_1[:,1].astype(int)]
-            linesamp_j = np.stack(project_linesamp(rpc_i_adj,image_j.rpc,linesamp_i_1[:,0],linesamp_i_1[:,1],heights,output_type='numpy'),axis=-1)
-            linesamp_i_2 = np.stack(project_linesamp(rpc_j_adj,image_i.rpc,linesamp_j[:,0],linesamp_j[:,1],heights,output_type='numpy'),axis=-1)
-            linesamp_i = (linesamp_i_1 + linesamp_i_2) * 0.5
-            self.reporter.log(f"{i}-{j} dis: \t {np.linalg.norm(linesamp_i_1 - linesamp_i_2,axis=-1).mean()}")
-            
-            tie = {
-                'i':i,
-                'j':j,
-                'pts_i':linesamp_i,
-                'pts_j':linesamp_j,
-                'heights':heights
-            }
-            ties.append(tie)
-        return ties,rpcs
-
     def _process_data(self,images:list[RSImage],results,sample_points_num = 256):
         ties = []
         rpcs = [image.rpc for image in images]
+        min_area = 1e11
         for match in results:
             i,j = int(match['i']),int(match['j'])
             image_i = images[i]
             image_j = images[j]
+            overlap_area = get_overlap_area(image_i.corner_xys,image_j.corner_xys)
+            if overlap_area < min_area:
+                min_area = overlap_area
+        for match in results:
+            i,j = int(match['i']),int(match['j'])
+            image_i = images[i]
+            image_j = images[j]
+            overlap_area = get_overlap_area(image_i.corner_xys,image_j.corner_xys)
+            K = int(sample_points_num * (overlap_area / min_area))
             rpc_i_adj = deepcopy(image_i.rpc)
             rpc_i_adj.Update_Adjust(match['M'])
-            sampled_xys = sample_points_in_overlap(image_i.corner_xys,image_j.corner_xys,K=sample_points_num)
+            sampled_xys = sample_points_in_overlap(image_i.corner_xys,image_j.corner_xys,K=K)
             linesamp_i = image_i.xy_to_sampline(sampled_xys)[:,[1,0]]
             heights = image_i.dem[linesamp_i[:,0].astype(int),linesamp_i[:,1].astype(int)]
             linesamp_j = np.stack(project_linesamp(rpc_i_adj,image_j.rpc,linesamp_i[:,0],linesamp_i[:,1],heights,output_type='numpy'),axis=-1)

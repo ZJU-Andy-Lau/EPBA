@@ -1272,6 +1272,31 @@ def visualize_obj_error(obj_P2: np.ndarray, pred_P2: np.ndarray, canvas_size: tu
     
     return visualizations
 
+def get_overlap_area(corners_a, corners_b):
+    corners_a = np.asarray(corners_a, dtype=float)
+    corners_b = np.asarray(corners_b, dtype=float)
+
+    # 兼容 (1,4,2)/(4,2)
+    if corners_a.ndim == 3:
+        corners_a = corners_a[0]
+    if corners_b.ndim == 3:
+        corners_b = corners_b[0]
+
+    if corners_a.shape != (4, 2) or corners_b.shape != (4, 2):
+        raise ValueError(f"corners 必须可解析为 (4,2)。当前: A={corners_a.shape}, B={corners_b.shape}")
+
+    poly_a = Polygon(corners_a)
+    poly_b = Polygon(corners_b)
+
+    if (not poly_a.is_valid) or (not poly_b.is_valid):
+        # 对极少数自交/退化情况做修复
+        poly_a = poly_a.buffer(0)
+        poly_b = poly_b.buffer(0)
+
+    inter = poly_a.intersection(poly_b)
+
+    return inter.area
+
 def sample_points_in_overlap(corners_a, corners_b, K, shrink=0.9, seed=None, max_iter_factor=200):
     """
     在两个四边形的重叠区域内采样 K 个均匀随机点，并将重叠区域相对质心缩放 shrink 倍后再采样。
