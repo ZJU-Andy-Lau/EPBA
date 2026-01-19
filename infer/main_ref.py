@@ -270,6 +270,7 @@ def main(args):
             images = [RSImage(meta,device=args.device) for meta in adjust_metas_all]
             for image in images:
                 M = all_results[image.id]
+                image.rpc.Clear_Adjust()
                 image.rpc.Update_Adjust(M)
                 if args.output_rpc:
                     image.rpc.Merge_Adjust()
