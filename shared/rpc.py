@@ -30,6 +30,7 @@ class RPCModelParameterTorch:
         self.Clear_Adjust()
 
         self.device = self.LINE_OFF.device
+        self.logger = None
 
     """Read orginal RPC File"""
     def load_from_file(self, filepath):
@@ -40,7 +41,7 @@ class RPCModelParameterTorch:
         Function: Read direct rpc from file and then calculate the inverse rpc
         """
         if os.path.exists(filepath) is False:
-            print("Error#001: cann't find " + filepath + " in the file system!")
+            self.log("Error#001: cann't find " + filepath + " in the file system!")
             return
 
         with open(filepath, 'r') as f:
@@ -130,7 +131,7 @@ class RPCModelParameterTorch:
             grid = torch.stack(selected_grid,dim=0).to(self.device,dtype=torch.double)
         else:
             # 如果所有点都被过滤掉了，返回一个空张量或原始张量以避免错误
-            print("警告: 虚拟格网点均在影像范围外。")
+            self.log("警告: 虚拟格网点均在影像范围外。")
             grid = torch.empty(0, 5, device=self.device, dtype=torch.double)
 
         return grid
@@ -160,7 +161,7 @@ class RPCModelParameterTorch:
             try:
                 x1 = torch.linalg.solve(mak,lk) #np.linalg.solve(mak, lk)
             except torch.linalg.LinAlgError:
-                print("警告: 最小二乘解算中矩阵奇异，增加k值。")
+                self.log("警告: 最小二乘解算中矩阵奇异，增加k值。")
                 k *= 10
                 mak = ma.clone() + k * torch.eye(n).to(self.device, dtype=torch.double)
                 continue
@@ -171,7 +172,7 @@ class RPCModelParameterTorch:
             lk = lv + k * x
 
             finish_time = times + 1
-            # print(finish_time, maxdif)
+            # self.log(finish_time, maxdif)
             if maxdif < 1.0e-10:
                 break
         return x, finish_time
@@ -230,7 +231,7 @@ class RPCModelParameterTorch:
         
         grid = self.Create_Virtual_3D_Grid()
         if grid.shape[0] == 0:
-            print("错误: 无法创建虚拟格网，反向RPC计算失败。")
+            self.log("错误: 无法创建虚拟格网，反向RPC计算失败。")
             return -1
         times = self.Solve_Inverse_RPC(grid)
         return times
@@ -244,7 +245,7 @@ class RPCModelParameterTorch:
             self.adjust_params_inv = torch.cat([R_inv, t_new.unsqueeze(1)], dim=1).to(torch.double)
         except torch.linalg.LinAlgError:
             raise ValueError(f"仿射矩阵：\n{self.adjust_params.detach().cpu().numpy()}\n不可逆")
-            # print("警告: 仿射矩阵R不可逆。使用伪逆。")
+            # self.log("警告: 仿射矩阵R不可逆。使用伪逆。")
             # R_inv = torch.linalg.pinv(R)
             # t_new = -(R_inv @ t)
             # self.adjust_params_inv = torch.cat([R_inv, t_new.unsqueeze(1)], dim=1).to(torch.double)
@@ -305,7 +306,7 @@ class RPCModelParameterTorch:
         ], dtype=torch.double, device=self.device)
         
         if torch.allclose(self.adjust_params, identity_adjust, atol=1e-8):
-            print("Adjust parameters are already identity. No merge needed.")
+            self.log("Adjust parameters are already identity. No merge needed.")
             return
         # 2. 生成 3D 虚拟格网 (物方)
         #    Create_Virtual_3D_Grid 内部会调用 RPC_OBJ2PHOTO
@@ -314,7 +315,7 @@ class RPCModelParameterTorch:
         grid_obj = self.Create_Virtual_3D_Grid(xy_sample=50, z_sample=30) # 使用更密集的格网保证拟合精度
 
         if grid_obj.shape[0] == 0:
-            print("错误: 无法创建用于合并的虚拟格网。操作中止。")
+            self.log("错误: 无法创建用于合并的虚拟格网。操作中止。")
             return
 
         # 3. 提取坐标
@@ -366,7 +367,7 @@ class RPCModelParameterTorch:
         x_S, _ = self._solve_lstsq(ATA_S, ATl_S)
 
         # 7. 更新 正向 RPC 系数
-        # print("Updating direct model coefficients (LNUM, LDEM, SNUM, SDEM)...")
+        # self.log("Updating direct model coefficients (LNUM, LDEM, SNUM, SDEM)...")
         self.LNUM = x_L[0:20].clone()
         self.LDEM[0] = 1.0
         self.LDEM[1:20] = x_L[20:39].clone()
@@ -378,14 +379,14 @@ class RPCModelParameterTorch:
         #    必须在 Calculate_Inverse_RPC 之前调用！
         #    因为 Calculate_Inverse_RPC 会调用 Create_Virtual_3D_Grid，
         #    那时必须使用新的正向模型 和 *零* 仿射变换。
-        # print("Resetting adjustment parameters...")
+        # self.log("Resetting adjustment parameters...")
         self.Clear_Adjust()
 
         # 9. 重新计算 反向 RPC 系数
         #    (因为正向模型已经改变，反向模型必须重新拟合)
-        # print("Recalculating inverse RPC model...")
+        # self.log("Recalculating inverse RPC model...")
         times = self.Calculate_Inverse_RPC()
-        # print(f"Merge complete. Inverse RPC recalculated in {times} iterations.")
+        # self.log(f"Merge complete. Inverse RPC recalculated in {times} iterations.")
 
     def RPC_PLH_COEF(self, P, L, H):
         n_num = P.shape[0]
@@ -584,7 +585,7 @@ class RPCModelParameterTorch:
             if torch.cuda.is_available():
                 device = 'cuda'
             else:
-                print("CUDA not available, using CPU.")
+                self.log("CUDA not available, using CPU.")
                 device = 'cpu'
         
         self.device = torch.device(device)
@@ -714,6 +715,15 @@ class RPCModelParameterTorch:
         # 恢复设备
         if original_device.type != 'cpu':
             self.to_gpu(original_device)
+    
+    def set_logger(self,logger):
+        self.logger = logger
+    
+    def log(self,msg):
+        if self.logger is None:
+            print(msg)
+        else:
+            self.logger(msg)
 
 
 def load_rpc(rpc_path:str,to_gpu=False) -> RPCModelParameterTorch:

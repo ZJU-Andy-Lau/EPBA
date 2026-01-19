@@ -274,6 +274,7 @@ def main(args):
             for i,image in enumerate(images):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
+                image.rpc.set_logger(reporter.log)
                 image.rpc.Update_Adjust(M)
                 if args.output_rpc:
                     image.rpc.Merge_Adjust()
