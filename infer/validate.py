@@ -1,6 +1,5 @@
 import numpy as np
 from typing import List
-from itertools import combinations
 from scipy.optimize import least_squares
 
 from infer.rs_image import RSImage
@@ -70,8 +69,4 @@ def compute_multiview_pair_errors(images: List[RSImage], height_fusion: str = "m
             samps_pred, lines_pred = images[i].rpc.RPC_OBJ2PHOTO(lat_hat, lon_hat, z_k, 'numpy')
             residuals_per_point[k, i] = np.sqrt((lines_pred - lines_stack[i, k]) ** 2 + (samps_pred - samps_stack[i, k]) ** 2)
 
-    pair_errors = []
-    for i, j in combinations(range(num_images), 2):
-        pair_errors.append(0.5 * (residuals_per_point[:, i] + residuals_per_point[:, j]))
-
-    return np.concatenate(pair_errors)
+    return residuals_per_point.reshape(-1)
