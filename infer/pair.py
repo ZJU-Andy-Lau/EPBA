@@ -115,7 +115,7 @@ class Pair():
         ref_points = self.rs_image_b.get_ref_points()
         distances = self.rs_image_a.check_error(ref_points)
 
-        self.reporter.log(f'{self.rs_image_a}-{self.rs_image_b}:\th_dis: mean:{np.mean(height_dis):.2f} med:{np.median(height_dis):.2f}\ttie_dis: mean:{np.mean(distances):.2f} med:{np.median(distances):.2f}')
+        self.reporter.log(f'{self.rs_image_a.id}-{self.rs_image_b.id}:\th_dis: mean:{np.mean(height_dis):.2f} med:{np.median(height_dis):.2f}\ttie_dis: mean:{np.mean(distances):.2f} med:{np.median(distances):.2f}')
         return distances
 
 class Solver():
