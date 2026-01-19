@@ -38,6 +38,7 @@ from model.predictor import Predictor
 from model.ctx_decoder import ContextDecoder
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
+from infer.validate import compute_multiview_pair_errors
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver
 from solve.global_solver_0115 import PBAAffineSolver
@@ -282,14 +283,7 @@ def main(args):
                     image.rpc.save_rpc_to_file(os.path.join(args.output_path,f"{image.root.replace('/','_')}_rpc.txt"))
                 # image.rpc.Merge_Adjust()
 
-            all_distances = []
-            heights = images[0].tie_points_heights
-            for i,j in itertools.combinations(range(len(images)),2):
-                ref_points = images[i].get_ref_points(heights)
-                distances = images[j].check_error(ref_points)
-                all_distances.append(distances)
-                    
-            all_distances = np.concatenate(all_distances)
+            all_distances = compute_multiview_pair_errors(images)
 
             report = get_report_dict(all_distances)
             reporter.log("\n" + "--- Global Error Report (Summary) ---")
