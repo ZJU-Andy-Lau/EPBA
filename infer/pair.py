@@ -104,8 +104,18 @@ class Pair():
         return distances
     
     def check_error_pix(self):
+        lines_i = self.rs_image_a.tie_points[:,0]
+        samps_i = self.rs_image_a.tie_points[:,1]
+        heights_i = self.rs_image_a.dem[lines_i,samps_i]
+        lines_j = self.rs_image_b.tie_points[:,0]
+        samps_j = self.rs_image_b.tie_points[:,1]
+        heights_j = self.rs_image_b.dem[lines_j,samps_j]
+        height_dis = heights_i - heights_j
+        
         ref_points = self.rs_image_b.get_ref_points()
         distances = self.rs_image_a.check_error(ref_points)
+
+        self.reporter.log(f'{self.rs_image_a}-{self.rs_image_b}:\th_dis: mean:{np.mean(height_dis):.2f} med:{np.median(height_dis):.2f}\ttie_dis: mean:{np.mean(distances):.2f} med:{np.median(distances):.2f}')
         return distances
 
 class Solver():
