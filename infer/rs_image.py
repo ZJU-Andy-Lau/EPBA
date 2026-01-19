@@ -146,7 +146,8 @@ class RSImage():
         self.affine_list = []
         
         self.corner_xys = self.__get_corner_xys__()
-
+        
+        self.tie_points_heights = self.get_heights_for_tie_points()
 
     def __load_tie_points__(self,path) -> np.ndarray:
         tie_points = np.loadtxt(path,dtype=int)
@@ -301,6 +302,14 @@ class RSImage():
 
         vis_img = create_grid_img(grid_imgs)
         return vis_img
+    
+    def get_heights_for_tie_points(self) -> np.ndarray:
+        if self.tie_points is None:
+            return np.array([])
+        
+        lines = self.tie_points[:, 0]
+        samps = self.tie_points[:, 1]
+        return self.dem[lines,samps]
 
     def check_error(self,ref_points:np.ndarray):
         """
@@ -316,7 +325,7 @@ class RSImage():
         如果作为ref_image,提供自身的tie_points作为ref_points
         """
         if heights is None:
-            heights = self.dem[self.tie_points[:,0],self.tie_points[:,1]]
+            heights = self.tie_points_heights
         lats,lons = self.rpc.RPC_PHOTO2OBJ(self.tie_points[:,1],self.tie_points[:,0],heights,'numpy')
         ref_points = np.stack([lons,lats,heights],axis=-1)
         return ref_points
