@@ -48,13 +48,15 @@ def line_samp_to_xy(pts_line_samp: np.ndarray) -> np.ndarray:
 
 
 def project_mercator_numpy(latlon: np.ndarray) -> np.ndarray:
-    latlon_t = torch.from_numpy(latlon.astype(np.float64))[None]
+    latlon_t = torch.from_numpy(latlon.astype(np.float64))
+    print(latlon_t.shape)
     proj = project_mercator(latlon_t).cpu().numpy()
     return proj
 
 
 def mercator2lonlat_numpy(coord: np.ndarray) -> np.ndarray:
-    coord_t = torch.from_numpy(coord.astype(np.float64))[None]
+    coord_t = torch.from_numpy(coord.astype(np.float64))
+    print(coord_t.shape)
     lonlat = mercator2lonlat(coord_t).cpu().numpy()
     return lonlat
 
