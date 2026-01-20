@@ -487,22 +487,38 @@ def project_mercator(latlon:torch.Tensor):
     """
     (lat,lon) -> (y,x) N,2
     """
+    batched = True
+    if latlon.ndim == 1:
+        latlon = latlon[None]
+        batched = False
     r = 6378137.
     lon_rad = latlon[:,1] * torch.pi / 180.
     lat_rad = latlon[:,0] * torch.pi / 180.
     x = r * lon_rad
     y = r * torch.log(torch.tan(torch.pi / 4. + lat_rad / 2.))
-    return torch.stack([y,x],dim=-1)
+    xy = torch.stack([y,x],dim=-1)
+    if batched:
+        return xy
+    else:
+        return xy[0]
 
 def mercator2lonlat(coord:torch.Tensor):
     """
     (y,x) -> (lat,lon) N,2
     """
     coord = torch.tensor(coord).to(torch.float64)
+    batched = False
+    if coord.ndim == 1:
+        coord = coord[None]
+        batched = False
     r = 6378137.
     lon = (180. * coord[:,1]) / (torch.pi * r)
     lat = (2 * torch.atan(torch.exp(coord[:,0] / r)) - torch.pi * 0.5) * 180. / torch.pi
-    return torch.stack([lat,lon],dim=-1)
+    latlon = torch.stack([lat,lon],dim=-1)
+    if batched:
+        return latlon
+    else:
+        return latlon[0]
 
 def proj2photo(proj_coord:torch.Tensor,dem:torch.Tensor,rpc:RPCModelParameterTorch):
     lonlat_coord = mercator2lonlat(proj_coord)
