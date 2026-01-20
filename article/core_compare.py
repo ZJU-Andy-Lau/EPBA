@@ -10,8 +10,6 @@ import cv2
 import numpy as np
 import torch
 
-from tqdm import tqdm
-
 from shared.utils import load_model_state_dict, load_config
 from shared.visualize import make_checkerboard
 from infer.utils import extract_features, get_coord_mat, apply_H, apply_M, solve_weighted_affine
@@ -46,6 +44,15 @@ def apply_affine_rc(M_rc: np.ndarray, pts_rc: np.ndarray) -> np.ndarray:
     ones = np.ones((pts.shape[0], 1), dtype=np.float64)
     pts_h = np.concatenate([pts, ones], axis=1)
     return pts_h @ M_rc.T
+
+
+def merge_affine_rc(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    A_h = np.eye(3, dtype=np.float64)
+    B_h = np.eye(3, dtype=np.float64)
+    A_h[:2, :] = A
+    B_h[:2, :] = B
+    C_h = B_h @ A_h
+    return C_h[:2, :]
 
 
 def random_affine_rc(rng: np.random.Generator, max_translate=20.0, max_rotate_deg=2.0, max_scale=0.02, max_shear=0.01) -> np.ndarray:
@@ -117,40 +124,54 @@ def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, dev
     return M_xy.astype(np.float64)
 
 
-def predict_affine_project(encoder: Encoder, predictor: Predictor, img_a: np.ndarray, img_b: np.ndarray, device: str, predictor_iter_num: int) -> np.ndarray:
+def predict_affine_project(encoder: Encoder, predictor: Predictor, img_a: np.ndarray, img_b: np.ndarray, device: str, predictor_iter_num: int, min_window: int) -> np.ndarray:
     h, w = img_a.shape[:2]
-    tiles_a = []
-    tiles_b = []
-    Hs_a = []
-    Hs_b = []
-    for r in [0, h // 2]:
-        for c in [0, w // 2]:
-            tile_a = img_a[r:r + h // 2, c:c + w // 2]
-            tile_b = img_b[r:r + h // 2, c:c + w // 2]
-            tiles_a.append(np.stack([tile_a] * 3, axis=-1))
-            tiles_b.append(np.stack([tile_b] * 3, axis=-1))
-            H = np.array([[1.0, 0.0, -float(r)], [0.0, 1.0, -float(c)], [0.0, 0.0, 1.0]], dtype=np.float32)
-            Hs_a.append(H)
-            Hs_b.append(H)
-    imgs_a = np.stack(tiles_a, axis=0)
-    imgs_b = np.stack(tiles_b, axis=0)
-    feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
-    B, H, W = imgs_a.shape[:3]
-    H_as = torch.from_numpy(np.stack(Hs_a, axis=0)).to(device=device, dtype=torch.float32)
-    H_bs = torch.from_numpy(np.stack(Hs_b, axis=0)).to(device=device, dtype=torch.float32)
-    solver = WindowSolver(B, H, W, predictor, feats_a, feats_b, H_as, H_bs, rpc_a=None, rpc_b=None, height_a=None, height_b=None, predictor_max_iter=predictor_iter_num)
-    preds = solver.solve(flag="ab", final_only=True)
-    coords_mat = get_coord_mat(32, 32, B, 16, device=device)
-    coords_mat_flat = coords_mat.flatten(1, 2)
-    coords_src = apply_H(coords=coords_mat_flat, Hs=torch.linalg.inv(H_as), device=device)
-    coords_dst = apply_M(coords=coords_src, Ms=preds, device=device)
-    coords_src_flat = coords_src.reshape(-1, 2)
-    coords_dst_flat = coords_dst.reshape(-1, 2)
-    scores = torch.ones((B,), dtype=coords_src.dtype, device=device)
-    scores_norm = scores / scores.mean()
-    scores_norm = scores_norm.unsqueeze(-1).expand(-1, 1024).reshape(-1)
-    merged_affine = solve_weighted_affine(coords_src_flat, coords_dst_flat, scores_norm)
-    return merged_affine.detach().cpu().numpy()
+    M_current = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
+    window_size = h // 2
+    while window_size >= min_window:
+        M_current_xy = rc_to_xy_matrix(M_current)
+        img_a_warped = cv2.warpAffine(img_a, M_current_xy, (w, h), flags=cv2.INTER_LINEAR)
+        tiles_a = []
+        tiles_b = []
+        Hs_a = []
+        Hs_b = []
+        for r in range(0, h, window_size):
+            for c in range(0, w, window_size):
+                tile_a = img_a_warped[r:r + window_size, c:c + window_size]
+                tile_b = img_b[r:r + window_size, c:c + window_size]
+                if tile_a.shape[0] != window_size or tile_a.shape[1] != window_size:
+                    continue
+                if window_size != 512:
+                    tile_a = cv2.resize(tile_a, (512, 512), interpolation=cv2.INTER_LINEAR)
+                    tile_b = cv2.resize(tile_b, (512, 512), interpolation=cv2.INTER_LINEAR)
+                tiles_a.append(np.stack([tile_a] * 3, axis=-1))
+                tiles_b.append(np.stack([tile_b] * 3, axis=-1))
+                scale = float(window_size) / 512.0
+                H = np.array([[1.0 / scale, 0.0, -float(r) / scale], [0.0, 1.0 / scale, -float(c) / scale], [0.0, 0.0, 1.0]], dtype=np.float32)
+                Hs_a.append(H)
+                Hs_b.append(H)
+        imgs_a = np.stack(tiles_a, axis=0)
+        imgs_b = np.stack(tiles_b, axis=0)
+        feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
+        B, H, W = imgs_a.shape[:3]
+        H_as = torch.from_numpy(np.stack(Hs_a, axis=0)).to(device=device, dtype=torch.float32)
+        H_bs = torch.from_numpy(np.stack(Hs_b, axis=0)).to(device=device, dtype=torch.float32)
+        solver = WindowSolver(B, H, W, predictor, feats_a, feats_b, H_as, H_bs, rpc_a=None, rpc_b=None, height_a=None, height_b=None, predictor_max_iter=predictor_iter_num)
+        preds = solver.solve(flag="ab", final_only=True)
+        coords_mat = get_coord_mat(32, 32, B, 16, device=device)
+        coords_mat_flat = coords_mat.flatten(1, 2)
+        coords_src = apply_H(coords=coords_mat_flat, Hs=torch.linalg.inv(H_as), device=device)
+        coords_dst = apply_M(coords=coords_src, Ms=preds, device=device)
+        coords_src_flat = coords_src.reshape(-1, 2)
+        coords_dst_flat = coords_dst.reshape(-1, 2)
+        scores = torch.ones((B,), dtype=coords_src.dtype, device=device)
+        scores_norm = scores / scores.mean()
+        scores_norm = scores_norm.unsqueeze(-1).expand(-1, 1024).reshape(-1)
+        merged_affine = solve_weighted_affine(coords_src_flat, coords_dst_flat, scores_norm)
+        M_delta = merged_affine.detach().cpu().numpy()
+        M_current = merge_affine_rc(M_current, M_delta)
+        window_size = window_size // 2
+    return M_current
 
 
 def main():
@@ -165,6 +186,7 @@ def main():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--loftr_weight_path", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--min_window", type=int, default=128)
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -181,7 +203,7 @@ def main():
     if predictor_iter_num is None:
         predictor_iter_num = model_configs['predictor']['iter_num']
 
-    encoder = encoder.to(args.device).eval()
+    encoder = encoder.to(args.device).eval().half()
     predictor = predictor.to(args.device).eval()
 
     try:
@@ -203,7 +225,7 @@ def main():
     summary_rows = []
 
     a_paths = sorted(glob(os.path.join(args.input_dir, "*_a.png")))
-    for a_path in tqdm(a_paths):
+    for a_path in a_paths:
         name = os.path.basename(a_path).replace("_a.png", "")
         b_path = os.path.join(args.input_dir, f"{name}_b.png")
         if not os.path.exists(b_path):
@@ -220,7 +242,7 @@ def main():
         img_a_warp = cv2.warpAffine(img_a, M_gt_xy, (img_a.shape[1], img_a.shape[0]), flags=cv2.INTER_LINEAR)
         M_gt_inv_rc = invert_affine_rc(M_gt_rc)
 
-        M_pred_project_rc = predict_affine_project(encoder, predictor, img_a_warp, img_b, args.device, predictor_iter_num)
+        M_pred_project_rc = predict_affine_project(encoder, predictor, img_a_warp, img_b, args.device, predictor_iter_num, args.min_window)
         M_pred_loftr_xy = estimate_affine_loftr(loftr_model, img_a_warp, img_b, args.device)
         M_pred_loftr_rc = xy_to_rc_matrix(M_pred_loftr_xy)
 
