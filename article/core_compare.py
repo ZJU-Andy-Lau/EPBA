@@ -9,6 +9,7 @@ from glob import glob
 import cv2
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from shared.utils import load_model_state_dict, load_config
 from shared.visualize import make_checkerboard
@@ -123,7 +124,7 @@ def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, dev
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
     return M_xy.astype(np.float64)
 
-
+@torch.no_grad()
 def predict_affine_project(encoder: Encoder, predictor: Predictor, img_a: np.ndarray, img_b: np.ndarray, device: str, predictor_iter_num: int, min_window: int) -> np.ndarray:
     h, w = img_a.shape[:2]
     M_current = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
@@ -203,7 +204,7 @@ def main():
     if predictor_iter_num is None:
         predictor_iter_num = model_configs['predictor']['iter_num']
 
-    encoder = encoder.to(args.device).eval().half()
+    encoder = encoder.to(args.device).eval()
     predictor = predictor.to(args.device).eval()
 
     try:
@@ -225,7 +226,7 @@ def main():
     summary_rows = []
 
     a_paths = sorted(glob(os.path.join(args.input_dir, "*_a.png")))
-    for a_path in a_paths:
+    for a_path in tqdm(a_paths):
         name = os.path.basename(a_path).replace("_a.png", "")
         b_path = os.path.join(args.input_dir, f"{name}_b.png")
         if not os.path.exists(b_path):
