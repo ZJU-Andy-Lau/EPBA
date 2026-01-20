@@ -41,7 +41,7 @@ from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_repor
 from infer.validate import compute_multiview_pair_errors
 from pair import Pair
 from solve.global_affine_solver import GlobalAffineSolver
-from solve.global_solver_0115 import PBAAffineSolver
+from solve.global_solver_0120 import PBAAffineSolver
 from rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
 
