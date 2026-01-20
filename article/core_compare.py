@@ -181,7 +181,7 @@ def main():
     if predictor_iter_num is None:
         predictor_iter_num = model_configs['predictor']['iter_num']
 
-    encoder = encoder.to(args.device).eval().half()
+    encoder = encoder.to(args.device).eval()
     predictor = predictor.to(args.device).eval()
 
     try:
