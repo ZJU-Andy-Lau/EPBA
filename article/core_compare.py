@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from shared.utils import load_model_state_dict, load_config
 from shared.visualize import make_checkerboard
-from infer.utils import extract_features
+from infer.utils import extract_features, get_coord_mat, apply_H, apply_M, solve_weighted_affine
 from model.encoder import Encoder
 from model.predictor import Predictor
 from solve.solve_windows import WindowSolver
@@ -87,23 +87,23 @@ def compute_transform_error(M_pred_rc: np.ndarray, M_true_rc: np.ndarray, h: int
     }
 
 
-def load_image_rgb(path: str) -> np.ndarray:
+def load_image_gray(path: str) -> np.ndarray:
     img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise FileNotFoundError(path)
-    return np.stack([img] * 3,axis=-1)
+    return img
 
 
-def save_image_rgb(path: str, img: np.ndarray) -> None:
+def save_image_gray(path: str, img: np.ndarray) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if img.ndim == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     cv2.imwrite(path, img)
 
 
 def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, device: str) -> np.ndarray:
-    gray_a = cv2.cvtColor(img_a, cv2.COLOR_RGB2GRAY)
-    gray_b = cv2.cvtColor(img_b, cv2.COLOR_RGB2GRAY)
-    img0 = torch.from_numpy(gray_a).float().to(device) / 255.0
-    img1 = torch.from_numpy(gray_b).float().to(device) / 255.0
+    img0 = torch.from_numpy(img_a).float().to(device) / 255.0
+    img1 = torch.from_numpy(img_b).float().to(device) / 255.0
     batch = {"image0": img0.unsqueeze(0).unsqueeze(0), "image1": img1.unsqueeze(0).unsqueeze(0)}
     with torch.no_grad():
         correspondences = loftr_model(batch)
@@ -116,17 +116,41 @@ def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, dev
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
     return M_xy.astype(np.float64)
 
-@torch.no_grad()
+
 def predict_affine_project(encoder: Encoder, predictor: Predictor, img_a: np.ndarray, img_b: np.ndarray, device: str, predictor_iter_num: int) -> np.ndarray:
-    imgs_a = img_a[None]
-    imgs_b = img_b[None]
+    h, w = img_a.shape[:2]
+    tiles_a = []
+    tiles_b = []
+    Hs_a = []
+    Hs_b = []
+    for r in [0, h // 2]:
+        for c in [0, w // 2]:
+            tile_a = img_a[r:r + h // 2, c:c + w // 2]
+            tile_b = img_b[r:r + h // 2, c:c + w // 2]
+            tiles_a.append(np.stack([tile_a] * 3, axis=-1))
+            tiles_b.append(np.stack([tile_b] * 3, axis=-1))
+            H = np.array([[1.0, 0.0, -float(r)], [0.0, 1.0, -float(c)], [0.0, 0.0, 1.0]], dtype=np.float32)
+            Hs_a.append(H)
+            Hs_b.append(H)
+    imgs_a = np.stack(tiles_a, axis=0)
+    imgs_b = np.stack(tiles_b, axis=0)
     feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
-    B, H, W = 1, img_a.shape[0], img_a.shape[1]
-    H_as = torch.eye(3, dtype=torch.float32, device=device).unsqueeze(0)
-    H_bs = torch.eye(3, dtype=torch.float32, device=device).unsqueeze(0)
+    B, H, W = imgs_a.shape[:3]
+    H_as = torch.from_numpy(np.stack(Hs_a, axis=0)).to(device=device, dtype=torch.float32)
+    H_bs = torch.from_numpy(np.stack(Hs_b, axis=0)).to(device=device, dtype=torch.float32)
     solver = WindowSolver(B, H, W, predictor, feats_a, feats_b, H_as, H_bs, rpc_a=None, rpc_b=None, height_a=None, height_b=None, predictor_max_iter=predictor_iter_num)
-    M_rc = solver.solve(flag="ab", final_only=True)
-    return M_rc.squeeze(0).detach().cpu().numpy()
+    preds = solver.solve(flag="ab", final_only=True)
+    coords_mat = get_coord_mat(32, 32, B, 16, device=device)
+    coords_mat_flat = coords_mat.flatten(1, 2)
+    coords_src = apply_H(coords=coords_mat_flat, Hs=torch.linalg.inv(H_as), device=device)
+    coords_dst = apply_M(coords=coords_src, Ms=preds, device=device)
+    coords_src_flat = coords_src.reshape(-1, 2)
+    coords_dst_flat = coords_dst.reshape(-1, 2)
+    scores = torch.ones((B,), dtype=coords_src.dtype, device=device)
+    scores_norm = scores / scores.mean()
+    scores_norm = scores_norm.unsqueeze(-1).expand(-1, 1024).reshape(-1)
+    merged_affine = solve_weighted_affine(coords_src_flat, coords_dst_flat, scores_norm)
+    return merged_affine.detach().cpu().numpy()
 
 
 def main():
@@ -157,7 +181,7 @@ def main():
     if predictor_iter_num is None:
         predictor_iter_num = model_configs['predictor']['iter_num']
 
-    encoder = encoder.to(args.device).eval()
+    encoder = encoder.to(args.device).eval().half()
     predictor = predictor.to(args.device).eval()
 
     try:
@@ -185,8 +209,8 @@ def main():
         if not os.path.exists(b_path):
             continue
 
-        img_a = load_image_rgb(a_path)
-        img_b = load_image_rgb(b_path)
+        img_a = load_image_gray(a_path)
+        img_b = load_image_gray(b_path)
         if img_a.shape[:2] != (1024, 1024) or img_b.shape[:2] != (1024, 1024):
             raise ValueError(f"{name} size mismatch")
 
@@ -205,19 +229,19 @@ def main():
 
         out_dir = os.path.join(args.output_dir, name)
         os.makedirs(out_dir, exist_ok=True)
-        save_image_rgb(os.path.join(out_dir, "a.png"), img_a)
-        save_image_rgb(os.path.join(out_dir, "b.png"), img_b)
-        save_image_rgb(os.path.join(out_dir, "a_warp.png"), img_a_warp)
+        save_image_gray(os.path.join(out_dir, "a.png"), img_a)
+        save_image_gray(os.path.join(out_dir, "b.png"), img_b)
+        save_image_gray(os.path.join(out_dir, "a_warp.png"), img_a_warp)
 
         M_pred_project_xy = rc_to_xy_matrix(M_pred_project_rc)
         warped_project = cv2.warpAffine(img_a_warp, M_pred_project_xy, (img_b.shape[1], img_b.shape[0]), flags=cv2.INTER_LINEAR)
         checker_project = make_checkerboard(warped_project, img_b)
-        save_image_rgb(os.path.join(out_dir, "checker_project.png"), checker_project)
+        save_image_gray(os.path.join(out_dir, "checker_project.png"), checker_project)
 
         M_pred_loftr_xy = rc_to_xy_matrix(M_pred_loftr_rc)
         warped_loftr = cv2.warpAffine(img_a_warp, M_pred_loftr_xy, (img_b.shape[1], img_b.shape[0]), flags=cv2.INTER_LINEAR)
         checker_loftr = make_checkerboard(warped_loftr, img_b)
-        save_image_rgb(os.path.join(out_dir, "checker_loftr.png"), checker_loftr)
+        save_image_gray(os.path.join(out_dir, "checker_loftr.png"), checker_loftr)
 
         with open(os.path.join(out_dir, "transforms.json"), "w", encoding="utf-8") as f:
             json.dump({
