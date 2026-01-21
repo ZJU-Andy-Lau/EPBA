@@ -119,7 +119,7 @@ def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, dev
     mkpts1 = correspondences["keypoints1"].cpu().numpy()
     if mkpts0.shape[0] < 10:
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
-    M_xy, _ = cv2.estimateAffine2D(mkpts0, mkpts1, ransacReprojThreshold=3.0)
+    M_xy, _ = cv2.estimateAffine2D(mkpts0, mkpts1, ransacReprojThreshold=10.0)
     if M_xy is None:
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
     return M_xy.astype(np.float64)
