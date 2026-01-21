@@ -109,7 +109,7 @@ def save_image_gray(path: str, img: np.ndarray) -> None:
     cv2.imwrite(path, img)
 
 
-def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, device: str) -> np.ndarray:
+def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, device: str, ransac_threshold:float) -> np.ndarray:
     img0 = torch.from_numpy(img_a).float().to(device) / 255.0
     img1 = torch.from_numpy(img_b).float().to(device) / 255.0
     batch = {"image0": img0.unsqueeze(0).unsqueeze(0), "image1": img1.unsqueeze(0).unsqueeze(0)}
@@ -119,7 +119,7 @@ def estimate_affine_loftr(loftr_model, img_a: np.ndarray, img_b: np.ndarray, dev
     mkpts1 = correspondences["keypoints1"].cpu().numpy()
     if mkpts0.shape[0] < 10:
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
-    M_xy, _ = cv2.estimateAffine2D(mkpts0, mkpts1, ransacReprojThreshold=1.0)
+    M_xy, _ = cv2.estimateAffine2D(mkpts0, mkpts1, ransacReprojThreshold=ransac_threshold)
     if M_xy is None:
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
     return M_xy.astype(np.float64)
@@ -188,6 +188,7 @@ def main():
     parser.add_argument("--loftr_weight_path", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--min_window", type=int, default=128)
+    parser.add_argument('--ransac_threshold',type=float, default=3.)
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -244,7 +245,7 @@ def main():
         M_gt_inv_rc = invert_affine_rc(M_gt_rc)
 
         M_pred_project_rc = predict_affine_project(encoder, predictor, img_a_warp, img_b, args.device, predictor_iter_num, args.min_window)
-        M_pred_loftr_xy = estimate_affine_loftr(loftr_model, img_a_warp, img_b, args.device)
+        M_pred_loftr_xy = estimate_affine_loftr(loftr_model, img_a_warp, img_b, args.device, args.ransac_threshold)
         M_pred_loftr_rc = xy_to_rc_matrix(M_pred_loftr_xy)
 
         error_project = compute_transform_error(M_pred_project_rc, M_gt_inv_rc, img_a.shape[0], img_a.shape[1])
