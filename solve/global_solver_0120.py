@@ -10,6 +10,13 @@ from infer.monitor import StatusReporter
 from copy import deepcopy
 import os
 
+try:
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spla
+except Exception:
+    sp = None
+    spla = None
+
 
 def affine_apply(A: np.ndarray, pts_line_samp: np.ndarray) -> np.ndarray:
     pts = np.asarray(pts_line_samp, dtype=np.float64)
@@ -299,37 +306,37 @@ class PBAAffineSolver:
             ties.append(tie)
         return ties,rpcs
 
-    def _affine_pred_and_jacobian(self, A: np.ndarray, p_orig: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _affine_pred_and_jacobian_batch(self, A: np.ndarray, p_orig: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         R = A[:, :2]
         t = A[:, 2]
         R_inv = np.linalg.inv(R)
         y = p_orig - t
-        v = R_inv @ y
-        j = np.zeros((2, 6), dtype=np.float64)
+        v = (R_inv @ y.T).T
         r0 = R_inv[:, 0]
         r1 = R_inv[:, 1]
-        v0 = v[0]
-        v1 = v[1]
-        j[:, 0] = -v0 * r0
-        j[:, 1] = -v1 * r0
-        j[:, 2] = -r0
-        j[:, 3] = -v0 * r1
-        j[:, 4] = -v1 * r1
-        j[:, 5] = -r1
-        return v, j
+        v0 = v[:, 0]
+        v1 = v[:, 1]
+        J = np.zeros((p_orig.shape[0], 2, 6), dtype=np.float64)
+        J[:, :, 0] = (-v0[:, None] * r0[None, :])
+        J[:, :, 1] = (-v1[:, None] * r0[None, :])
+        J[:, :, 2] = (-r0[None, :])
+        J[:, :, 3] = (-v0[:, None] * r1[None, :])
+        J[:, :, 4] = (-v1[:, None] * r1[None, :])
+        J[:, :, 5] = (-r1[None, :])
+        return v, J
 
-    def _predict_from_point(self, image_idx: int, point_xy: np.ndarray, h: float, A: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        lonlat = mercator2lonlat_numpy(point_xy.reshape(1, 2))
-        lat = lonlat[0, 0]
-        lon = lonlat[0, 1]
+    def _predict_from_points(self, image_idx: int, point_xy: np.ndarray, h: np.ndarray, A: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        lonlat = mercator2lonlat_numpy(point_xy)
+        lat = lonlat[:, 0]
+        lon = lonlat[:, 1]
         samp, line = self.rpcs[image_idx].RPC_OBJ2PHOTO(lat, lon, h, output_type="numpy")
-        p_orig = np.stack([np.asarray(line), np.asarray(samp)], axis=0).reshape(2)
-        pred, j = self._affine_pred_and_jacobian(A, p_orig)
-        return p_orig, pred, j
+        p_orig = np.stack([np.asarray(line), np.asarray(samp)], axis=1)
+        pred, J = self._affine_pred_and_jacobian_batch(A, p_orig)
+        return p_orig, pred, J
 
-    def _point_base_xy(self, image_idx: int, obs_ls: np.ndarray, h: float, A: np.ndarray) -> np.ndarray:
-        orig = affine_apply(A, obs_ls.reshape(1, 2))
-        samp, line = line_samp_to_xy(orig).reshape(-1)
+    def _point_base_xy_batch(self, image_idx: int, obs_ls: np.ndarray, h: np.ndarray, A: np.ndarray) -> np.ndarray:
+        orig = affine_apply(A, obs_ls)
+        samp, line = line_samp_to_xy(orig).T
         lat, lon = self.rpcs[image_idx].RPC_PHOTO2OBJ(samp, line, h, output_type="numpy")
         lat = np.asarray(lat, dtype=np.float64)
         lon = np.asarray(lon, dtype=np.float64)
@@ -337,42 +344,48 @@ class PBAAffineSolver:
         if latlon.ndim == 1:
             latlon = latlon[None, :]
         xy = project_mercator_numpy(latlon)
-        return xy.reshape(2)
+        return xy
 
-    def _residual_and_affine_jacobian(self, i: int, j: int, obs_i: np.ndarray, obs_j: np.ndarray, point_xy: np.ndarray, h: float, A_i: np.ndarray, A_j: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        _, pred_i, Ji2 = self._predict_from_point(i, point_xy, h, A_i)
-        _, pred_j, Jj2 = self._predict_from_point(j, point_xy, h, A_j)
+    def _residual_and_affine_jacobian_batch(self, i: int, j: int, obs_i: np.ndarray, obs_j: np.ndarray, point_xy: np.ndarray, h: np.ndarray, A_i: np.ndarray, A_j: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        _, pred_i, Ji2 = self._predict_from_points(i, point_xy, h, A_i)
+        _, pred_j, Jj2 = self._predict_from_points(j, point_xy, h, A_j)
         ri = pred_i - obs_i
         rj = pred_j - obs_j
-        r = np.concatenate([ri, rj], axis=0)
-        Ji = np.zeros((4, 6), dtype=np.float64)
-        Jj = np.zeros((4, 6), dtype=np.float64)
-        Ji[0:2, :] = Ji2
-        Jj[2:4, :] = Jj2
+        r = np.concatenate([ri, rj], axis=1)
+        Ji = np.zeros((obs_i.shape[0], 4, 6), dtype=np.float64)
+        Jj = np.zeros((obs_i.shape[0], 4, 6), dtype=np.float64)
+        Ji[:, 0:2, :] = Ji2
+        Jj[:, 2:4, :] = Jj2
         return r, Ji, Jj
 
-    def _residual_only(self, i: int, j: int, obs_i: np.ndarray, obs_j: np.ndarray, point_xy: np.ndarray, h: float, A_i: np.ndarray, A_j: np.ndarray) -> np.ndarray:
-        _, pred_i, _ = self._predict_from_point(i, point_xy, h, A_i)
-        _, pred_j, _ = self._predict_from_point(j, point_xy, h, A_j)
+    def _residual_only_batch(self, i: int, j: int, obs_i: np.ndarray, obs_j: np.ndarray, point_xy: np.ndarray, h: np.ndarray, A_i: np.ndarray, A_j: np.ndarray) -> np.ndarray:
+        _, pred_i, _ = self._predict_from_points(i, point_xy, h, A_i)
+        _, pred_j, _ = self._predict_from_points(j, point_xy, h, A_j)
         ri = pred_i - obs_i
         rj = pred_j - obs_j
-        return np.concatenate([ri, rj], axis=0)
+        return np.concatenate([ri, rj], axis=1)
 
     def _xy_eps(self) -> float:
         return 1e-3
 
-    def _jacobian_point(self, i: int, j: int, obs_i: np.ndarray, obs_j: np.ndarray, point_xy: np.ndarray, h: float, A_i: np.ndarray, A_j: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        r0, Ji, Jj = self._residual_and_affine_jacobian(i, j, obs_i, obs_j, point_xy, h, A_i, A_j)
-        Jx = np.zeros((4, 2), dtype=np.float64)
+    def _jacobian_point_batch(self, i: int, j: int, obs_i: np.ndarray, obs_j: np.ndarray, point_xy: np.ndarray, h: np.ndarray, A_i: np.ndarray, A_j: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r0, Ji, Jj = self._residual_and_affine_jacobian_batch(i, j, obs_i, obs_j, point_xy, h, A_i, A_j)
+        Jx = np.zeros((obs_i.shape[0], 4, 2), dtype=np.float64)
         eps_xy = self._xy_eps()
-        for k in range(2):
-            pt_p = point_xy.copy()
-            pt_m = point_xy.copy()
-            pt_p[k] += eps_xy
-            pt_m[k] -= eps_xy
-            rp = self._residual_only(i, j, obs_i, obs_j, pt_p, h, A_i, A_j)
-            rm = self._residual_only(i, j, obs_i, obs_j, pt_m, h, A_i, A_j)
-            Jx[:, k] = (rp - rm) / (2.0 * eps_xy)
+        pt_p = point_xy.copy()
+        pt_m = point_xy.copy()
+        pt_p[:, 0] += eps_xy
+        pt_m[:, 0] -= eps_xy
+        rp = self._residual_only_batch(i, j, obs_i, obs_j, pt_p, h, A_i, A_j)
+        rm = self._residual_only_batch(i, j, obs_i, obs_j, pt_m, h, A_i, A_j)
+        Jx[:, :, 0] = (rp - rm) / (2.0 * eps_xy)
+        pt_p = point_xy.copy()
+        pt_m = point_xy.copy()
+        pt_p[:, 1] += eps_xy
+        pt_m[:, 1] -= eps_xy
+        rp = self._residual_only_batch(i, j, obs_i, obs_j, pt_p, h, A_i, A_j)
+        rm = self._residual_only_batch(i, j, obs_i, obs_j, pt_m, h, A_i, A_j)
+        Jx[:, :, 1] = (rp - rm) / (2.0 * eps_xy)
         return r0, Ji, Jj, Jx
 
     def rms(self, A_all: np.ndarray) -> float:
@@ -385,12 +398,9 @@ class PBAAffineSolver:
             h = np.asarray(d["heights"], dtype=np.float64).reshape(-1)
             A_i = A_all[i]
             A_j = A_all[j]
-            for k in range(pts_i.shape[0]):
-                obs_i = pts_i[k].astype(np.float64)
-                obs_j = pts_j[k].astype(np.float64)
-                point_xy = self._point_base_xy(i, obs_i, h[k], A_i)
-                r = self._residual_only(i, j, obs_i, obs_j, point_xy, h[k], A_i, A_j)
-                res.append(r)
+            point_xy = self._point_base_xy_batch(i, pts_i, h, A_i)
+            r = self._residual_only_batch(i, j, pts_i, pts_j, point_xy, h, A_i, A_j)
+            res.append(r.reshape(-1))
         if len(res) == 0:
             return 0.0
         r_all = np.concatenate(res, axis=0)
@@ -403,9 +413,19 @@ class PBAAffineSolver:
         else:
             blocks[key] = value.copy()
 
-    def _solve_dense(self, blocks: Dict[Tuple[int, int], np.ndarray], b: np.ndarray, damping: float, n_blocks: int) -> np.ndarray:
+    def _build_sparse(self, blocks: Dict[Tuple[int, int], np.ndarray], n_blocks: int, damping: float) -> Any:
         n_params = n_blocks * 6
-        H = np.zeros((n_params, n_params), dtype=np.float64)
+        if sp is None:
+            H = np.zeros((n_params, n_params), dtype=np.float64)
+            for (a, b_idx), blk in blocks.items():
+                ia = slice(6 * a, 6 * a + 6)
+                ib = slice(6 * b_idx, 6 * b_idx + 6)
+                H[ia, ib] += blk
+            for a in range(n_blocks):
+                ia = slice(6 * a, 6 * a + 6)
+                H[ia, ia] += damping * np.eye(6, dtype=np.float64)
+            return H
+        H = sp.lil_matrix((n_params, n_params), dtype=np.float64)
         for (a, b_idx), blk in blocks.items():
             ia = slice(6 * a, 6 * a + 6)
             ib = slice(6 * b_idx, 6 * b_idx + 6)
@@ -413,45 +433,12 @@ class PBAAffineSolver:
         for a in range(n_blocks):
             ia = slice(6 * a, 6 * a + 6)
             H[ia, ia] += damping * np.eye(6, dtype=np.float64)
-        return np.linalg.solve(H, b)
+        return H.tocsr()
 
-    def _solve_pcg(self, blocks: Dict[Tuple[int, int], np.ndarray], b: np.ndarray, damping: float, n_blocks: int, tol: float = 1e-8, max_iter: int = 200) -> np.ndarray:
-        n_params = n_blocks * 6
-        x = np.zeros((n_params,), dtype=np.float64)
-        diag = []
-        for a in range(n_blocks):
-            blk = blocks.get((a, a), np.zeros((6, 6), dtype=np.float64))
-            diag.append(blk + damping * np.eye(6, dtype=np.float64))
-        def matvec(vec: np.ndarray) -> np.ndarray:
-            v = vec.reshape(n_blocks, 6)
-            y = np.zeros_like(v)
-            for (a, b_idx), blk in blocks.items():
-                y[a] += blk @ v[b_idx]
-            for a in range(n_blocks):
-                y[a] += damping * v[a]
-            return y.reshape(-1)
-        r = b - matvec(x)
-        z = np.zeros_like(r)
-        for a in range(n_blocks):
-            ia = slice(6 * a, 6 * a + 6)
-            z[ia] = np.linalg.solve(diag[a], r[ia])
-        p = z.copy()
-        rz_old = float(np.dot(r, z))
-        for _ in range(max_iter):
-            Ap = matvec(p)
-            alpha = rz_old / float(np.dot(p, Ap))
-            x += alpha * p
-            r -= alpha * Ap
-            if np.linalg.norm(r) < tol:
-                break
-            for a in range(n_blocks):
-                ia = slice(6 * a, 6 * a + 6)
-                z[ia] = np.linalg.solve(diag[a], r[ia])
-            rz_new = float(np.dot(r, z))
-            beta = rz_new / rz_old
-            p = z + beta * p
-            rz_old = rz_new
-        return x
+    def _solve_system(self, H: Any, b: np.ndarray) -> np.ndarray:
+        if sp is None or spla is None or not sp.issparse(H):
+            return np.linalg.solve(H, b)
+        return spla.spsolve(H, b)
 
     def solve(
         self,
@@ -475,52 +462,52 @@ class PBAAffineSolver:
             for d in self.ties:
                 i = int(d["i"])
                 j = int(d["j"])
-                pts_i = d["pts_i"]
-                pts_j = d["pts_j"]
+                pts_i = d["pts_i"].astype(np.float64)
+                pts_j = d["pts_j"].astype(np.float64)
                 h = np.asarray(d["heights"], dtype=np.float64).reshape(-1)
                 A_i = A[i]
                 A_j = A[j]
 
-                for k in range(pts_i.shape[0]):
-                    obs_i = pts_i[k].astype(np.float64)
-                    obs_j = pts_j[k].astype(np.float64)
-                    point_xy = self._point_base_xy(i, obs_i, h[k], A_i)
-                    r0, Ji, Jj, Jx = self._jacobian_point(i, j, obs_i, obs_j, point_xy, h[k], A_i, A_j)
-                    l = -r0
-                    sum_sq += float(np.sum(r0 ** 2))
-                    count += int(r0.size)
+                point_xy = self._point_base_xy_batch(i, pts_i, h, A_i)
+                r0, Ji, Jj, Jx = self._jacobian_point_batch(i, j, pts_i, pts_j, point_xy, h, A_i, A_j)
+                l = -r0
+                sum_sq += float(np.sum(r0 ** 2))
+                count += int(r0.size)
 
-                    Js_blocks = []
-                    idx_blocks = []
-                    if i != self.fixed_id:
-                        Js_blocks.append(Ji)
-                        idx_blocks.append(self.id2pos[i])
-                    if j != self.fixed_id and j != i:
-                        Js_blocks.append(Jj)
-                        idx_blocks.append(self.id2pos[j])
+                Js_blocks = []
+                idx_blocks = []
+                if i != self.fixed_id:
+                    Js_blocks.append(Ji)
+                    idx_blocks.append(self.id2pos[i])
+                if j != self.fixed_id and j != i:
+                    Js_blocks.append(Jj)
+                    idx_blocks.append(self.id2pos[j])
 
-                    if len(Js_blocks) == 0:
-                        continue
+                if len(Js_blocks) == 0:
+                    continue
 
-                    Js = np.concatenate(Js_blocks, axis=1)
-                    H_ss = Js.T @ Js
-                    H_sx = Js.T @ Jx
-                    H_xs = Jx.T @ Js
-                    H_xx = Jx.T @ Jx
-                    b_s = Js.T @ l
-                    b_x = Jx.T @ l
+                Js = np.concatenate(Js_blocks, axis=2)
+                H_ss = np.einsum('nki,nkj->nij', Js, Js)
+                H_sx = np.einsum('nki,nkj->nij', Js, Jx)
+                H_xs = np.einsum('nki,nkj->nij', Jx, Js)
+                H_xx = np.einsum('nki,nkj->nij', Jx, Jx)
+                b_s = np.einsum('nki,nk->ni', Js, l)
+                b_x = np.einsum('nki,nk->ni', Jx, l)
 
-                    H_xx = H_xx + 1e-12 * np.eye(2, dtype=np.float64)
-                    H_xx_inv = np.linalg.solve(H_xx, np.eye(2, dtype=np.float64))
-                    H_schur = H_ss - H_sx @ H_xx_inv @ H_xs
-                    b_schur = b_s - H_sx @ H_xx_inv @ b_x
+                H_xx = H_xx + np.eye(2, dtype=np.float64)[None, :, :] * 1e-12
+                H_xx_inv = np.linalg.inv(H_xx)
+                H_schur = H_ss - np.einsum('nij,njk,nkl->nil', H_sx, H_xx_inv, H_xs)
+                b_schur = b_s - np.einsum('nij,njk,nk->ni', H_sx, H_xx_inv, b_x)
 
-                    for a, pos_a in enumerate(idx_blocks):
-                        ia = slice(6 * pos_a, 6 * pos_a + 6)
-                        for b_idx, pos_b in enumerate(idx_blocks):
-                            blk = H_schur[6 * a:6 * a + 6, 6 * b_idx:6 * b_idx + 6]
-                            self._add_block(blocks, pos_a, pos_b, blk)
-                        b[ia] += b_schur[6 * a:6 * a + 6]
+                H_schur_sum = np.sum(H_schur, axis=0)
+                b_schur_sum = np.sum(b_schur, axis=0)
+
+                for a, pos_a in enumerate(idx_blocks):
+                    ia = slice(6 * pos_a, 6 * pos_a + 6)
+                    for b_idx, pos_b in enumerate(idx_blocks):
+                        blk = H_schur_sum[6 * a:6 * a + 6, 6 * b_idx:6 * b_idx + 6]
+                        self._add_block(blocks, pos_a, pos_b, blk)
+                    b[ia] += b_schur_sum[6 * a:6 * a + 6]
 
             rms0 = float(math.sqrt(sum_sq / count)) if count else 0.0
             rms_hist.append(rms0)
@@ -536,10 +523,8 @@ class PBAAffineSolver:
             if count == 0:
                 return torch.from_numpy(A)
 
-            if n_params <= 240:
-                dx = self._solve_dense(blocks, b, damping, n_blocks)
-            else:
-                dx = self._solve_pcg(blocks, b, damping, n_blocks)
+            H = self._build_sparse(blocks, n_blocks, damping)
+            dx = self._solve_system(H, b)
 
             for m in self.var_ids:
                 pos = self.id2pos[m]
