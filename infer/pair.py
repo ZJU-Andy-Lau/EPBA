@@ -19,7 +19,6 @@ from window import Window
 from model.encoder import Encoder
 from model.predictor import Predictor
 from solve.solve_windows import WindowSolver
-from solve.match_solver import MatchSolver
 import time
 
 default_configs = {
@@ -282,32 +281,21 @@ class Solver():
         if self.reporter:
             self.reporter.update(current_step="Inference")
         
-        if self.configs['match'] is None:
-            solver = WindowSolver(B,H,W,
-                              predictor=predictor,
-                              feats_a=feats_a,feats_b=feats_b,
-                              H_as=Hs_a,H_bs=Hs_b,
-                              rpc_a=self.rpc_a,rpc_b=self.rpc_b,
-                              height_a=dems_a,
-                              height_b=dems_b,
-                              test_imgs_a=imgs_a,test_imgs_b=imgs_b,
-                              predictor_max_iter=self.configs['iter_num'])
-            preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
-            _,_,confs_a = feats_a
-            _,_,confs_b = feats_b
-            scores_a = confs_a.reshape(B,-1).mean(dim=1) # B,
-            scores_b = confs_b.reshape(B,-1).mean(dim=1)
-            scores = torch.sqrt(scores_a * scores_b) # B,
-        else:
-            solver = MatchSolver(imgs_a=imgs_a,imgs_b=imgs_b,
-                                 H_as=Hs_a,H_bs=Hs_b,
-                                 rpc_a=self.rpc_a,rpc_b=self.rpc_b,
-                                 height=dems_b,
-                                 method=self.configs['match'],
-                                 device=self.device,
-                                 reporter=self.reporter)
-            preds = solver.solve()
-            scores = torch.ones((preds.shape[0]),dtype=preds.dtype,device=preds.device)
+        solver = WindowSolver(B,H,W,
+                            predictor=predictor,
+                            feats_a=feats_a,feats_b=feats_b,
+                            H_as=Hs_a,H_bs=Hs_b,
+                            rpc_a=self.rpc_a,rpc_b=self.rpc_b,
+                            height_a=dems_a,
+                            height_b=dems_b,
+                            test_imgs_a=imgs_a,test_imgs_b=imgs_b,
+                            predictor_max_iter=self.configs['iter_num'])
+        preds = solver.solve(flag = 'ab',final_only=True,return_vis=False)
+        _,_,confs_a = feats_a
+        _,_,confs_b = feats_b
+        scores_a = confs_a.reshape(B,-1).mean(dim=1) # B,
+        scores_b = confs_b.reshape(B,-1).mean(dim=1)
+        scores = torch.sqrt(scores_a * scores_b) # B,
         
         return preds,scores
     
