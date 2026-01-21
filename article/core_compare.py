@@ -56,7 +56,7 @@ def merge_affine_rc(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     return C_h[:2, :]
 
 
-def random_affine_rc(rng: np.random.Generator, max_translate=20.0, max_rotate_deg=2.0, max_scale=0.02, max_shear=0.01) -> np.ndarray:
+def random_affine_rc(rng: np.random.Generator, max_translate=50.0, max_rotate_deg=10.0, max_scale=0.1, max_shear=0.05) -> np.ndarray:
     tx = rng.uniform(-max_translate, max_translate)
     ty = rng.uniform(-max_translate, max_translate)
     theta = np.deg2rad(rng.uniform(-max_rotate_deg, max_rotate_deg))
