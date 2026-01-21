@@ -263,7 +263,7 @@ def main():
 
         M_pred_loftr_xy = rc_to_xy_matrix(M_pred_loftr_rc)
         warped_loftr = cv2.warpAffine(img_a_warp, M_pred_loftr_xy, (img_b.shape[1], img_b.shape[0]), flags=cv2.INTER_LINEAR)
-        checker_loftr = make_checkerboard(warped_loftr, img_b)
+        checker_loftr = make_checkerboard(warped_loftr, img_b, num_tiles=16)
         save_image_gray(os.path.join(out_dir, "checker_loftr.png"), checker_loftr)
 
         with open(os.path.join(out_dir, "transforms.json"), "w", encoding="utf-8") as f:
