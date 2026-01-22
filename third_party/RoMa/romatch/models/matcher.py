@@ -540,7 +540,6 @@ def _check_input(im_input):
             "im_input must be a string, path, or PIL image"
         )
         B, C, H, W = im_input.shape
-        print(B,C,H,W)
         assert C == 3, "im_input must be a RGB image"
         assert H % 14 == 0, "im_input must be a multiple of 14"
         assert W % 14 == 0, "im_input must be a multiple of 14"
