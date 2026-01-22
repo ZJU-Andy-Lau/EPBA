@@ -19,6 +19,9 @@ class ExperimentLogger:
             "median_error",
             "rmse",
             "max_error",
+            "lt_1pix_percent",
+            "lt_3pix_percent",
+            "lt_5pix_percent",
         ]
 
     def append(self, row: Dict):

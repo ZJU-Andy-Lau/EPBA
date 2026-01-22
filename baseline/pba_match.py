@@ -339,6 +339,9 @@ def main(args):
                     "median_error": report["median"],
                     "rmse": report["rmse"],
                     "max_error": report["max"],
+                    "lt_1pix_percent": report["<1pix_percent"],
+                    "lt_3pix_percent": report["<3pix_percent"],
+                    "lt_5pix_percent": report["<5pix_percent"],
                 })
 
             reporter.update(current_step="Visualizing")

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOTS=()
+MATCHERS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --roots)
+      shift
+      IFS=',' read -r -a ROOTS <<< "${1:-}"
+      ;;
+    --matchers)
+      shift
+      IFS=',' read -r -a MATCHERS <<< "${1:-}"
+      ;;
+    --help|-h)
+      echo "Usage: $0 --roots root1,root2 --matchers sift,loftr,superglue"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+if [[ ${#ROOTS[@]} -eq 0 ]]; then
+  echo "No roots provided. Use --roots root1,root2"
+  exit 1
+fi
+
+if [[ ${#MATCHERS[@]} -eq 0 ]]; then
+  echo "No matchers provided. Use --matchers sift,loftr,superglue"
+  exit 1
+fi
+
+for root in "${ROOTS[@]}"; do
+  for matcher in "${MATCHERS[@]}"; do
+    python baseline/pba_match.py --root "${root}" --matcher "${matcher}"
+  done
+done
