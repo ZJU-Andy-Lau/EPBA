@@ -42,6 +42,7 @@ def build_matcher(args) -> BaseMatcher:
         return RoMaMatcher(
             variant=args.roma_variant,
             weight_path=args.roma_weight_path,
+            dinov2_weight_path=args.roma_dinov2_weight_path,
             device=args.device,
         )
     raise ValueError(f"Unsupported matcher: {args.matcher}")

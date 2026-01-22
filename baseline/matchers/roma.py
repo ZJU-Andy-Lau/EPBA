@@ -15,6 +15,7 @@ class RoMaMatcher(BaseMatcher):
         self,
         variant: str = "outdoor",
         weight_path: Optional[str] = None,
+        dinov2_weight_path: Optional[str] = None,
         device: str = "cpu",
     ):
         super().__init__(device=device)
@@ -26,13 +27,24 @@ class RoMaMatcher(BaseMatcher):
         from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 
         weights = None
+        dinov2_weights = None
         if weight_path:
             weights = torch.load(weight_path, map_location=self.device)
+        if dinov2_weight_path:
+            dinov2_weights = torch.load(dinov2_weight_path, map_location=self.device)
 
         if variant == "outdoor":
-            self.model = roma_outdoor(device=self.device, weights=weights)
+            self.model = roma_outdoor(
+                device=self.device,
+                weights=weights,
+                dinov2_weights=dinov2_weights,
+            )
         elif variant == "indoor":
-            self.model = roma_indoor(device=self.device, weights=weights)
+            self.model = roma_indoor(
+                device=self.device,
+                weights=weights,
+                dinov2_weights=dinov2_weights,
+            )
         elif variant == "tiny_outdoor":
             self.model = tiny_roma_v1_outdoor(device=self.device, weights=weights)
         else:

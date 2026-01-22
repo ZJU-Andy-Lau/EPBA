@@ -10,7 +10,7 @@ class ExperimentLogger:
             "experiment_id",
             "dataset_root",
             "matcher",
-            "matcher_config",
+            # "matcher_config",
             "num_pairs",
             "match_points_total",
             "model_time",

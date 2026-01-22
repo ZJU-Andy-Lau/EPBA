@@ -323,13 +323,14 @@ def main(args):
                     "aspanformer_config_path": args.aspanformer_config_path,
                     "aspanformer_weight_path": args.aspanformer_weight_path,
                     "roma_weight_path": args.roma_weight_path,
+                    "roma_dinov2_weight_path": args.roma_dinov2_weight_path,
                     "roma_variant": args.roma_variant,
                 }
                 logger.append({
                     "experiment_id": args.experiment_id,
                     "dataset_root": args.root,
                     "matcher": args.matcher,
-                    "matcher_config": matcher_config,
+                    # "matcher_config": matcher_config,
                     "num_pairs": len(all_results),
                     "match_points_total": total_match_points,
                     "model_time": total_match_time,
@@ -367,6 +368,7 @@ if __name__ == '__main__':
     parser.add_argument('--aspanformer_config_path', type=str, default=None)
     parser.add_argument('--aspanformer_weight_path', type=str, default=None)
     parser.add_argument('--roma_weight_path', type=str, default=None)
+    parser.add_argument('--roma_dinov2_weight_path', type=str, default=None)
     parser.add_argument('--roma_variant', type=str, default='outdoor', choices=['outdoor', 'indoor', 'tiny_outdoor'])
 
     parser.add_argument('--max_window_size', type=int, default=2000)
