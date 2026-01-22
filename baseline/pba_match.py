@@ -243,7 +243,8 @@ def main(args):
             
             torch.cuda.synchronize()
             end_time = time.perf_counter()
-            reporter.log(f"model total time:{(end_time - start_time):.4f}s")
+            total_match_time = end_time - start_time
+            reporter.log(f"model total time:{total_match_time:.4f}s")
 
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
             for image in images:
@@ -262,7 +263,7 @@ def main(args):
             if len(all_results) == 0:
                 reporter.log("No valid matches found for PBA")
                 return
-            total_match_time = sum(match.get("match_time", 0.0) for match in all_results)
+            # total_match_time = sum(match.get("match_time", 0.0) for match in all_results)
             total_match_points = sum(match.get("match_points", 0) for match in all_results)
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args, [metas[i] for i in image_ids], reporter)
