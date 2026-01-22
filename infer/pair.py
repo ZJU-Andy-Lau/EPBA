@@ -322,7 +322,8 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
-        coords_mat = get_coord_mat(4,4,Hs.shape[0],16,self.device) # (B,32,32,2)
+        mat_size = 4
+        coords_mat = get_coord_mat(mat_size,mat_size,Hs.shape[0],16,self.device) # (B,32,32,2)
         coords_mat_flat = coords_mat.flatten(1,2) # (B,1024,2)
         coords_src = apply_H(coords=coords_mat_flat,Hs=torch.linalg.inv(Hs),device=self.device) # (B,1024,2) 大图坐标系下的坐标
         coords_dst = apply_M(coords=coords_src,Ms=affines,device=self.device) # (B,1024,2) 对每个窗口应用其仿射变换
@@ -332,7 +333,7 @@ class Solver():
 
         scores_norm = scores / scores.mean()
 
-        scores_norm = scores_norm.unsqueeze(-1).expand(-1,1024).reshape(-1) # B*1024
+        scores_norm = scores_norm.unsqueeze(-1).expand(-1,mat_size ** 2).reshape(-1) # B*1024
         
         merged_affine = solve_weighted_affine(coords_src_flat,coords_dst_flat,scores_norm)
 
