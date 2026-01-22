@@ -241,7 +241,7 @@ def main(args):
                 reporter.log(f"-----pair time:{(t - last_time):.4f}s")
                 last_time = t
 
-            reporter.log(f"total time:{(last_time - start_time):.4f}s")
+            reporter.log(f"model total time:{(last_time - start_time):.4f}s")
             
             # 任务完成，清理状态
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
@@ -267,13 +267,28 @@ def main(args):
             all_results = [item for sublist in all_results for item in sublist]
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args,[metas[i] for i in image_ids], reporter)
+
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+
             solver = PBAAffineSolver(images,all_results,
                                     fixed_id=args.fixed_id,
                                     sample_points_num=args.sample_points_num,
                                     device=args.device,
                                     reporter=reporter,
                                     output_path=args.output_path)
+            
+            torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            reporter.log(f"solver init time:{(t1 - t0):.4f}s")
+
             Ms = solver.solve()
+
+            torch.cuda.synchronize()
+            t2 = time.perf_counter()
+            reporter.log(f"solver solve time:{(t2 - t1):.4f}s")
+
+
             for i,image in enumerate(images):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
