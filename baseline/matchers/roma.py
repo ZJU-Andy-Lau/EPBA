@@ -52,10 +52,12 @@ class RoMaMatcher(BaseMatcher):
 
     def match(self, img_a: np.ndarray, img_b: np.ndarray) -> MatchResult:
         start = time.perf_counter()
+        print(img_a.shape)
         img_a = np.stack([img_a] * 3,axis=0)[None]
         img_b = np.stack([img_b] * 3,axis=0)[None]
         img_a = torch.from_numpy(img_a).to(self.device)
         img_b = torch.from_numpy(img_b).to(self.device)
+        print(img_a.shape)
         warp, certainty = self.model.match(img_a, img_b, device=self.device)
         matches, certainty = self.model.sample(warp, certainty)
         if matches is None or len(matches) == 0:
