@@ -57,9 +57,7 @@ class RoMaMatcher(BaseMatcher):
 
     def match(self, img_a: np.ndarray, img_b: np.ndarray) -> MatchResult:
         start = time.perf_counter()
-        img_a = Image.fromarray(img_a)
-        img_b = Image.fromarray(img_b)
-        warp, certainty = self.model.match(img_a, img_b, device=self.device)
+        warp, certainty = self.model.match(Image.fromarray(img_a), Image.fromarray(img_b), device=self.device)
         matches, certainty = self.model.sample(warp, certainty)
         if matches is None or len(matches) == 0:
             return MatchResult(np.empty((0, 2)), np.empty((0, 2)), match_time=time.perf_counter() - start)
