@@ -41,12 +41,14 @@ class RoMaMatcher(BaseMatcher):
                 device=self.device,
                 weights=weights,
                 dinov2_weights=dinov2_weights,
+                use_custom_corr=False,
             )
         elif variant == "indoor":
             self.model = roma_indoor(
                 device=self.device,
                 weights=weights,
                 dinov2_weights=dinov2_weights,
+                use_custom_corr=False,
             )
         elif variant == "tiny_outdoor":
             self.model = tiny_roma_v1_outdoor(device=self.device, weights=weights)
