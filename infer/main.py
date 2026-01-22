@@ -205,6 +205,8 @@ def main(args):
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             pairs = build_pairs(args,images, reporter, pairs_ids)
             
+            torch.cuda.synchronize()
+            last_time = time.perf_counter()
             for idx, pair in enumerate(pairs):
                 # Update Task info
                 reporter.update(progress=f"{idx+1}/{total_pairs}")
@@ -232,6 +234,11 @@ def main(args):
                         'M':affine_ab.detach().cpu()
                     }
                     local_results.append(result_ab)
+                
+                torch.cuda.synchronize()
+                t = time.perf_counter()
+                reporter.log(f"pair time:{(t - last_time):.4f}s")
+                last_time = t
 
                 # result = {
                 #     pair.id_a:affine_ab.detach().cpu(),

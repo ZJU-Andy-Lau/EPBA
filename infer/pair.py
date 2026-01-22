@@ -350,34 +350,10 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
-        torch.cuda.synchronize()
-        t0 = time.perf_counter()
-        
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
-
-        torch.cuda.synchronize()
-        t1 = time.perf_counter()
-        self.reporter.log(f"-----Collect Hs:{(t1-t0):.4f}s")
-
         preds,scores = self.get_window_affines(encoder,predictor)
-
-        torch.cuda.synchronize()
-        t2 = time.perf_counter()
-        self.reporter.log(f"-----get window affines:{(t2-t1):.4f}s")
-
-
         affine = self.merge_affines(preds,Hs_a,scores)
-
-        torch.cuda.synchronize()
-        t3 = time.perf_counter()
-        self.reporter.log(f"-----merge affines:{(t3-t2):.4f}s")
-
-
         self.rpc_a.Update_Adjust(affine)
-
-        torch.cuda.synchronize()
-        t4 = time.perf_counter()
-        self.reporter.log(f"-----update adjust:{(t4-t3):.4f}s")
         # self.test_rpc()
         # try:
         #     self.test_rpc()
