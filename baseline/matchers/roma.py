@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from .base import BaseMatcher, MatchResul
+from .base import BaseMatcher, MatchResult
 
 from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 
