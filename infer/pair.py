@@ -322,7 +322,7 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
-        coords_mat = get_coord_mat(32,32,Hs.shape[0],16,self.device) # (B,32,32,2)
+        coords_mat = get_coord_mat(4,4,Hs.shape[0],16,self.device) # (B,32,32,2)
         coords_mat_flat = coords_mat.flatten(1,2) # (B,1024,2)
         coords_src = apply_H(coords=coords_mat_flat,Hs=torch.linalg.inv(Hs),device=self.device) # (B,1024,2) 大图坐标系下的坐标
         coords_dst = apply_M(coords=coords_src,Ms=affines,device=self.device) # (B,1024,2) 对每个窗口应用其仿射变换
@@ -349,10 +349,34 @@ class Solver():
         Returns:
             affine: torch.Tensor, (2,3)
         """
+        torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        
         Hs_a,Hs_b = self.collect_Hs(to_tensor=True)
+
+        torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        self.reporter.log(f"-----Collect Hs:{(t1-t0):.4f}s")
+
         preds,scores = self.get_window_affines(encoder,predictor)
+
+        torch.cuda.synchronize()
+        t2 = time.perf_counter()
+        self.reporter.log(f"-----get window affines:{(t2-t1):.4f}s")
+
+
         affine = self.merge_affines(preds,Hs_a,scores)
+
+        torch.cuda.synchronize()
+        t3 = time.perf_counter()
+        self.reporter.log(f"-----merge affines:{(t3-t2):.4f}s")
+
+
         self.rpc_a.Update_Adjust(affine)
+
+        torch.cuda.synchronize()
+        t4 = time.perf_counter()
+        self.reporter.log(f"-----update adjust:{(t4-t3):.4f}s")
         # self.test_rpc()
         # try:
         #     self.test_rpc()
@@ -371,8 +395,22 @@ class Solver():
             # 更新层级信息
             if self.reporter:
                 self.reporter.update(level=f"{int(self.window_size)}m")
+
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+
             self.solve_level_affine(encoder,predictor)
+
+            torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            self.reporter.log(f"--solve level time:{(t1-t0):.4f}s")
+
             self.quadsplit_windows()
+
+            torch.cuda.synchronize()
+            t2 = time.perf_counter()
+            self.reporter.log(f"--quad split time:{(t2-t1):.4f}s")
+
         return self.rpc_a.adjust_params
     
     def test_rpc(self):

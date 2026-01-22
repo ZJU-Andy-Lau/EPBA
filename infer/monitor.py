@@ -199,6 +199,8 @@ class StatusReporter:
             "error": None, # 新增错误字段
             "timestamp": time.time()
         }
+
+        self.database = {}
         self.last_write_time = 0
         self.flush()
 
@@ -223,6 +225,14 @@ class StatusReporter:
             now = time.time()
             if is_force or (now - self.last_write_time > 0.1):
                 self.flush()
+
+    def update_data(self,key,value):
+        self.database[key] = value
+    
+    def get_data(self,key):
+        if key in self.database.keys():
+            return self.database[key]
+        return None
 
     def flush(self):
         try:
