@@ -8,7 +8,9 @@ import numpy as np
 import torch
 from PIL import Image
 
-from .base import BaseMatcher, MatchResult
+from .base import BaseMatcher, MatchResul
+
+from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 
 
 class RoMaMatcher(BaseMatcher):
@@ -20,12 +22,12 @@ class RoMaMatcher(BaseMatcher):
         device: str = "cpu",
     ):
         super().__init__(device=device)
-        repo_root = os.path.join(os.getcwd(), "third_party", "RoMa")
-        if repo_root not in sys.path:
-            sys.path.append(repo_root)
-        if importlib.util.find_spec("romatch") is None:
-            raise RuntimeError("romatch package not found in third_party/RoMa")
-        from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
+        # repo_root = os.path.join(os.getcwd(), "third_party", "RoMa")
+        # if repo_root not in sys.path:
+        #     sys.path.append(repo_root)
+        # if importlib.util.find_spec("romatch") is None:
+        #     raise RuntimeError("romatch package not found in third_party/RoMa")
+        
 
         weights = None
         dinov2_weights = None
