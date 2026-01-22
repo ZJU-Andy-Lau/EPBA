@@ -206,7 +206,8 @@ def main(args):
             pairs = build_pairs(args,images, reporter, pairs_ids)
             
             torch.cuda.synchronize()
-            last_time = time.perf_counter()
+            start_time = time.perf_counter()
+            last_time = start_time
             for idx, pair in enumerate(pairs):
                 # Update Task info
                 reporter.update(progress=f"{idx+1}/{total_pairs}")
@@ -237,15 +238,10 @@ def main(args):
                 
                 torch.cuda.synchronize()
                 t = time.perf_counter()
-                reporter.log(f"pair time:{(t - last_time):.4f}s")
+                reporter.log(f"-----pair time:{(t - last_time):.4f}s")
                 last_time = t
 
-                # result = {
-                #     pair.id_a:affine_ab.detach().cpu(),
-                #     pair.id_b:affine_ba.detach().cpu()
-                # }
-                
-                # local_results.append(result)
+            reporter.log(f"total time:{(last_time - start_time):.4f}s")
             
             # 任务完成，清理状态
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")

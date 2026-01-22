@@ -372,21 +372,8 @@ class Solver():
             # 更新层级信息
             if self.reporter:
                 self.reporter.update(level=f"{int(self.window_size)}m")
-
-            torch.cuda.synchronize()
-            t0 = time.perf_counter()
-
             self.solve_level_affine(encoder,predictor)
-
-            torch.cuda.synchronize()
-            t1 = time.perf_counter()
-            self.reporter.log(f"--solve level time:{(t1-t0):.4f}s")
-
             self.quadsplit_windows()
-
-            torch.cuda.synchronize()
-            t2 = time.perf_counter()
-            self.reporter.log(f"--quad split time:{(t2-t1):.4f}s")
 
         return self.rpc_a.adjust_params
     
