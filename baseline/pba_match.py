@@ -11,8 +11,6 @@ import random
 from typing import List, Tuple
 import itertools
 import traceback
-import cv2
-import importlib.util
 import time
 
 import torch
@@ -24,6 +22,8 @@ from infer.rs_image import RSImage, RSImageMeta, vis_registration
 from infer.validate import compute_multiview_pair_errors
 from infer.monitor import StatusMonitor, StatusReporter
 from solve.global_solver_0120 import PBAAffineSolver, get_overlap_area
+from baseline.matchers import build_matcher
+from baseline.results_logger import ExperimentLogger
 
 
 def init_random_seed(seed):
@@ -64,70 +64,6 @@ def get_pairs(args, metas: List[RSImageMeta]):
     return pair_idxs
 
 
-def run_sift_matching(img_a, img_b, ratio_thresh, fm_ransac_thresh, fm_confidence):
-    gray_a = cv2.cvtColor(img_a, cv2.COLOR_RGB2GRAY)
-    gray_b = cv2.cvtColor(img_b, cv2.COLOR_RGB2GRAY)
-    gray_a = cv2.equalizeHist(gray_a)
-    gray_b = cv2.equalizeHist(gray_b)
-    sift = cv2.SIFT_create()
-    kp1, des1 = sift.detectAndCompute(gray_a, None)
-    kp2, des2 = sift.detectAndCompute(gray_b, None)
-    if des1 is None or des2 is None or len(kp1) < 2 or len(kp2) < 2:
-        return np.empty((0, 2)), np.empty((0, 2))
-    matcher = cv2.BFMatcher()
-    matches = matcher.knnMatch(des1, des2, k=2)
-    good_matches = []
-    for m, n in matches:
-        if m.distance < ratio_thresh * n.distance:
-            good_matches.append(m)
-    if len(good_matches) < 4:
-        return np.empty((0, 2)), np.empty((0, 2))
-    pts_a = np.float32([kp1[m.queryIdx].pt for m in good_matches])
-    pts_b = np.float32([kp2[m.trainIdx].pt for m in good_matches])
-    M, mask = cv2.findFundamentalMat(pts_a, pts_b, cv2.FM_RANSAC, fm_ransac_thresh, fm_confidence)
-    if M is None:
-        return np.empty((0, 2)), np.empty((0, 2))
-    mask = mask.ravel().astype(bool)
-    return pts_a[mask], pts_b[mask]
-
-
-def load_loftr_model(args, reporter):
-    kornia_spec = importlib.util.find_spec("kornia.feature")
-    if kornia_spec is None:
-        reporter.log("kornia is required for LoFTR")
-        raise RuntimeError("kornia is required for LoFTR")
-    from kornia.feature import LoFTR
-    reporter.update(current_step="Loading Model")
-    if args.loftr_weight_path is not None:
-        if not os.path.exists(args.loftr_weight_path):
-            raise FileNotFoundError(f"LoFTR weights not found at: {args.loftr_weight_path}")
-        loftr_model = LoFTR(pretrained=None)
-        checkpoint = torch.load(args.loftr_weight_path, map_location='cpu')
-        state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
-        loftr_model.load_state_dict(state_dict)
-        return loftr_model.to(args.device).eval()
-    return LoFTR(pretrained='outdoor').to(args.device).eval()
-
-
-@torch.no_grad()
-def run_loftr_matching(loftr_model, img_a_np, img_b_np, device, fm_ransac_thresh, fm_confidence):
-    img0 = cv2.cvtColor(img_a_np, cv2.COLOR_RGB2GRAY)
-    img1 = cv2.cvtColor(img_b_np, cv2.COLOR_RGB2GRAY)
-    img0 = torch.from_numpy(img0).float().to(device) / 255.0
-    img1 = torch.from_numpy(img1).float().to(device) / 255.0
-    batch = {'image0': img0.unsqueeze(0).unsqueeze(0), 'image1': img1.unsqueeze(0).unsqueeze(0)}
-    correspondences = loftr_model(batch)
-    mkpts0 = correspondences['keypoints0'].cpu().numpy()
-    mkpts1 = correspondences['keypoints1'].cpu().numpy()
-    if len(mkpts0) < 4:
-        return np.empty((0, 2)), np.empty((0, 2))
-    M, mask = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.FM_RANSAC, fm_ransac_thresh, fm_confidence)
-    if M is None:
-        return np.empty((0, 2)), np.empty((0, 2))
-    mask = mask.ravel().astype(bool)
-    return mkpts0[mask], mkpts1[mask]
-
-
 def get_overlap_windows(args, image_a: RSImage, image_b: RSImage):
     corners_a = image_a.corner_xys
     corners_b = image_b.corner_xys
@@ -152,13 +88,15 @@ def build_match_points(args, image_a: RSImage, image_b: RSImage, matcher, report
     imgs_a, imgs_b, Hs_a, Hs_b = window_data
     all_pts_a_global = []
     all_pts_b_global = []
+    match_times = []
     for idx in range(len(imgs_a)):
         if np.isnan(imgs_a[idx]).any() or np.isnan(imgs_b[idx]).any():
             continue
-        if args.matcher == "sift":
-            pts_a_crop, pts_b_crop = run_sift_matching(imgs_a[idx], imgs_b[idx], args.sift_ratio_thresh, args.fm_ransac_thresh, args.fm_confidence)
-        else:
-            pts_a_crop, pts_b_crop = run_loftr_matching(matcher, imgs_a[idx], imgs_b[idx], args.device, args.fm_ransac_thresh, args.fm_confidence)
+        match_result = matcher.match(imgs_a[idx], imgs_b[idx])
+        pts_a_crop = match_result.pts0
+        pts_b_crop = match_result.pts1
+        if match_result.match_time is not None:
+            match_times.append(match_result.match_time)
         if len(pts_a_crop) == 0:
             continue
         pts_a_rc = pts_a_crop[:, [1, 0]]
@@ -191,7 +129,8 @@ def build_match_points(args, image_a: RSImage, image_b: RSImage, matcher, report
     heights = heights[valid_mask]
     if pts_a_obs.shape[0] < args.min_match_points:
         return None
-    return pts_a_obs, pts_b_obs, heights
+    total_match_time = sum(match_times) if match_times else 0.0
+    return pts_a_obs, pts_b_obs, heights, total_match_time
 
 
 class PBADirectTieSolver(PBAAffineSolver):
@@ -251,9 +190,7 @@ def main(args):
         monitor.start()
     reporter = StatusReporter(rank, world_size, experiment_id_clean, monitor)
 
-    matcher = None
-    if args.matcher == "loftr":
-        matcher = load_loftr_model(args, reporter)
+    matcher = build_matcher(args)
 
     try:
         init_random_seed(args.random_seed)
@@ -293,13 +230,15 @@ def main(args):
                 match_points = build_match_points(args, image_i, image_j, matcher, reporter)
                 if match_points is None:
                     continue
-                pts_i, pts_j, heights = match_points
+                pts_i, pts_j, heights, match_time = match_points
                 local_results.append({
                     'i': i,
                     'j': j,
                     'pts_i': pts_i,
                     'pts_j': pts_j,
-                    'heights': heights
+                    'heights': heights,
+                    'match_time': match_time,
+                    'match_points': pts_i.shape[0],
                 })
             
             torch.cuda.synchronize()
@@ -323,6 +262,8 @@ def main(args):
             if len(all_results) == 0:
                 reporter.log("No valid matches found for PBA")
                 return
+            total_match_time = sum(match.get("match_time", 0.0) for match in all_results)
+            total_match_points = sum(match.get("match_points", 0) for match in all_results)
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args, [metas[i] for i in image_ids], reporter)
 
@@ -347,6 +288,7 @@ def main(args):
             torch.cuda.synchronize()
             t2 = time.perf_counter()
             reporter.log(f"solver solve time:{(t2 - t1):.4f}s")
+            pba_time = t2 - t1
             
             for i, image in enumerate(images):
                 M = Ms[i]
@@ -368,6 +310,35 @@ def main(args):
             reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
             reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
             reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
+            if args.results_csv:
+                logger = ExperimentLogger(args.results_csv)
+                matcher_config = {
+                    "matcher": args.matcher,
+                    "sift_ratio_thresh": args.sift_ratio_thresh,
+                    "fm_ransac_thresh": args.fm_ransac_thresh,
+                    "fm_confidence": args.fm_confidence,
+                    "loftr_weight_path": args.loftr_weight_path,
+                    "superpoint_weight_path": args.superpoint_weight_path,
+                    "superglue_weight_path": args.superglue_weight_path,
+                    "aspanformer_config_path": args.aspanformer_config_path,
+                    "aspanformer_weight_path": args.aspanformer_weight_path,
+                    "roma_weight_path": args.roma_weight_path,
+                    "roma_variant": args.roma_variant,
+                }
+                logger.append({
+                    "experiment_id": args.experiment_id,
+                    "dataset_root": args.root,
+                    "matcher": args.matcher,
+                    "matcher_config": matcher_config,
+                    "num_pairs": len(all_results),
+                    "match_points_total": total_match_points,
+                    "model_time": total_match_time,
+                    "pba_time": pba_time,
+                    "mean_error": report["mean"],
+                    "median_error": report["median"],
+                    "rmse": report["rmse"],
+                    "max_error": report["max"],
+                })
 
             reporter.update(current_step="Visualizing")
             for i, j in itertools.combinations(range(len(images)), 2):
@@ -389,8 +360,14 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, help='path to dataset')
     parser.add_argument('--select_imgs', type=str, default='-1')
 
-    parser.add_argument('--matcher', type=str, default='sift', choices=['sift', 'loftr'])
+    parser.add_argument('--matcher', type=str, default='sift', choices=['sift', 'loftr', 'superglue', 'aspanformer', 'roma'])
     parser.add_argument('--loftr_weight_path', type=str, default=None)
+    parser.add_argument('--superpoint_weight_path', type=str, default=None)
+    parser.add_argument('--superglue_weight_path', type=str, default=None)
+    parser.add_argument('--aspanformer_config_path', type=str, default=None)
+    parser.add_argument('--aspanformer_weight_path', type=str, default=None)
+    parser.add_argument('--roma_weight_path', type=str, default=None)
+    parser.add_argument('--roma_variant', type=str, default='outdoor', choices=['outdoor', 'indoor', 'tiny_outdoor'])
 
     parser.add_argument('--max_window_size', type=int, default=2000)
     parser.add_argument('--min_window_size', type=int, default=500)
@@ -412,6 +389,7 @@ if __name__ == '__main__':
     parser.add_argument('--random_seed', type=int, default=42)
     parser.add_argument('--output_rpc', type=str2bool, default=False)
     parser.add_argument('--usgs_dem', type=str2bool, default=False)
+    parser.add_argument('--results_csv', type=str, default=None)
 
     args = parser.parse_args()
 
