@@ -209,6 +209,7 @@ def main(args):
                     torch.cuda.synchronize()
                     end_time = time.perf_counter()
                     model_time += end_time - start_time
+                    
                     adjust_image.affine_list.append(affine)
 
                 reporter.update(current_task="Baking RPC", level="-")

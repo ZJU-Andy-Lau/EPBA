@@ -13,6 +13,7 @@ import itertools
 import traceback
 import cv2
 import importlib.util
+import time
 
 import torch
 import torch.distributed as dist
@@ -280,6 +281,10 @@ def main(args):
             image_ids = sorted(set(x for t in pairs_ids for x in t))
             images = load_images(args, [metas[i] for i in image_ids], reporter)
             images_by_id = {image.id: image for image in images}
+
+            torch.cuda.synchronize()
+            start_time = time.perf_counter()
+
             for idx, (i, j) in enumerate(pairs_ids):
                 reporter.update(progress=f"{idx + 1}/{total_pairs}")
                 reporter.update(current_task=f"{i} => {j}")
@@ -296,6 +301,11 @@ def main(args):
                     'pts_j': pts_j,
                     'heights': heights
                 })
+            
+            torch.cuda.synchronize()
+            end_time = time.perf_counter()
+            reporter.log(f"model total time:{(end_time - start_time):.4f}s")
+
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
             for image in images:
                 del image
@@ -315,6 +325,10 @@ def main(args):
                 return
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args, [metas[i] for i in image_ids], reporter)
+
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+
             solver = PBADirectTieSolver(
                 images,
                 all_results,
@@ -323,7 +337,17 @@ def main(args):
                 reporter=reporter,
                 output_path=args.output_path
             )
+
+            torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            reporter.log(f"solver init time:{(t1 - t0):.4f}s")
+
             Ms = solver.solve(max_iters=args.solver_max_iter)
+
+            torch.cuda.synchronize()
+            t2 = time.perf_counter()
+            reporter.log(f"solver solve time:{(t2 - t1):.4f}s")
+            
             for i, image in enumerate(images):
                 M = Ms[i]
                 reporter.log(f"Affine Matrix of Image {image.id}\n{M}\n")
