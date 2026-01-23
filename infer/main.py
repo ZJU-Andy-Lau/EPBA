@@ -40,7 +40,7 @@ from shared.utils import str2bool,get_current_time,load_model_state_dict,load_co
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
 from infer.validate import compute_multiview_pair_errors
 from pair import Pair
-from solve.global_solver_0120 import PBAAffineSolver
+from solve.global_solver import PBAAffineSolver
 from rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
 

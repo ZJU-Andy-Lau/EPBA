@@ -21,7 +21,7 @@ from infer.utils import is_overlap, get_report_dict, find_intersection, find_squ
 from infer.rs_image import RSImage, RSImageMeta, vis_registration
 from infer.validate import compute_multiview_pair_errors
 from infer.monitor import StatusMonitor, StatusReporter
-from solve.global_solver_0120 import PBAAffineSolver, get_overlap_area
+from solve.global_solver import PBAAffineSolver, get_overlap_area
 from baseline.matchers import build_matcher
 from baseline.results_logger import ExperimentLogger
 
