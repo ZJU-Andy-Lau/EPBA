@@ -107,8 +107,9 @@ def build_match_points(args, image_a: RSImage, image_b: RSImage, matcher, report
         H_b_inv = torch.from_numpy(np.linalg.inv(Hs_b[idx])).unsqueeze(0).to(args.device, dtype=torch.float32)
         pts_a_global = apply_H(pts_a_rc_t, H_a_inv, args.device).squeeze(0).cpu().numpy()
         pts_b_global = apply_H(pts_b_rc_t, H_b_inv, args.device).squeeze(0).cpu().numpy()
-        all_pts_a_global.append(pts_a_global)
-        all_pts_b_global.append(pts_b_global)
+        max_num = int(args.max_match_points * 10 / len(imgs_a))
+        all_pts_a_global.append(pts_a_global[:max_num])
+        all_pts_b_global.append(pts_b_global[:max_num])
     if not all_pts_a_global:
         return None
     pts_a_obs = np.concatenate(all_pts_a_global, axis=0)
