@@ -4,25 +4,28 @@ from typing import Dict
 
 
 class ExperimentLogger:
-    def __init__(self, csv_path: str):
+    def __init__(self, csv_path: str, fieldnames = None):
         self.csv_path = csv_path
-        self.fieldnames = [
-            "experiment_id",
-            "dataset_root",
-            "matcher",
-            # "matcher_config",
-            "num_pairs",
-            "match_points_total",
-            "model_time",
-            "pba_time",
-            "mean_error",
-            "median_error",
-            "rmse",
-            "max_error",
-            "lt_1pix_percent",
-            "lt_3pix_percent",
-            "lt_5pix_percent",
-        ]
+        if fieldnames is None:
+            self.fieldnames = [
+                "experiment_id",
+                "dataset_root",
+                "matcher",
+                # "matcher_config",
+                "num_pairs",
+                "match_points_total",
+                "model_time",
+                "pba_time",
+                "mean_error",
+                "median_error",
+                "rmse",
+                "max_error",
+                "lt_1pix_percent",
+                "lt_3pix_percent",
+                "lt_5pix_percent",
+            ]
+        else:
+            self.fieldnames = fieldnames
 
     def append(self, row: Dict):
         dir_name = os.path.dirname(self.csv_path)

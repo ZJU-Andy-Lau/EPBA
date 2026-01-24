@@ -436,22 +436,10 @@ def main(args):
             reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
             reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
             if args.results_csv:
-                logger = ExperimentLogger(args.results_csv)
+                logger = ExperimentLogger(args.results_csv,["experiment_id","median_error"])
                 logger.append({
                     "experiment_id": args.experiment_id,
-                    "dataset_root": args.root,
-                    "matcher": args.matcher,
-                    "num_pairs": len(all_results),
-                    "match_points_total": total_match_points,
-                    "model_time": total_match_time,
-                    "pba_time": pba_time,
-                    "mean_error": report["mean"],
                     "median_error": report["median"],
-                    "rmse": report["rmse"],
-                    "max_error": report["max"],
-                    "lt_1pix_percent": report["<1pix_percent"],
-                    "lt_3pix_percent": report["<3pix_percent"],
-                    "lt_5pix_percent": report["<5pix_percent"],
                 })
 
             reporter.update(current_step="Visualizing")
