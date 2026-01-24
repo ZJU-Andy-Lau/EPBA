@@ -241,7 +241,7 @@ def main(args):
                     'match_time': match_time,
                     'match_points': pts_i.shape[0],
                 })
-                reporter.log(match_points)
+                reporter.log(pts_i.shape[0])
             
             torch.cuda.synchronize()
             end_time = time.perf_counter()
@@ -257,6 +257,8 @@ def main(args):
             all_results = [None for _ in range(world_size)]
         else:
             all_results = None
+        
+        dist.barrier()
         dist.gather_object(local_results, all_results if rank == 0 else None, dst=0)
 
         if rank == 0:
