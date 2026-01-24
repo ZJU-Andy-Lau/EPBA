@@ -43,6 +43,7 @@ from pair import Pair
 from solve.global_solver import PBAAffineSolver
 from rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
+from baseline.results_logger import ExperimentLogger
 
 def init_random_seed(args):
     seed = args.random_seed 
@@ -313,9 +314,17 @@ def main(args):
             reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
             reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
 
-            reporter.update(current_step="Visualizing")
-            for i,j in itertools.combinations(range(len(images)),2):
-                vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
+            if args.vis:
+                reporter.update(current_step="Visualizing")
+                for i,j in itertools.combinations(range(len(images)),2):
+                    vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
+
+            if args.results_csv:
+                logger = ExperimentLogger(args.results_csv,["experiment_id","median_error"])
+                logger.append({
+                    "experiment_id": args.experiment_id,
+                    "median_error": report["median"],
+                })
             
     except Exception as e:
         error_msg = traceback.format_exc()
@@ -393,8 +402,12 @@ if __name__ == '__main__':
     
     parser.add_argument('--output_path', type=str, default='results')
     
+    parser.add_argument('--vis', type=str2bool, default=False)
+
     parser.add_argument('--vis_resolution', type=float, default=1.0, 
                         help='Resolution (in meters) for output orthophotos and checkerboards.')
+    
+    parser.add_argument('--results_csv', type=str, default=None)
     
     #===============================================================================
 
