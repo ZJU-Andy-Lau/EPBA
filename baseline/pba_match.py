@@ -241,7 +241,6 @@ def main(args):
                     'match_time': match_time,
                     'match_points': pts_i.shape[0],
                 })
-                reporter.log(pts_i.shape[0])
             
             torch.cuda.synchronize()
             end_time = time.perf_counter()
