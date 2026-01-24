@@ -97,6 +97,7 @@ def compute_transform_error(M_pred_rc: np.ndarray, M_true_rc: np.ndarray, h: int
 
 def load_image_gray(path: str) -> np.ndarray:
     img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    img = cv2.resize(img,(1024,1024))
     if img is None:
         raise FileNotFoundError(path)
     return img
