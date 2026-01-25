@@ -148,7 +148,7 @@ def project_b_inliers_to_a(image_a: RSImage, image_b: RSImage, b_points_global_x
 def estimate_affine(src_xy: np.ndarray, dst_xy: np.ndarray):
     if len(src_xy) < 3:
         return None
-    M, _ = cv2.estimateAffine2D(src_xy, dst_xy, method=0)
+    M, _ = cv2.estimateAffine2D(src_xy, dst_xy, ransacReprojThreshold=1e5)
     if M is not None:
         return M
     A = np.concatenate([src_xy, np.ones((src_xy.shape[0], 1))], axis=1)
