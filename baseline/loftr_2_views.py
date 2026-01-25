@@ -21,7 +21,7 @@ from infer.utils import find_intersection, find_squares, apply_H
 from infer.rs_image import RSImage, RSImageMeta
 from baseline.matchers import build_matcher
 from model.encoder import Encoder
-
+from tqdm import tqdm
 
 def init_random_seed(seed):
     random.seed(seed)
@@ -217,8 +217,9 @@ def main(args):
 
     os.makedirs(args.output_path, exist_ok=True)
     csv_rows = []
+    good_results = []
 
-    for w_idx, idx in enumerate(window_indices):
+    for w_idx, idx in enumerate(tqdm(window_indices)):
         img_a_win = imgs_a[idx]
         img_b_win = imgs_b[idx]
         H_a = Hs_a[idx]
@@ -239,7 +240,7 @@ def main(args):
         window_dir = os.path.join(args.output_path, f"window_{w_idx:03d}")
         os.makedirs(window_dir, exist_ok=True)
 
-        for threshold in range(1, 6):
+        for threshold in range(1, 10, 2):
             H, mask = cv2.findHomography(pts_a, pts_b, cv2.RANSAC, float(threshold))
             if mask is None:
                 inliers = np.zeros((pts_a.shape[0],), dtype=bool)
@@ -301,6 +302,13 @@ def main(args):
                 "residual_median": float(np.median(residuals)) if residuals.size > 0 else 0.0,
                 "residual_rmse": float(np.sqrt(np.mean(residuals ** 2))) if residuals.size > 0 else 0.0,
             })
+            if low_ratio > 0.6 and np.mean(residuals) > 5. :
+                good_results.append({
+                    'window_index':w_idx,
+                    'threshold':threshold,
+                    'low_conf_ratio':low_ratio,
+                    'residual_mean':np.mean(residuals)
+                })
 
     csv_path = os.path.join(args.output_path, "summary.csv")
     fieldnames = [
@@ -318,6 +326,10 @@ def main(args):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(csv_rows)
+    
+    for result in good_results:
+        print(result)
+        print('\n')
 
 
 if __name__ == '__main__':
