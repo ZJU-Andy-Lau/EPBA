@@ -240,6 +240,13 @@ def main(args):
         window_dir = os.path.join(args.output_path, f"window_{w_idx:03d}")
         os.makedirs(window_dir, exist_ok=True)
 
+        conf_vals_all = sample_conf_values(conf_a_norm, pts_a)
+        eval_mask = conf_vals_all > args.eval_conf_thresh
+        pts_a_eval = pts_a[eval_mask]
+        pts_b_eval = pts_b[eval_mask]
+        if len(pts_a_eval) == 0:
+            continue
+
         for threshold in range(1, 10, 2):
             H, mask = cv2.findHomography(pts_a, pts_b, cv2.RANSAC, float(threshold))
             if mask is None:
@@ -262,8 +269,11 @@ def main(args):
 
             pts_a_in_win = pts_a_in
             affine_M = estimate_affine(pts_a_in_win, pts_a_proj_win)
-            pts_a_warp = apply_affine(pts_a_in_win, affine_M)
-            residuals = compute_residuals(pts_a_warp, pts_a_proj_win)
+            eval_b_global = window_to_global(pts_b_eval, H_b_inv, args.device)
+            eval_a_proj_global = project_b_inliers_to_a(image_a, image_b, eval_b_global)
+            eval_a_proj_win = global_to_window(eval_a_proj_global, H_a, args.device)
+            eval_a_warp = apply_affine(pts_a_eval, affine_M)
+            residuals = compute_residuals(eval_a_warp, eval_a_proj_win)
 
             conf_vals = sample_conf_values(conf_a_norm, pts_a_in_win)
             low_mask = conf_vals <= args.conf_thresh
@@ -285,8 +295,8 @@ def main(args):
                 warped_a = cv2.warpAffine(img_a_win, affine_M, (img_a_win.shape[1], img_a_win.shape[0]))
             else:
                 warped_a = img_a_win.copy()
-            warped_a = draw_points(warped_a, pts_a_warp, (0, 255, 255), args.point_radius)
-            warped_a = draw_points(warped_a, pts_a_proj_win, (255, 255, 0), args.point_radius)
+            warped_a = draw_points(warped_a, eval_a_warp, (0, 255, 255), args.point_radius)
+            warped_a = draw_points(warped_a, eval_a_proj_win, (255, 255, 0), args.point_radius)
             cv2.imwrite(os.path.join(out_dir, "warp_residual_A.png"), warped_a)
 
             write_stats(os.path.join(out_dir, "stats.txt"), low_ratio, high_ratio, residuals)
@@ -296,6 +306,7 @@ def main(args):
                 "threshold": threshold,
                 "num_matches": int(pts_a.shape[0]),
                 "num_inliers": int(pts_a_in.shape[0]),
+                "num_eval_points": int(pts_a_eval.shape[0]),
                 "low_conf_ratio": low_ratio,
                 "high_conf_ratio": high_ratio,
                 "residual_mean": float(np.mean(residuals)) if residuals.size > 0 else 0.0,
@@ -316,6 +327,7 @@ def main(args):
         "threshold",
         "num_matches",
         "num_inliers",
+        "num_eval_points",
         "low_conf_ratio",
         "high_conf_ratio",
         "residual_mean",
@@ -351,6 +363,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_windows', type=int, default=10)
 
     parser.add_argument('--conf_thresh', type=float, default=0.3)
+    parser.add_argument('--eval_conf_thresh', type=float, default=0.7)
     parser.add_argument('--conf_alpha', type=float, default=0.7)
 
     parser.add_argument('--dino_path', type=str, default='weights')
