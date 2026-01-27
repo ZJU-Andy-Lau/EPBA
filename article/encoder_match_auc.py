@@ -58,6 +58,7 @@ def load_encoder(args):
         dino_weight_path=args.dino_path,
         embed_dim=model_configs['encoder']['embed_dim'],
         ctx_dim=model_configs['encoder']['ctx_dim'],
+        use_adapter=args.use_adapter
     )
     encoder.load_adapter(args.adapter_path)
     if torch.cuda.is_available():
@@ -225,6 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--dino_path', type=str, default='weights')
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
+    parser.add_argument('--use_adapter',type=str2bool,default=True)
     parser.add_argument('--random_seed', type=int, default=42)
 
     args = parser.parse_args()
