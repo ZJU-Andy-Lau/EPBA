@@ -2,10 +2,11 @@ import argparse
 import itertools
 import os
 import random
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
-from copy import deepcopy
 
+import cv2
 import numpy as np
 import torch
 from shapely.geometry import Point, Polygon
@@ -25,8 +26,8 @@ from infer.utils import (
 from model.encoder import Encoder
 from model.predictor import Predictor
 from shared.utils import load_config, load_model_state_dict, project_mercator
+from shared.visualize import make_checkerboard
 from solve.solve_windows import WindowSolver
-from tqdm import tqdm
 
 
 @dataclass
@@ -165,78 +166,152 @@ def merge_affines(affines: torch.Tensor, Hs: torch.Tensor, scores: torch.Tensor,
     return merged_affine
 
 @torch.no_grad()
-def estimate_affine_model(
+def estimate_affine_model_pairs(
     encoder: Encoder,
     predictor: Predictor,
     image_a: RSImage,
     image_b: RSImage,
-    diag_a: np.ndarray,
-    diag_b: np.ndarray,
+    window_diags: List[np.ndarray],
+    window_pairs: List[Tuple[int, int]],
     device: str,
     output_resolution: int,
     min_window_size: float,
     quad_split_times: int,
     predictor_iter_num: Optional[int],
-) -> Optional[torch.Tensor]:
+    batch_size: int,
+    log_interval: int,
+    vis_output: Optional[str],
+    vis_max_pairs: int,
+    vis_stride: int,
+    tie_idx: int,
+    image_pair_tag: str,
+) -> List[Optional[torch.Tensor]]:
+    if not window_pairs:
+        return []
+    pair_diags = [
+        {
+            "diags_a": np.stack([window_diags[i]], axis=0),
+            "diags_b": np.stack([window_diags[j]], axis=0),
+            "affine": None,
+        }
+        for i, j in window_pairs
+    ]
+    total_pairs = len(pair_diags)
+    outputs: List[Optional[torch.Tensor]] = [None] * total_pairs
     rpc_a = deepcopy(image_a.rpc)
     rpc_b = deepcopy(image_b.rpc)
-    current_diags_a = np.stack([diag_a], axis=0)
-    current_diags_b = np.stack([diag_b], axis=0)
-    current_size = float(abs(current_diags_a[0, 1, 0] - current_diags_a[0, 0, 0]))
-    last_affine = None
-    while current_size >= min_window_size:
-        window_a = warp_windows_for_image(
-            image_a,
-            list(current_diags_a),
-            output_resolution,
-            rpc=rpc_a,
-        )
-        window_b = warp_windows_for_image(
-            image_b,
-            list(current_diags_b),
-            output_resolution,
-            rpc=rpc_b,
-        )
-        imgs_a = window_a.imgs
-        imgs_b = window_b.imgs
-        dems_a = torch.from_numpy(window_a.dems).to(device=device, dtype=torch.float32)
-        dems_b = torch.from_numpy(window_b.dems).to(device=device, dtype=torch.float32)
-        Hs_a = torch.from_numpy(window_a.Hs).to(device=device, dtype=torch.float32)
-        Hs_b = torch.from_numpy(window_b.Hs).to(device=device, dtype=torch.float32)
-        feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
-        solver = WindowSolver(
-            imgs_a.shape[0],
-            imgs_a.shape[1],
-            imgs_a.shape[2],
-            predictor=predictor,
-            feats_a=feats_a,
-            feats_b=feats_b,
-            H_as=Hs_a,
-            H_bs=Hs_b,
-            rpc_a=rpc_a,
-            rpc_b=rpc_b,
-            height_a=dems_a,
-            height_b=dems_b,
-            test_imgs_a=imgs_a,
-            test_imgs_b=imgs_b,
-            predictor_max_iter=predictor_iter_num,
-        )
-        preds = solver.solve(flag="ab", final_only=True, return_vis=False)
-        _, _, confs_a = feats_a
-        _, _, confs_b = feats_b
-        scores_a = confs_a.reshape(confs_a.shape[0], -1).mean(dim=1)
-        scores_b = confs_b.reshape(confs_b.shape[0], -1).mean(dim=1)
-        scores = torch.sqrt(scores_a * scores_b)
-        last_affine = merge_affines(preds, Hs_a, scores, device)
-        rpc_a.Update_Adjust(last_affine)
-        current_diags_a = quadsplit_diags(current_diags_a)
-        current_diags_b = quadsplit_diags(current_diags_b)
-        if quad_split_times > 1:
-            for _ in range(quad_split_times - 1):
-                current_diags_a = quadsplit_diags(current_diags_a)
-                current_diags_b = quadsplit_diags(current_diags_b)
-        current_size = float(abs(current_diags_a[0, 1, 0] - current_diags_a[0, 0, 0]))
-    return last_affine
+    pair_indices = list(range(total_pairs))
+    for batch_start in range(0, total_pairs, batch_size):
+        batch_indices = pair_indices[batch_start : batch_start + batch_size]
+        active = batch_indices[:]
+        step = 0
+        while active:
+            all_diags_a = []
+            all_diags_b = []
+            pair_map = []
+            for pair_idx in active:
+                diags_a = pair_diags[pair_idx]["diags_a"]
+                diags_b = pair_diags[pair_idx]["diags_b"]
+                for local_idx in range(diags_a.shape[0]):
+                    all_diags_a.append(diags_a[local_idx])
+                    all_diags_b.append(diags_b[local_idx])
+                    pair_map.append(pair_idx)
+            all_diags_a_arr = np.stack(all_diags_a, axis=0)
+            all_diags_b_arr = np.stack(all_diags_b, axis=0)
+            window_a = warp_windows_for_image(
+                image_a,
+                list(all_diags_a_arr),
+                output_resolution,
+                rpc=rpc_a,
+            )
+            window_b = warp_windows_for_image(
+                image_b,
+                list(all_diags_b_arr),
+                output_resolution,
+                rpc=rpc_b,
+            )
+            imgs_a = window_a.imgs
+            imgs_b = window_b.imgs
+            dems_a = torch.from_numpy(window_a.dems).to(device=device, dtype=torch.float32)
+            dems_b = torch.from_numpy(window_b.dems).to(device=device, dtype=torch.float32)
+            Hs_a = torch.from_numpy(window_a.Hs).to(device=device, dtype=torch.float32)
+            Hs_b = torch.from_numpy(window_b.Hs).to(device=device, dtype=torch.float32)
+            feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
+            solver = WindowSolver(
+                imgs_a.shape[0],
+                imgs_a.shape[1],
+                imgs_a.shape[2],
+                predictor=predictor,
+                feats_a=feats_a,
+                feats_b=feats_b,
+                H_as=Hs_a,
+                H_bs=Hs_b,
+                rpc_a=rpc_a,
+                rpc_b=rpc_b,
+                height_a=dems_a,
+                height_b=dems_b,
+                test_imgs_a=imgs_a,
+                test_imgs_b=imgs_b,
+                predictor_max_iter=predictor_iter_num,
+            )
+            preds = solver.solve(flag="ab", final_only=True, return_vis=False)
+            _, _, confs_a = feats_a
+            _, _, confs_b = feats_b
+            scores_a = confs_a.reshape(confs_a.shape[0], -1).mean(dim=1)
+            scores_b = confs_b.reshape(confs_b.shape[0], -1).mean(dim=1)
+            scores = torch.sqrt(scores_a * scores_b)
+            pair_to_indices: Dict[int, List[int]] = {}
+            for idx, pair_idx in enumerate(pair_map):
+                pair_to_indices.setdefault(pair_idx, []).append(idx)
+            new_active = []
+            for pair_idx in active:
+                indices = pair_to_indices.get(pair_idx, [])
+                if not indices:
+                    continue
+                pair_preds = preds[indices]
+                pair_Hs = Hs_a[indices]
+                pair_scores = scores[indices]
+                merged_affine = merge_affines(pair_preds, pair_Hs, pair_scores, device)
+                pair_diags[pair_idx]["affine"] = merged_affine
+                diags_a = pair_diags[pair_idx]["diags_a"]
+                current_size = float(abs(diags_a[0, 1, 0] - diags_a[0, 0, 0]))
+                if current_size >= min_window_size:
+                    next_diags_a = quadsplit_diags(diags_a)
+                    next_diags_b = quadsplit_diags(pair_diags[pair_idx]["diags_b"])
+                    if quad_split_times > 1:
+                        for _ in range(quad_split_times - 1):
+                            next_diags_a = quadsplit_diags(next_diags_a)
+                            next_diags_b = quadsplit_diags(next_diags_b)
+                    pair_diags[pair_idx]["diags_a"] = next_diags_a
+                    pair_diags[pair_idx]["diags_b"] = next_diags_b
+                    next_size = float(abs(next_diags_a[0, 1, 0] - next_diags_a[0, 0, 0]))
+                    if next_size >= min_window_size:
+                        new_active.append(pair_idx)
+            active = new_active
+            step += 1
+            if log_interval > 0 and step % log_interval == 0:
+                print(
+                    f"[Model] tie={tie_idx} {image_pair_tag} batch={batch_start}-{batch_start + len(batch_indices) - 1} "
+                    f"level={step} active_pairs={len(active)}"
+                )
+            if vis_output and step == 1:
+                vis_indices = batch_indices[:: max(1, vis_stride)]
+                vis_indices = vis_indices[:vis_max_pairs]
+                os.makedirs(vis_output, exist_ok=True)
+                for pair_idx in vis_indices:
+                    if pair_idx not in pair_to_indices:
+                        continue
+                    window_idx = pair_to_indices[pair_idx][0]
+                    checker = make_checkerboard(window_a.imgs[window_idx], window_b.imgs[window_idx])
+                    out_name = f"{image_pair_tag}_tie{tie_idx}_pair{pair_idx}_step{step}.png"
+                    cv2.imwrite(os.path.join(vis_output, out_name), checker)
+        for pair_idx in batch_indices:
+            outputs[pair_idx] = pair_diags[pair_idx]["affine"]
+        if log_interval > 0:
+            print(
+                f"[Model] tie={tie_idx} {image_pair_tag} batch_done={batch_start}-{batch_start + len(batch_indices) - 1}"
+            )
+    return outputs
 
 @torch.no_grad()
 def estimate_affine_baseline(
@@ -315,6 +390,8 @@ def process_root(root: str, args) -> Dict[str, List[float]]:
     encoder, predictor = load_model(args)
     num_tiepoints = lengths[0]
     for tie_idx in range(num_tiepoints):
+        if args.log_interval > 0 and tie_idx % args.log_interval == 0:
+            print(f"[Progress] root={root} tie={tie_idx}/{num_tiepoints}")
         tie_xy = tiepoint_to_object_xy(images[0], images[0].tie_points[tie_idx])
         window_diags = sample_windows(
             tie_xy,
@@ -326,25 +403,35 @@ def process_root(root: str, args) -> Dict[str, List[float]]:
         if len(window_diags) < 2:
             continue
         window_data = [warp_windows_for_image(image, window_diags, args.output_resolution) for image in images]
+        window_pairs = list(itertools.combinations(range(len(window_diags)), 2))
         for img_idx_a, img_idx_b in itertools.combinations(range(len(images)), 2):
             image_a = images[img_idx_a]
             image_b = images[img_idx_b]
             tie_point_a = image_a.tie_points[tie_idx]
             tie_point_b = image_b.tie_points[tie_idx]
-            for idx_a, idx_b in tqdm(itertools.combinations(range(len(window_diags)), 2)):
-                model_affine = estimate_affine_model(
-                    encoder,
-                    predictor,
-                    image_a,
-                    image_b,
-                    window_diags[idx_a],
-                    window_diags[idx_b],
-                    args.device,
-                    args.output_resolution,
-                    args.min_window_size,
-                    args.quad_split_times,
-                    args.predictor_iter_num,
-                )
+            image_pair_tag = f"img{image_a.id}_img{image_b.id}"
+            model_affines = estimate_affine_model_pairs(
+                encoder,
+                predictor,
+                image_a,
+                image_b,
+                window_diags,
+                window_pairs,
+                args.device,
+                args.output_resolution,
+                args.min_window_size,
+                args.quad_split_times,
+                args.predictor_iter_num,
+                args.model_batch_size,
+                args.log_interval,
+                args.vis_output,
+                args.vis_max_pairs,
+                args.vis_stride,
+                tie_idx,
+                image_pair_tag,
+            )
+            for pair_idx, (idx_a, idx_b) in enumerate(window_pairs):
+                model_affine = model_affines[pair_idx]
                 if model_affine is not None:
                     err = evaluate_tiepoint_error(
                         image_a,
@@ -402,12 +489,17 @@ def main() -> None:
     parser.add_argument("--output_resolution", type=int, default=512)
     parser.add_argument("--max_sampling_attempts", type=int, default=200)
     parser.add_argument("--quad_split_times", type=int, default=1)
+    parser.add_argument("--model_batch_size", type=int, default=16)
+    parser.add_argument("--log_interval", type=int, default=0)
+    parser.add_argument("--vis_output", type=str, default=None)
+    parser.add_argument("--vis_max_pairs", type=int, default=4)
+    parser.add_argument("--vis_stride", type=int, default=1)
     parser.add_argument("--baseline_matchers", type=str, default="loftr")
     parser.add_argument("--dino_path", type=str, default="weights")
     parser.add_argument("--adapter_path", type=str, default="weights/adapter.pth")
     parser.add_argument("--predictor_path", type=str, default="weights/predictor.pth")
     parser.add_argument("--model_config_path", type=str, default="configs/model_config.yaml")
-    parser.add_argument("--predictor_iter_num", type=int, default=10)
+    parser.add_argument("--predictor_iter_num", type=int, default=None)
     parser.add_argument("--use_adapter", type=bool, default=True)
     parser.add_argument("--use_conf", type=bool, default=True)
     parser.add_argument("--use_mtf", type=bool, default=True)
