@@ -71,7 +71,7 @@ def tiepoint_to_object_xy(image: RSImage, tie_point: np.ndarray) -> np.ndarray:
     height = image.dem[line, samp]
     lat, lon = image.rpc.RPC_PHOTO2OBJ(samp, line, height, "tensor")
     latlon = torch.stack([lat, lon], dim=-1).to(torch.float64)
-    xy = project_mercator(latlon[None]).cpu().numpy()[0]
+    xy = project_mercator(latlon[None]).cpu().numpy()[0,[1,0]]
     return xy
 
 
