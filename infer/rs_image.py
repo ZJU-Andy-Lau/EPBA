@@ -26,7 +26,7 @@ class RSImageMeta():
         self.options = options
         self.root = root
         self.id = id
-        self.dem_name = 'dem.npy' if not options.usgs_dem else 'dem_usgs.npy'
+        self.dem_name = 'dem.npy' if not hasattr(options,'usgs_dem') or not options.usgs_dem else 'dem_usgs.npy'
         if os.path.exists(os.path.join(root,self.dem_name)):
             self.dem = np.load(os.path.join(root,self.dem_name),mmap_mode='r')
         elif os.path.exists(os.path.join(root,self.dem_name)):
