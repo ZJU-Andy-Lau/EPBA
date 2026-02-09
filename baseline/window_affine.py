@@ -4,6 +4,7 @@ import os
 import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -18,6 +19,7 @@ from infer.utils import (
     find_intersection,
     get_coord_mat,
     get_report_dict,
+    quadsplit_diags,
     solve_weighted_affine,
 )
 from model.encoder import Encoder
@@ -69,7 +71,7 @@ def tiepoint_to_object_xy(image: RSImage, tie_point: np.ndarray) -> np.ndarray:
     height = image.dem[line, samp]
     lat, lon = image.rpc.RPC_PHOTO2OBJ(samp, line, height, "tensor")
     latlon = torch.stack([lat, lon], dim=-1).to(torch.float64)
-    xy = project_mercator(latlon).cpu().numpy()
+    xy = project_mercator(latlon[None]).cpu().numpy()[0]
     return xy[:, [1, 0]].squeeze(0)
 
 
@@ -118,9 +120,9 @@ def sample_windows(
     return windows[:k]
 
 
-def warp_windows_for_image(image: RSImage, window_diags: List[np.ndarray], output_size: int) -> WindowData:
+def warp_windows_for_image(image: RSImage, window_diags: List[np.ndarray], output_size: int, rpc=None) -> WindowData:
     diags = np.stack(window_diags, axis=0)
-    corners_linesamps = image.convert_diags_to_corners(diags)
+    corners_linesamps = image.convert_diags_to_corners(diags, rpc=rpc)
     imgs, dems, Hs = image.crop_windows(corners_linesamps, output_size=(output_size, output_size))
     return WindowData(image=image, imgs=imgs, dems=dems, Hs=Hs)
 
@@ -165,39 +167,75 @@ def merge_affines(affines: torch.Tensor, Hs: torch.Tensor, scores: torch.Tensor,
 def estimate_affine_model(
     encoder: Encoder,
     predictor: Predictor,
-    window_a: WindowData,
-    window_b: WindowData,
-    idx_a: int,
-    idx_b: int,
+    image_a: RSImage,
+    image_b: RSImage,
+    diag_a: np.ndarray,
+    diag_b: np.ndarray,
     device: str,
+    output_resolution: int,
+    min_window_size: float,
+    quad_split_times: int,
+    predictor_iter_num: Optional[int],
 ) -> Optional[torch.Tensor]:
-    imgs_a = window_a.imgs[idx_a : idx_a + 1]
-    imgs_b = window_b.imgs[idx_b : idx_b + 1]
-    dems_a = torch.from_numpy(window_a.dems[idx_a : idx_a + 1]).to(device=device, dtype=torch.float32)
-    dems_b = torch.from_numpy(window_b.dems[idx_b : idx_b + 1]).to(device=device, dtype=torch.float32)
-    Hs_a = torch.from_numpy(window_a.Hs[idx_a : idx_a + 1]).to(device=device, dtype=torch.float32)
-    Hs_b = torch.from_numpy(window_b.Hs[idx_b : idx_b + 1]).to(device=device, dtype=torch.float32)
-    feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
-    solver = WindowSolver(
-        1,
-        imgs_a.shape[1],
-        imgs_a.shape[2],
-        predictor=predictor,
-        feats_a=feats_a,
-        feats_b=feats_b,
-        H_as=Hs_a,
-        H_bs=Hs_b,
-        rpc_a=window_a.image.rpc,
-        rpc_b=window_b.image.rpc,
-        height_a=dems_a,
-        height_b=dems_b,
-        test_imgs_a=imgs_a,
-        test_imgs_b=imgs_b,
-        predictor_max_iter=None,
-    )
-    preds = solver.solve(flag="ab", final_only=True, return_vis=False)
-    scores = torch.ones((preds.shape[0],), dtype=preds.dtype, device=preds.device)
-    return merge_affines(preds, Hs_a, scores, device)
+    rpc_a = deepcopy(image_a.rpc)
+    rpc_b = deepcopy(image_b.rpc)
+    current_diags_a = np.stack([diag_a], axis=0)
+    current_diags_b = np.stack([diag_b], axis=0)
+    current_size = float(abs(current_diags_a[0, 1, 0] - current_diags_a[0, 0, 0]))
+    last_affine = None
+    while current_size >= min_window_size:
+        window_a = warp_windows_for_image(
+            image_a,
+            list(current_diags_a),
+            output_resolution,
+            rpc=rpc_a,
+        )
+        window_b = warp_windows_for_image(
+            image_b,
+            list(current_diags_b),
+            output_resolution,
+            rpc=rpc_b,
+        )
+        imgs_a = window_a.imgs
+        imgs_b = window_b.imgs
+        dems_a = torch.from_numpy(window_a.dems).to(device=device, dtype=torch.float32)
+        dems_b = torch.from_numpy(window_b.dems).to(device=device, dtype=torch.float32)
+        Hs_a = torch.from_numpy(window_a.Hs).to(device=device, dtype=torch.float32)
+        Hs_b = torch.from_numpy(window_b.Hs).to(device=device, dtype=torch.float32)
+        feats_a, feats_b = extract_features(encoder, imgs_a, imgs_b, device=device)
+        solver = WindowSolver(
+            imgs_a.shape[0],
+            imgs_a.shape[1],
+            imgs_a.shape[2],
+            predictor=predictor,
+            feats_a=feats_a,
+            feats_b=feats_b,
+            H_as=Hs_a,
+            H_bs=Hs_b,
+            rpc_a=rpc_a,
+            rpc_b=rpc_b,
+            height_a=dems_a,
+            height_b=dems_b,
+            test_imgs_a=imgs_a,
+            test_imgs_b=imgs_b,
+            predictor_max_iter=predictor_iter_num,
+        )
+        preds = solver.solve(flag="ab", final_only=True, return_vis=False)
+        _, _, confs_a = feats_a
+        _, _, confs_b = feats_b
+        scores_a = confs_a.reshape(confs_a.shape[0], -1).mean(dim=1)
+        scores_b = confs_b.reshape(confs_b.shape[0], -1).mean(dim=1)
+        scores = torch.sqrt(scores_a * scores_b)
+        last_affine = merge_affines(preds, Hs_a, scores, device)
+        rpc_a.Update_Adjust(last_affine)
+        current_diags_a = quadsplit_diags(current_diags_a)
+        current_diags_b = quadsplit_diags(current_diags_b)
+        if quad_split_times > 1:
+            for _ in range(quad_split_times - 1):
+                current_diags_a = quadsplit_diags(current_diags_a)
+                current_diags_b = quadsplit_diags(current_diags_b)
+        current_size = float(abs(current_diags_a[0, 1, 0] - current_diags_a[0, 0, 0]))
+    return last_affine
 
 
 def estimate_affine_baseline(
@@ -293,14 +331,19 @@ def process_root(root: str, args) -> Dict[str, List[float]]:
             tie_point_a = image_a.tie_points[tie_idx]
             tie_point_b = image_b.tie_points[tie_idx]
             for idx_a, idx_b in itertools.combinations(range(len(window_diags)), 2):
+                print("Processing RAE")
                 model_affine = estimate_affine_model(
                     encoder,
                     predictor,
-                    window_data[img_idx_a],
-                    window_data[img_idx_b],
-                    idx_a,
-                    idx_b,
+                    image_a,
+                    image_b,
+                    window_diags[idx_a],
+                    window_diags[idx_b],
                     args.device,
+                    args.output_resolution,
+                    args.min_window_size,
+                    args.quad_split_times,
+                    args.predictor_iter_num,
                 )
                 if model_affine is not None:
                     err = evaluate_tiepoint_error(
@@ -313,6 +356,7 @@ def process_root(root: str, args) -> Dict[str, List[float]]:
                     )
                     results["model"].append(err)
                 for matcher_name, matcher in matchers.items():
+                    print(f"Processing {matcher_name}")
                     affine = estimate_affine_baseline(
                         matcher,
                         window_data[img_idx_a],
@@ -354,14 +398,17 @@ def main() -> None:
     parser.add_argument("--roots", type=str, required=True)
     parser.add_argument("--select_imgs", type=str, default="-1")
     parser.add_argument("--window_size", type=float, required=True)
+    parser.add_argument("--min_window_size", type=float, default=500)
     parser.add_argument("--window_num", type=int, required=True)
     parser.add_argument("--output_resolution", type=int, default=512)
     parser.add_argument("--max_sampling_attempts", type=int, default=200)
+    parser.add_argument("--quad_split_times", type=int, default=1)
     parser.add_argument("--baseline_matchers", type=str, default="loftr")
     parser.add_argument("--dino_path", type=str, default="weights")
     parser.add_argument("--adapter_path", type=str, default="weights/adapter.pth")
     parser.add_argument("--predictor_path", type=str, default="weights/predictor.pth")
     parser.add_argument("--model_config_path", type=str, default="configs/model_config.yaml")
+    parser.add_argument("--predictor_iter_num", type=int, default=None)
     parser.add_argument("--use_adapter", type=bool, default=True)
     parser.add_argument("--use_conf", type=bool, default=True)
     parser.add_argument("--use_mtf", type=bool, default=True)
@@ -386,6 +433,7 @@ def main() -> None:
     roots = [r.strip() for r in args.roots.split(",") if r.strip()]
     all_results: Dict[str, List[float]] = {}
     for root in roots:
+        print(f"ROOT = {root}")
         root_results = process_root(root, args)
         print_report(root_results, f"Root {root}")
         for key, values in root_results.items():
