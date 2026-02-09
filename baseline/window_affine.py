@@ -408,7 +408,7 @@ def main() -> None:
     parser.add_argument("--adapter_path", type=str, default="weights/adapter.pth")
     parser.add_argument("--predictor_path", type=str, default="weights/predictor.pth")
     parser.add_argument("--model_config_path", type=str, default="configs/model_config.yaml")
-    parser.add_argument("--predictor_iter_num", type=int, default=None)
+    parser.add_argument("--predictor_iter_num", type=int, default=10)
     parser.add_argument("--use_adapter", type=bool, default=True)
     parser.add_argument("--use_conf", type=bool, default=True)
     parser.add_argument("--use_mtf", type=bool, default=True)
