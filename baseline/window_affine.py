@@ -28,6 +28,7 @@ from model.predictor import Predictor
 from shared.utils import load_config, load_model_state_dict, project_mercator
 from shared.visualize import make_checkerboard
 from solve.solve_windows import WindowSolver
+from tqdm import tqdm, trange
 
 
 @dataclass
@@ -201,7 +202,8 @@ def estimate_affine_model_pairs(
     rpc_a = deepcopy(image_a.rpc)
     rpc_b = deepcopy(image_b.rpc)
     pair_indices = list(range(total_pairs))
-    for batch_start in range(0, total_pairs, batch_size):
+    print("Process RAE")
+    for batch_start in trange(0, total_pairs, batch_size):
         batch_indices = pair_indices[batch_start : batch_start + batch_size]
         active = batch_indices[:]
         step = 0
