@@ -24,8 +24,8 @@ class CostVolume:
         self.H_query, self.W_query = H, W
         
         # [B, C, H, W] -> [B, C, H*W]
-        query_flat = fmap_query.view(B, C, -1)
-        ref_flat = fmap_ref.view(B, C, -1)
+        query_flat = fmap_query.reshape(B, C, -1).contiguous()
+        ref_flat = fmap_ref.reshape(B, C, -1).contiguous()
         
         # 2. 计算全对相关性 (All-Pairs Correlation)
         # Output: [B, H*W (Query), H*W (Ref)]
@@ -33,7 +33,7 @@ class CostVolume:
         # 4. 重塑为 [B, H, W, 1, H, W] 以便后续处理
         # 前两个 H,W 对应 Query 像素位置（保持不变）
         # 后两个 H,W 对应 Ref 像素位置（将被池化）
-        corr = corr.view(B, H, W, 1, H, W)
+        corr = corr.reshape(B, H, W, 1, H, W).contiguous()
         
         self.corr_pyramid.append(corr)
 
@@ -45,14 +45,14 @@ class CostVolume:
             
             # Reshape 为 [N, C, H_ref, W_ref] 以使用 avg_pool2d
             # N = B * H_query * W_query
-            corr_reshaped = corr.view(-1, 1, curr_h_ref, curr_w_ref)
+            corr_reshaped = corr.reshape(-1, 1, curr_h_ref, curr_w_ref).contiguous()
             
             # 执行池化
             pooled = F.avg_pool2d(corr_reshaped, kernel_size=2, stride=2)
             
             # 恢复形状: [B, H, W, 1, H_new, W_new]
             _, _, new_h_ref, new_w_ref = pooled.shape
-            corr = pooled.view(B, H, W, 1, new_h_ref, new_w_ref)
+            corr = pooled.reshape(B, H, W, 1, new_h_ref, new_w_ref).contiguous()
             
             self.corr_pyramid.append(corr)
 
@@ -74,7 +74,7 @@ class CostVolume:
         dx = torch.linspace(-r, r, 2*r+1, device=coords.device)
         dy = torch.linspace(-r, r, 2*r+1, device=coords.device)
         # meshgrid('ij') -> dy (row), dx (col)
-        delta = torch.stack(torch.meshgrid(dy, dx, indexing='ij'), axis=-1).view(-1, 2)
+        delta = torch.stack(torch.meshgrid(dy, dx, indexing='ij'), axis=-1).reshape(-1, 2).contiguous()
         
         out_pyramid = []
         out_coords_list = []
@@ -92,7 +92,7 @@ class CostVolume:
             coords_lvl[..., 1] = (coords_lvl[..., 1] + 1.0) * (W_ref_lvl - 1.0) / 2.0
             
             # 2. 加上局部偏移: [B, H, W, 1, 2] + [1, 1, 1, N, 2] -> [B, H, W, N, 2]
-            coords_new = coords_lvl.unsqueeze(-2) + delta.view(1, 1, 1, -1, 2) # [B, H, W, N, 2]
+            coords_new = coords_lvl.unsqueeze(-2) + delta.reshape(1, 1, 1, -1, 2) # [B, H, W, N, 2]
 
             # debug_print(f"===========lvl {i} img32===========")
             # debug_print(f"{coords_new[0,2,2,[0,10,20,30,40,50,60,70,80]]}\n\n{coords_new[0,16,16,[0,10,20,30,40,50,60,70,80]]}\n\n")
