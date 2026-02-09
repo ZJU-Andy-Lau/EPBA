@@ -123,12 +123,12 @@ class CostVolume:
             # Grid:  [B*H*W, N, 1, 2]
             
             # 准备 Input
-            corr_reshaped = corr.view(-1, 1, H_ref_lvl, W_ref_lvl) # [B*H*W, 1, H_ref, W_ref]
+            corr_reshaped = corr.reshape(-1, 1, H_ref_lvl, W_ref_lvl).contiguous() # [B*H*W, 1, H_ref, W_ref]
 
             # 准备 Grid: N 个点排成一行 (N, 1)
             num_points = delta.shape[0]
             grid_reshaped = coords_norm.reshape(-1, num_points, 1, 2) # [B*H*W, N, 1, 2]
-            grid_xy = grid_reshaped[...,[1,0]] # (row,col) -> (x,y)
+            grid_xy = grid_reshaped[..., [1, 0]].contiguous() # (row,col) -> (x,y)
             
             # 采样
             sampled = F.grid_sample(corr_reshaped, grid_xy, align_corners=True, mode='bilinear', padding_mode='zeros')
