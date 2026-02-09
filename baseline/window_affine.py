@@ -26,6 +26,7 @@ from model.encoder import Encoder
 from model.predictor import Predictor
 from shared.utils import load_config, load_model_state_dict, project_mercator
 from solve.solve_windows import WindowSolver
+from tqdm import tqdm
 
 
 @dataclass
@@ -163,7 +164,7 @@ def merge_affines(affines: torch.Tensor, Hs: torch.Tensor, scores: torch.Tensor,
     merged_affine = solve_weighted_affine(coords_src_flat, coords_dst_flat, scores_norm)
     return merged_affine
 
-
+@torch.no_grad()
 def estimate_affine_model(
     encoder: Encoder,
     predictor: Predictor,
@@ -237,7 +238,7 @@ def estimate_affine_model(
         current_size = float(abs(current_diags_a[0, 1, 0] - current_diags_a[0, 0, 0]))
     return last_affine
 
-
+@torch.no_grad()
 def estimate_affine_baseline(
     matcher,
     window_a: WindowData,
@@ -330,8 +331,7 @@ def process_root(root: str, args) -> Dict[str, List[float]]:
             image_b = images[img_idx_b]
             tie_point_a = image_a.tie_points[tie_idx]
             tie_point_b = image_b.tie_points[tie_idx]
-            for idx_a, idx_b in itertools.combinations(range(len(window_diags)), 2):
-                print("Processing RAE")
+            for idx_a, idx_b in tqdm(itertools.combinations(range(len(window_diags)), 2)):
                 model_affine = estimate_affine_model(
                     encoder,
                     predictor,
@@ -356,7 +356,6 @@ def process_root(root: str, args) -> Dict[str, List[float]]:
                     )
                     results["model"].append(err)
                 for matcher_name, matcher in matchers.items():
-                    print(f"Processing {matcher_name}")
                     affine = estimate_affine_baseline(
                         matcher,
                         window_data[img_idx_a],
