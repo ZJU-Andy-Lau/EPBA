@@ -21,8 +21,8 @@ from model.predictor import Predictor
 from shared.utils import str2bool,get_current_time,load_model_state_dict,load_config
 from utils import is_overlap,convert_pair_dicts_to_solver_inputs,get_error_report,get_report_dict,partition_pairs
 from infer.validate import compute_multiview_pair_errors
-from pair import Pair
-from rs_image import RSImage,RSImageMeta,vis_registration
+from infer.pair import Pair
+from infer.rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
 
 def init_random_seed(args):

@@ -18,8 +18,8 @@ import math
 
 if typing.TYPE_CHECKING:
     from model.encoder import Encoder
-    from rs_image import RSImage,RSImageMeta
-    from pair import Pair
+    from infer.rs_image import RSImage,RSImageMeta
+    from infer.pair import Pair
 
 def warp_quads(corners, values:List[np.ndarray], output_size=(512, 512)):
         

@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 import os
 
-from utils import feats_type
+from infer.utils import feats_type
 
 from shared.rpc import RPCModelParameterTorch
 
