@@ -157,8 +157,8 @@ class TiePointWindowSolver(Solver):
 def convert_tiepoint_to_xy(image: RSImage, line: int, samp: int, height: float) -> np.ndarray:
     lat, lon = image.rpc.RPC_PHOTO2OBJ(np.array([samp], dtype=np.float64), np.array([line], dtype=np.float64), np.array([height], dtype=np.float64), 'numpy')
     latlon = torch.from_numpy(np.stack([lat, lon], axis=-1))
-    yx = project_mercator(latlon).cpu().numpy()[0]
-    return yx
+    xy = project_mercator(latlon).cpu().numpy()[0,[1,0]]
+    return xy
 
 
 def generate_samples_for_pair(
@@ -228,7 +228,7 @@ def generate_samples_for_pair(
             if attempts == 1:
                 reporter.log(f"{cx} \t {cy} \t {bounds}")
 
-            if tlx < bounds[0] or brx > bounds[2] or tly < bounds[1] or bry > bounds[3]:
+            if tlx < bounds[0] or brx > bounds[2] or tly > bounds[3] or bry < bounds[1]:
                 continue
 
             if not (tlx <= tie_x <= brx and tly <= tie_y <= bry):
