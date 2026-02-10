@@ -363,7 +363,7 @@ def estimate_epba_for_subset(
 
         if args.model_use_quadsplit:
             window_size = abs(float(sub_pairs[0].diag[1, 0] - sub_pairs[0].diag[0, 0]))
-            if window_size >= args.model_min_window_size_for_quadsplit:
+            if window_size >= args.min_window_size:
                 solver.quadsplit_windows()
 
         Hs_a, _ = solver.collect_Hs(to_tensor=True)
@@ -819,7 +819,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_batch_size', type=int, default=64)
     parser.add_argument('--model_use_quadsplit', type=str2bool, default=True)
     parser.add_argument('--quad_split_times', type=int, default=1)
-    parser.add_argument('--model_min_window_size_for_quadsplit', type=int, default=500)
+    parser.add_argument('--min_window_size', type=int, default=500)
 
     parser.add_argument('--output_path', type=str, default='results')
     parser.add_argument('--experiment_id', type=str, default=None)
