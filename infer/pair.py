@@ -15,7 +15,7 @@ from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
 import shared.visualize as visualizer
 from criterion.utils import invert_affine_matrix
-from window import Window
+from infer.window import Window
 from model.encoder import Encoder
 from model.predictor import Predictor
 from solve.solve_windows import WindowSolver
