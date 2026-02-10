@@ -9,8 +9,8 @@ from typing import List
 from copy import deepcopy
 
 from shared.rpc import RPCModelParameterTorch,project_linesamp
-from rs_image import RSImage
-from utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,get_polygon_centroid
+from infer.rs_image import RSImage
+from infer.utils import find_intersection,find_squares,extract_features,get_coord_mat,apply_H,apply_M,solve_weighted_affine,haversine_distance,get_polygon_centroid
 from shared.utils import get_current_time,check_invalid_tensors
 from shared.visualize import make_checkerboard
 import shared.visualize as visualizer
