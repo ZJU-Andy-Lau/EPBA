@@ -6,6 +6,7 @@ import random
 import itertools
 import json
 from typing import List, Dict, Tuple
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -19,6 +20,7 @@ from infer.utils import is_overlap
 from infer.rs_image import RSImage, RSImageMeta
 from infer.pair import Pair
 
+from tqdm import tqdm,trange
 
 def init_random_seed(seed: int):
     random.seed(seed)
@@ -148,19 +150,25 @@ def sample_initial_windows_for_pair(
     return np.asarray(diags, dtype=np.float64), np.asarray(tie_indices, dtype=np.int64)
 
 
-def build_solver_windows(pair: Pair, diags: np.ndarray, tie_indices: np.ndarray, max_window_num: int = -1, scores: np.ndarray = None):
+def build_solver_windows(
+    pair: Pair,
+    diags: np.ndarray,
+    max_window_num: int,
+    rng: np.random.Generator,
+    scores: np.ndarray = None,
+):
     solver = pair.solver_ab
     if diags.shape[0] == 0:
         solver.window_pairs = []
-        return np.empty((0,), dtype=np.int64)
+        solver.window_size = -1
+        return False
 
     if max_window_num > 0 and diags.shape[0] > max_window_num:
         if scores is None:
-            keep = np.random.choice(np.arange(diags.shape[0]), max_window_num, replace=False)
+            keep = rng.choice(np.arange(diags.shape[0]), size=max_window_num, replace=False)
         else:
             keep = np.argsort(-scores)[:max_window_num]
         diags = diags[keep]
-        tie_indices = tie_indices[keep]
 
     solver.window_size = float(np.abs(diags[0, 1, 0] - diags[0, 0, 0]))
 
@@ -172,73 +180,110 @@ def build_solver_windows(pair: Pair, diags: np.ndarray, tie_indices: np.ndarray,
     valid_mask = solver.get_valid_mask([imgs_a, dems_a, Hs_a, imgs_b, dems_b, Hs_b])
     if valid_mask.sum() == 0:
         solver.window_pairs = []
-        return np.empty((0,), dtype=np.int64)
+        solver.window_size = -1
+        return False
 
-    imgs_a, dems_a, Hs_a, imgs_b, dems_b, Hs_b, diags, tie_indices = [
-        x[valid_mask] for x in [imgs_a, dems_a, Hs_a, imgs_b, dems_b, Hs_b, diags, tie_indices]
+    imgs_a, dems_a, Hs_a, imgs_b, dems_b, Hs_b, diags = [
+        x[valid_mask] for x in [imgs_a, dems_a, Hs_a, imgs_b, dems_b, Hs_b, diags]
     ]
     solver.window_pairs = solver.generate_window_pairs((imgs_a, dems_a, Hs_a), (imgs_b, dems_b, Hs_b), diags)
-    return tie_indices
+    return len(solver.window_pairs) > 0
 
 
-def quadsplit_windows_with_tie_indices(pair: Pair, tie_indices: np.ndarray):
+def get_split_diags_and_scores(pair: Pair):
     solver = pair.solver_ab
+    if len(solver.window_pairs) == 0:
+        return np.empty((0, 2, 2), dtype=np.float64), np.empty((0,), dtype=np.float64)
+
     new_diags = []
     new_scores = []
-    new_tie_indices = []
-    split_mul = 4 ** int(solver.configs['quad_split_times'])
-
-    for idx, window_pair in enumerate(solver.window_pairs):
+    for window_pair in solver.window_pairs:
         diags_i, scores_i = window_pair.quadsplit(split_time=solver.configs['quad_split_times'])
         new_diags.append(diags_i)
         new_scores.append(scores_i)
-        new_tie_indices.append(np.full((split_mul,), tie_indices[idx], dtype=np.int64))
         window_pair.clear()
 
-    if len(new_diags) == 0:
-        solver.window_pairs = []
-        return np.empty((0,), dtype=np.int64)
+    return np.concatenate(new_diags, axis=0), np.concatenate(new_scores, axis=0)
 
-    new_diags = np.concatenate(new_diags, axis=0)
-    new_scores = np.concatenate(new_scores, axis=0)
-    new_tie_indices = np.concatenate(new_tie_indices, axis=0)
 
-    return build_solver_windows(
+def estimate_initial_window_affine(
+    image_a: RSImage,
+    image_b: RSImage,
+    init_diag: np.ndarray,
+    encoder: Encoder,
+    predictor: Predictor,
+    args,
+    rng: np.random.Generator,
+):
+    configs = {
+        'max_window_num': args.max_window_num,
+        'min_window_size': args.min_window_size,
+        'max_window_size': args.max_window_size,
+        'min_area_ratio': args.min_cover_area_ratio,
+        'quad_split_times': args.quad_split_times,
+        'iter_num': args.predictor_iter_num,
+        'match': args.match,
+        'output_path': args.output_path,
+    }
+    pair = Pair(image_a, image_b, image_a.id, image_b.id, configs=configs, mutual=False, device=args.device)
+    pair.solver_ab.rpc_a = deepcopy(image_a.rpc)
+    pair.solver_ab.rpc_b = deepcopy(image_b.rpc)
+
+    ok = build_solver_windows(
         pair=pair,
-        diags=new_diags,
-        tie_indices=new_tie_indices,
-        max_window_num=solver.configs['max_window_num'],
-        scores=new_scores,
+        diags=init_diag[None].astype(np.float64),
+        max_window_num=args.max_window_num,
+        rng=rng,
+        scores=None,
+    )
+    if not ok:
+        return None
+
+    while pair.solver_ab.window_size >= args.min_window_size and len(pair.solver_ab.window_pairs) > 0:
+        Hs_a, _ = pair.solver_ab.collect_Hs(to_tensor=True)
+        preds, scores = pair.solver_ab.get_window_affines(encoder, predictor)
+        merged_affine = pair.solver_ab.merge_affines(preds, Hs_a, scores)
+        pair.solver_ab.rpc_a.Update_Adjust(merged_affine)
+
+        split_diags, split_scores = get_split_diags_and_scores(pair)
+        if split_diags.shape[0] == 0:
+            break
+
+        ok = build_solver_windows(
+            pair=pair,
+            diags=split_diags,
+            max_window_num=args.max_window_num,
+            rng=rng,
+            scores=split_scores,
+        )
+        if not ok:
+            break
+
+    return pair.solver_ab.rpc_a.adjust_params.detach().cpu().numpy()
+
+
+def calc_initial_window_error(
+    image_a: RSImage,
+    image_b: RSImage,
+    affine: np.ndarray,
+    tie_idx: int,
+) -> float:
+    line_a = float(image_a.tie_points[tie_idx, 0])
+    samp_a = float(image_a.tie_points[tie_idx, 1])
+    h = float(image_a.tie_points_heights[tie_idx])
+
+    line_gt, samp_gt = project_linesamp(
+        image_a.rpc,
+        image_b.rpc,
+        np.array([line_a], dtype=np.float64),
+        np.array([samp_a], dtype=np.float64),
+        np.array([h], dtype=np.float64),
+        output_type='numpy',
     )
 
-
-def calc_window_errors(pair: Pair, affines: torch.Tensor, tie_indices: np.ndarray) -> np.ndarray:
-    if affines.shape[0] == 0:
-        return np.empty((0,), dtype=np.float64)
-    affines_np = affines.detach().cpu().numpy()
-    tie_a = pair.rs_image_a.tie_points
-    heights_a = pair.rs_image_a.tie_points_heights
-    errors = np.zeros((affines_np.shape[0],), dtype=np.float64)
-
-    for i in range(affines_np.shape[0]):
-        t_idx = int(tie_indices[i])
-        line_a = float(tie_a[t_idx, 0])
-        samp_a = float(tie_a[t_idx, 1])
-        h = float(heights_a[t_idx])
-
-        line_gt, samp_gt = project_linesamp(
-            pair.rs_image_a.rpc,
-            pair.rs_image_b.rpc,
-            np.array([line_a], dtype=np.float64),
-            np.array([samp_a], dtype=np.float64),
-            np.array([h], dtype=np.float64),
-            output_type='numpy',
-        )
-
-        src = np.array([line_a, samp_a, 1.0], dtype=np.float64)
-        pred = affines_np[i] @ src
-        errors[i] = np.sqrt((pred[0] - line_gt[0]) ** 2 + (pred[1] - samp_gt[0]) ** 2)
-    return errors
+    src = np.array([line_a, samp_a, 1.0], dtype=np.float64)
+    pred = affine @ src
+    return float(np.sqrt((pred[0] - line_gt[0]) ** 2 + (pred[1] - samp_gt[0]) ** 2))
 
 
 def summarize_errors(errors: np.ndarray) -> Dict[str, float]:
@@ -269,7 +314,6 @@ def main(args):
     metas = load_images_meta(args)
     images = load_images(args, metas)
     pair_ids = get_pairs(args, metas)
-
     encoder, predictor = load_models(args)
 
     rng = np.random.default_rng(args.random_seed)
@@ -277,7 +321,7 @@ def main(args):
     pair_reports = []
 
     for i, j in pair_ids:
-        print(f"Pair {i}---{j}")
+        print(f"Pair {i}==={j}")
         image_a = images[i]
         image_b = images[j]
         if image_a.tie_points is None or image_b.tie_points is None:
@@ -293,20 +337,7 @@ def main(args):
             image_b.tie_points = image_b.tie_points[:tie_num]
             image_b.tie_points_heights = image_b.tie_points_heights[:tie_num]
 
-        pair_output = os.path.join(args.output_path, f'pair_{i}_{j}')
-        configs = {
-            'max_window_num': args.max_window_num,
-            'min_window_size': args.min_window_size,
-            'max_window_size': args.max_window_size,
-            'min_area_ratio': args.min_cover_area_ratio,
-            'quad_split_times': args.quad_split_times,
-            'iter_num': args.predictor_iter_num,
-            'match': args.match,
-            'output_path': pair_output,
-        }
-        pair = Pair(image_a, image_b, i, j, configs=configs, mutual=False, device=args.device)
-
-        diags, tie_indices = sample_initial_windows_for_pair(
+        init_diags, tie_indices = sample_initial_windows_for_pair(
             image_a=image_a,
             image_b=image_b,
             window_size=args.max_window_size,
@@ -314,39 +345,42 @@ def main(args):
             max_trials=args.max_trials_per_tiepoint,
             rng=rng,
         )
-        if diags.shape[0] == 0:
-            continue
-
-        tie_indices = build_solver_windows(
-            pair=pair,
-            diags=diags,
-            tie_indices=tie_indices,
-            max_window_num=args.max_window_num,
-            scores=None,
-        )
-        if tie_indices.shape[0] == 0:
+        if init_diags.shape[0] == 0:
             continue
 
         pair_errors = []
-        while pair.solver_ab.window_size >= args.min_window_size and len(pair.solver_ab.window_pairs) > 0:
-            print(f"======Level: {pair.solver_ab.window_size}m")
-            affines, _ = pair.solver_ab.get_window_affines(encoder, predictor)
-            level_errors = calc_window_errors(pair, affines, tie_indices)
-            if level_errors.size > 0:
-                pair_errors.append(level_errors)
+        valid_windows = 0
 
-            tie_indices = quadsplit_windows_with_tie_indices(pair, tie_indices)
-            if tie_indices.shape[0] == 0:
-                break
+        for w_idx in trange(init_diags.shape[0]):
+            affine = estimate_initial_window_affine(
+                image_a=image_a,
+                image_b=image_b,
+                init_diag=init_diags[w_idx],
+                encoder=encoder,
+                predictor=predictor,
+                args=args,
+                rng=rng,
+            )
+            if affine is None:
+                continue
+            err = calc_initial_window_error(
+                image_a=image_a,
+                image_b=image_b,
+                affine=affine,
+                tie_idx=int(tie_indices[w_idx]),
+            )
+            pair_errors.append(err)
+            valid_windows += 1
 
         if len(pair_errors) == 0:
             continue
 
-        pair_errors = np.concatenate(pair_errors, axis=0)
+        pair_errors = np.asarray(pair_errors, dtype=np.float64)
         all_errors.append(pair_errors)
+
         report = summarize_errors(pair_errors)
         report['pair'] = [int(i), int(j)]
-        report['window_count'] = int(pair_errors.size)
+        report['window_count'] = int(valid_windows)
         pair_reports.append(report)
 
     if len(all_errors) > 0:
@@ -370,7 +404,7 @@ def main(args):
     with open(os.path.join(args.output_path, 'window_error_report.json'), 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
-    print('--- Window Error Report (Summary) ---')
+    print('--- Initial Window Error Report (Summary) ---')
     print(f"Total windows checked: {global_report['count']}")
     print(f"Mean Error:   {global_report['mean']:.4f} pix")
     print(f"Median Error: {global_report['median']:.4f} pix")
@@ -394,10 +428,10 @@ if __name__ == '__main__':
     parser.add_argument('--use_mtf', type=str2bool, default=True)
 
     parser.add_argument('--match', type=str, default=None)
-    parser.add_argument('--max_window_size', type=float, default=1000.0)
-    parser.add_argument('--min_window_size', type=float, default=100.0)
-    parser.add_argument('--max_window_num', type=int, default=128)
-    parser.add_argument('--min_cover_area_ratio', type=float, default=0.0)
+    parser.add_argument('--max_window_size', type=float, default=8000.0)
+    parser.add_argument('--min_window_size', type=float, default=500.0)
+    parser.add_argument('--max_window_num', type=int, default=256)
+    parser.add_argument('--min_cover_area_ratio', type=float, default=0.5)
     parser.add_argument('--quad_split_times', type=int, default=1)
 
     parser.add_argument('--k_per_tiepoint', type=int, default=4)
