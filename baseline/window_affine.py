@@ -273,8 +273,8 @@ def generate_samples_for_pair(
                 else:
                     break
 
-        if reporter is not None and tie_idx % 100 == 0:
-            reporter.log(f"pair {pair_i}-{pair_j} tie {tie_idx + 1}/{tie_num} sampled")
+        if reporter is not None:
+            reporter.log(f"pair {pair_i}-{pair_j} tie {tie_idx + 1}/{tie_num} got {tie_samples} samples")
 
     return samples
 
@@ -716,9 +716,9 @@ def main(args):
                 image_ids = sorted(set(x for t in pairs_ids for x in t))
                 images = load_images(args, [metas[i] for i in image_ids], reporter)
                 images_by_id = {img.id: img for img in images}
-
+                reporter.log(f"pairs:{pairs_ids}")
                 for pidx, pair_id in enumerate(pairs_ids):
-                    reporter.update(progress=f"{pidx + 1}/{total_pairs}", current_task=f"{os.path.basename(root)} {pair_id[0]}=>{pair_id[1]}")
+                    reporter.update(progress=f"{pidx + 1}/{total_pairs}", current_task=f"{os.path.basename(root).split('_')[0]} {pair_id[0]}=>{pair_id[1]}")
                     pair_results = process_pair(
                         args=args,
                         root=root,
