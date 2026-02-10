@@ -5,6 +5,7 @@ import argparse
 import random
 import itertools
 import json
+import time
 from typing import List, Dict, Tuple
 from copy import deepcopy
 
@@ -20,7 +21,6 @@ from infer.utils import is_overlap
 from infer.rs_image import RSImage, RSImageMeta
 from infer.pair import Pair
 
-from tqdm import tqdm,trange
 
 def init_random_seed(seed: int):
     random.seed(seed)
@@ -214,6 +214,10 @@ def estimate_initial_window_affine(
     predictor: Predictor,
     args,
     rng: np.random.Generator,
+    pair_idx: int,
+    pair_total: int,
+    window_global_idx: int,
+    total_windows: int,
 ):
     configs = {
         'max_window_num': args.max_window_num,
@@ -239,14 +243,19 @@ def estimate_initial_window_affine(
     if not ok:
         return None
 
+    level_idx = 0
     while pair.solver_ab.window_size >= args.min_window_size and len(pair.solver_ab.window_pairs) > 0:
+        t0 = time.perf_counter()
         Hs_a, _ = pair.solver_ab.collect_Hs(to_tensor=True)
         preds, scores = pair.solver_ab.get_window_affines(encoder, predictor)
         merged_affine = pair.solver_ab.merge_affines(preds, Hs_a, scores)
         pair.solver_ab.rpc_a.Update_Adjust(merged_affine)
+        infer_time = time.perf_counter() - t0
 
         split_diags, split_scores = get_split_diags_and_scores(pair)
-        if split_diags.shape[0] == 0:
+        split_num = int(split_diags.shape[0])
+        if split_num == 0:
+            print(f"[Pair {pair_idx}/{pair_total}] [Window {window_global_idx}/{total_windows}] level={level_idx} size={pair.solver_ab.window_size:.2f}m infer={infer_time:.3f}s split=0")
             break
 
         ok = build_solver_windows(
@@ -256,8 +265,11 @@ def estimate_initial_window_affine(
             rng=rng,
             scores=split_scores,
         )
+        kept_num = len(pair.solver_ab.window_pairs)
+        print(f"[Pair {pair_idx}/{pair_total}] [Window {window_global_idx}/{total_windows}] level={level_idx} size={pair.solver_ab.window_size:.2f}m infer={infer_time:.3f}s split={split_num} kept={kept_num}")
         if not ok:
             break
+        level_idx += 1
 
     return pair.solver_ab.rpc_a.adjust_params.detach().cpu().numpy()
 
@@ -270,13 +282,15 @@ def calc_initial_window_error(
 ) -> float:
     line_a = float(image_a.tie_points[tie_idx, 0])
     samp_a = float(image_a.tie_points[tie_idx, 1])
+    line_b = float(image_b.tie_points[tie_idx, 0])
+    samp_b = float(image_b.tie_points[tie_idx, 1])
     h = float(image_a.tie_points_heights[tie_idx])
 
     line_gt, samp_gt = project_linesamp(
-        image_a.rpc,
         image_b.rpc,
-        np.array([line_a], dtype=np.float64),
-        np.array([samp_a], dtype=np.float64),
+        image_a.rpc,
+        np.array([line_b], dtype=np.float64),
+        np.array([samp_b], dtype=np.float64),
         np.array([h], dtype=np.float64),
         output_type='numpy',
     )
@@ -306,6 +320,12 @@ def summarize_errors(errors: np.ndarray) -> Dict[str, float]:
     }
 
 
+def iter_batches(total: int, batch_size: int):
+    for s in range(0, total, batch_size):
+        e = min(s + batch_size, total)
+        yield s, e
+
+
 @torch.no_grad()
 def main(args):
     init_random_seed(args.random_seed)
@@ -320,13 +340,18 @@ def main(args):
     all_errors = []
     pair_reports = []
 
-    for i, j in pair_ids:
-        print(f"Pair {i}==={j}")
+    total_pairs = len(pair_ids)
+    start_all = time.perf_counter()
+
+    for pair_k, (i, j) in enumerate(pair_ids, start=1):
+        t_pair = time.perf_counter()
         image_a = images[i]
         image_b = images[j]
         if image_a.tie_points is None or image_b.tie_points is None:
+            print(f"[Pair {pair_k}/{total_pairs}] ({i},{j}) skipped: tie points missing")
             continue
         if image_a.tie_points.shape[0] == 0 or image_b.tie_points.shape[0] == 0:
+            print(f"[Pair {pair_k}/{total_pairs}] ({i},{j}) skipped: empty tie points")
             continue
 
         tie_num = min(image_a.tie_points.shape[0], image_b.tie_points.shape[0])
@@ -346,33 +371,46 @@ def main(args):
             rng=rng,
         )
         if init_diags.shape[0] == 0:
+            print(f"[Pair {pair_k}/{total_pairs}] ({i},{j}) skipped: no valid initial windows")
             continue
+
+        total_windows = int(init_diags.shape[0])
+        print(f"[Pair {pair_k}/{total_pairs}] ({i},{j}) initial windows={total_windows}, batch_size={args.batch_size}, max_window_num={args.max_window_num}")
 
         pair_errors = []
         valid_windows = 0
+        global_window_idx = 0
 
-        for w_idx in trange(init_diags.shape[0]):
-            affine = estimate_initial_window_affine(
-                image_a=image_a,
-                image_b=image_b,
-                init_diag=init_diags[w_idx],
-                encoder=encoder,
-                predictor=predictor,
-                args=args,
-                rng=rng,
-            )
-            if affine is None:
-                continue
-            err = calc_initial_window_error(
-                image_a=image_a,
-                image_b=image_b,
-                affine=affine,
-                tie_idx=int(tie_indices[w_idx]),
-            )
-            pair_errors.append(err)
-            valid_windows += 1
+        for bs, be in iter_batches(total_windows, args.batch_size):
+            print(f"[Pair {pair_k}/{total_pairs}] processing window batch {bs+1}-{be}/{total_windows}")
+            for local_idx in range(bs, be):
+                global_window_idx += 1
+                affine = estimate_initial_window_affine(
+                    image_a=image_a,
+                    image_b=image_b,
+                    init_diag=init_diags[local_idx],
+                    encoder=encoder,
+                    predictor=predictor,
+                    args=args,
+                    rng=rng,
+                    pair_idx=pair_k,
+                    pair_total=total_pairs,
+                    window_global_idx=global_window_idx,
+                    total_windows=total_windows,
+                )
+                if affine is None:
+                    continue
+                err = calc_initial_window_error(
+                    image_a=image_a,
+                    image_b=image_b,
+                    affine=affine,
+                    tie_idx=int(tie_indices[local_idx]),
+                )
+                pair_errors.append(err)
+                valid_windows += 1
 
         if len(pair_errors) == 0:
+            print(f"[Pair {pair_k}/{total_pairs}] ({i},{j}) finished: no valid window results")
             continue
 
         pair_errors = np.asarray(pair_errors, dtype=np.float64)
@@ -383,6 +421,9 @@ def main(args):
         report['window_count'] = int(valid_windows)
         pair_reports.append(report)
 
+        pair_time = time.perf_counter() - t_pair
+        print(f"[Pair {pair_k}/{total_pairs}] ({i},{j}) done in {pair_time:.2f}s | windows={valid_windows}/{total_windows} | mean={report['mean']:.4f} median={report['median']:.4f} <1={report['<1pix_percent']:.2f}% <3={report['<3pix_percent']:.2f}% <5={report['<5pix_percent']:.2f}%")
+
     if len(all_errors) > 0:
         all_errors = np.concatenate(all_errors, axis=0)
     else:
@@ -392,8 +433,10 @@ def main(args):
 
     output = {
         'experiment_id': args.experiment_id,
+        'batch_size': args.batch_size,
         'max_window_size': args.max_window_size,
         'min_window_size': args.min_window_size,
+        'max_window_num': args.max_window_num,
         'quad_split_times': args.quad_split_times,
         'k_per_tiepoint': args.k_per_tiepoint,
         'total_windows': int(all_errors.size),
@@ -404,7 +447,9 @@ def main(args):
     with open(os.path.join(args.output_path, 'window_error_report.json'), 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
+    total_time = time.perf_counter() - start_all
     print('--- Initial Window Error Report (Summary) ---')
+    print(f"Total runtime: {total_time:.2f} s")
     print(f"Total windows checked: {global_report['count']}")
     print(f"Mean Error:   {global_report['mean']:.4f} pix")
     print(f"Median Error: {global_report['median']:.4f} pix")
@@ -428,6 +473,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_mtf', type=str2bool, default=True)
 
     parser.add_argument('--match', type=str, default=None)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--max_window_size', type=float, default=8000.0)
     parser.add_argument('--min_window_size', type=float, default=500.0)
     parser.add_argument('--max_window_num', type=int, default=256)
