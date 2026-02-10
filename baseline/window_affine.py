@@ -666,7 +666,7 @@ def process_pair(
             predictor=predictor,
             batch_size=args.model_batch_size,
             enable_quadsplit=args.model_use_quadsplit,
-            min_window_size_for_quadsplit=args.model_min_window_size_for_quadsplit,
+            min_window_size_for_quadsplit=args.min_window_size,
         )
 
         for sample in samples:
