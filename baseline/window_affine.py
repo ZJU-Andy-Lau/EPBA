@@ -143,15 +143,164 @@ class TiePointWindowSolver(Solver):
     def __init__(self, rs_image_a: RSImage, rs_image_b: RSImage, configs: dict, device: str = 'cuda', reporter=None):
         cfg = {**default_configs, **configs}
         super().__init__(rs_image_a=rs_image_a, rs_image_b=rs_image_b, configs=cfg, device=device, reporter=reporter)
+        self.window_origin_ids: List[int] = []
+        self.initial_origin_ids: List[int] = []
 
     def init_window_pairs_from_samples(self, samples: List[WindowSample]):
         if len(samples) == 0:
             self.window_pairs = []
             self.window_pairs_num = 0
             self.window_size = -1
+            self.window_origin_ids = []
+            self.initial_origin_ids = []
             return
         diags = np.stack([s.diag_xy for s in samples], axis=0).astype(np.float64)
-        self.build_window_pairs(diags)
+        origin_ids = np.array([s.sample_idx for s in samples], dtype=np.int64)
+        self._build_window_pairs_with_origins(diags=diags, origin_ids=origin_ids, scores=None)
+        self.initial_origin_ids = [s.sample_idx for s in samples]
+
+    def _build_window_pairs_with_origins(self, diags: np.ndarray, origin_ids: np.ndarray, scores: Optional[np.ndarray]):
+        if diags.shape[0] == 0:
+            self.window_pairs = []
+            self.window_origin_ids = []
+            self.window_pairs_num = 0
+            self.window_size = -1
+            return
+
+        if self.configs['max_window_num'] > 0 and diags.shape[0] > self.configs['max_window_num']:
+            if scores is None:
+                idxs = np.random.choice(range(diags.shape[0]), self.configs['max_window_num'], replace=False)
+            else:
+                idxs = np.argsort(-scores)[:self.configs['max_window_num']]
+            diags = diags[idxs]
+            origin_ids = origin_ids[idxs]
+
+        corners_linesamps_a = self.rs_image_a.convert_diags_to_corners(diags, self.rpc_a)
+        corners_linesamps_b = self.rs_image_b.convert_diags_to_corners(diags, self.rpc_b)
+        imgs_a, dems_a, Hs_a = self.rs_image_a.crop_windows(corners_linesamps_a)
+        imgs_b, dems_b, Hs_b = self.rs_image_b.crop_windows(corners_linesamps_b)
+
+        valid_mask = self.get_valid_mask([imgs_a, dems_a, Hs_a, imgs_b, dems_b, Hs_b])
+        if valid_mask.sum() == 0:
+            self.window_pairs = []
+            self.window_origin_ids = []
+            self.window_pairs_num = 0
+            self.window_size = -1
+            return
+
+        imgs_a = imgs_a[valid_mask]
+        dems_a = dems_a[valid_mask]
+        Hs_a = Hs_a[valid_mask]
+        imgs_b = imgs_b[valid_mask]
+        dems_b = dems_b[valid_mask]
+        Hs_b = Hs_b[valid_mask]
+        diags = diags[valid_mask]
+        origin_ids = origin_ids[valid_mask]
+
+        self.window_pairs = self.generate_window_pairs((imgs_a, dems_a, Hs_a), (imgs_b, dems_b, Hs_b), diags)
+        self.window_origin_ids = origin_ids.astype(np.int64).tolist()
+        self.window_pairs_num = len(self.window_pairs)
+        self.window_size = abs(float(diags[0, 1, 0] - diags[0, 0, 0]))
+
+    def quadsplit_windows(self):
+        if len(self.window_pairs) == 0:
+            self.window_origin_ids = []
+            return
+        if self.reporter:
+            self.reporter.update(current_step="Quad-Splitting")
+
+        new_diags = []
+        new_scores = []
+        new_origin_ids = []
+        for wp, origin_id in zip(self.window_pairs, self.window_origin_ids):
+            split_diags, split_scores = wp.quadsplit(split_time=self.configs['quad_split_times'])
+            new_diags.append(split_diags)
+            new_scores.append(split_scores)
+            new_origin_ids.append(np.full((split_diags.shape[0],), origin_id, dtype=np.int64))
+            wp.clear()
+
+        self._build_window_pairs_with_origins(
+            diags=np.concatenate(new_diags, axis=0),
+            origin_ids=np.concatenate(new_origin_ids, axis=0),
+            scores=np.concatenate(new_scores, axis=0),
+        )
+
+    def _get_window_affines_micro_batch(self, encoder: Encoder, predictor: Predictor, batch_size: int):
+        if len(self.window_pairs) == 0:
+            empty_aff = torch.empty((0, 2, 3), dtype=torch.float32, device=self.device)
+            empty_sc = torch.empty((0,), dtype=torch.float32, device=self.device)
+            return empty_aff, empty_sc
+
+        all_pairs = self.window_pairs
+        all_origins = self.window_origin_ids
+        pred_parts = []
+        score_parts = []
+
+        try:
+            for s in range(0, len(all_pairs), batch_size):
+                e = min(s + batch_size, len(all_pairs))
+                self.window_pairs = all_pairs[s:e]
+                self.window_origin_ids = all_origins[s:e]
+                preds, scores = Solver.get_window_affines(self, encoder, predictor)
+                pred_parts.append(preds)
+                score_parts.append(scores)
+        finally:
+            self.window_pairs = all_pairs
+            self.window_origin_ids = all_origins
+
+        return torch.cat(pred_parts, dim=0), torch.cat(score_parts, dim=0)
+
+    def get_window_affines(self, encoder: Encoder, predictor: Predictor, batch_size: Optional[int] = None):
+        if batch_size is None or batch_size <= 0:
+            return Solver.get_window_affines(self, encoder, predictor)
+        return self._get_window_affines_micro_batch(encoder, predictor, batch_size)
+
+    def _window_local_to_global(self, local_affines: torch.Tensor, Hs_a: torch.Tensor) -> torch.Tensor:
+        n = local_affines.shape[0]
+        A = torch.eye(3, dtype=torch.float32, device=local_affines.device).unsqueeze(0).repeat(n, 1, 1)
+        A[:, :2, :] = local_affines
+        H_inv = torch.linalg.inv(Hs_a)
+        G = H_inv @ A @ Hs_a
+        return G[:, :2, :]
+
+    @torch.no_grad()
+    def solve_affines_for_current_windows(self, encoder: Encoder, predictor: Predictor, batch_size: int, enable_quadsplit: bool, min_window_size_for_quadsplit: int) -> Dict[int, Optional[np.ndarray]]:
+        per_origin_affines: Dict[int, List[np.ndarray]] = {oid: [] for oid in self.initial_origin_ids}
+        per_origin_scores: Dict[int, List[float]] = {oid: [] for oid in self.initial_origin_ids}
+
+        while len(self.window_pairs) > 0 and self.window_size >= self.configs['min_window_size']:
+            if self.reporter:
+                self.reporter.update(level=f"{int(self.window_size)}m")
+
+            Hs_a, _ = self.collect_Hs(to_tensor=True)
+            preds, scores = self.get_window_affines(encoder, predictor, batch_size=batch_size)
+            global_affines = self._window_local_to_global(preds, Hs_a)
+
+            for idx, oid in enumerate(self.window_origin_ids):
+                per_origin_affines[oid].append(global_affines[idx].detach().cpu().numpy().astype(np.float32))
+                per_origin_scores[oid].append(float(scores[idx].detach().cpu().item()))
+
+            level_affine = self.merge_affines(preds, Hs_a, scores)
+            self.rpc_a.Update_Adjust(level_affine)
+
+            if (not enable_quadsplit) or self.window_size < min_window_size_for_quadsplit:
+                break
+            self.quadsplit_windows()
+
+        out: Dict[int, Optional[np.ndarray]] = {}
+        for oid in self.initial_origin_ids:
+            mats = per_origin_affines.get(oid, [])
+            scs = per_origin_scores.get(oid, [])
+            if len(mats) == 0:
+                out[oid] = None
+                continue
+            mats_np = np.stack(mats, axis=0)
+            w = np.asarray(scs, dtype=np.float64)
+            if (not np.all(np.isfinite(w))) or np.isclose(w.sum(), 0.0):
+                w = np.ones((len(mats),), dtype=np.float64)
+            w = w / w.sum()
+            out[oid] = (mats_np * w[:, None, None]).sum(axis=0).astype(np.float32)
+        return out
 
 
 def convert_tiepoint_to_xy(image: RSImage, line: int, samp: int, height: float) -> np.ndarray:
@@ -224,9 +373,6 @@ def generate_samples_for_pair(
             tly = cy - half
             brx = cx + half
             bry = cy + half
-
-            if attempts == 1:
-                reporter.log(f"{cx} \t {cy} \t {bounds}")
 
             if tlx < bounds[0] or brx > bounds[2] or tly > bounds[3] or bry < bounds[1]:
                 continue
@@ -346,44 +492,6 @@ def match_and_estimate_baseline(
     return M.astype(np.float32), pts_a_obs.shape[0]
 
 
-def estimate_epba_for_subset(
-    solver: TiePointWindowSolver,
-    subset_indices: List[int],
-    encoder: Encoder,
-    predictor: Predictor,
-    args,
-) -> Dict[int, Optional[np.ndarray]]:
-    if len(subset_indices) == 0:
-        return {}
-
-    sub_pairs = [solver.window_pairs[i] for i in subset_indices]
-    old_pairs = solver.window_pairs
-    solver.window_pairs = sub_pairs
-
-    try:
-        if len(sub_pairs) == 0:
-            return {idx: None for idx in subset_indices}
-
-        if args.model_use_quadsplit:
-            window_size = abs(float(sub_pairs[0].diag[1, 0] - sub_pairs[0].diag[0, 0]))
-            if window_size >= args.min_window_size:
-                solver.quadsplit_windows()
-
-        Hs_a, _ = solver.collect_Hs(to_tensor=True)
-        preds, scores = solver.get_window_affines(encoder, predictor)
-
-        affines: Dict[int, Optional[np.ndarray]] = {}
-        for local_idx, global_idx in enumerate(subset_indices):
-            affine_local = preds[local_idx].unsqueeze(0)
-            H_local = Hs_a[local_idx].unsqueeze(0)
-            score_local = scores[local_idx].unsqueeze(0)
-            merged = solver.merge_affines(affine_local, H_local, score_local)
-            affines[global_idx] = merged.detach().cpu().numpy().astype(np.float32)
-        return affines
-    finally:
-        solver.window_pairs = old_pairs
-
-
 def validate_tiepoint_error(
     image_a: RSImage,
     image_b: RSImage,
@@ -476,12 +584,14 @@ def process_pair(
     Hs_a, Hs_b = solver.collect_Hs(to_tensor=False)
 
     results: List[WindowAffineResult] = []
+    sample_by_idx = {s.sample_idx: s for s in samples}
 
     if args.estimate_mode in ['baseline', 'both']:
         reporter.update(current_step="Baseline Estimation")
-        for idx, sample in enumerate(samples):
-            if idx >= len(imgs_a):
-                break
+        baseline_map: Dict[int, WindowAffineResult] = {}
+        for idx in range(len(imgs_a)):
+            sample_idx = solver.window_origin_ids[idx]
+            sample = sample_by_idx[sample_idx]
             affine, nmatch = match_and_estimate_baseline(
                 args=args,
                 matcher=matcher,
@@ -494,6 +604,43 @@ def process_pair(
                 device=args.device,
             )
             if affine is None:
+                baseline_map[sample_idx] = WindowAffineResult(
+                    root=root,
+                    pair_i=i,
+                    pair_j=j,
+                    tie_idx=sample.tie_idx,
+                    sample_idx=sample.sample_idx,
+                    method='baseline',
+                    status='failed',
+                    error_pix=float('nan'),
+                    match_points=nmatch,
+                    affine=None,
+                )
+                continue
+
+            err = validate_tiepoint_error(image_a, image_b, sample.tie_idx, affine)
+            if err is None:
+                err = float('nan')
+                status = 'invalid'
+            else:
+                status = 'ok'
+            baseline_map[sample_idx] = WindowAffineResult(
+                root=root,
+                pair_i=i,
+                pair_j=j,
+                tie_idx=sample.tie_idx,
+                sample_idx=sample.sample_idx,
+                method='baseline',
+                status=status,
+                error_pix=float(err),
+                match_points=nmatch,
+                affine=affine,
+            )
+
+        for sample in samples:
+            if sample.sample_idx in baseline_map:
+                results.append(baseline_map[sample.sample_idx])
+            else:
                 results.append(
                     WindowAffineResult(
                         root=root,
@@ -504,7 +651,38 @@ def process_pair(
                         method='baseline',
                         status='failed',
                         error_pix=float('nan'),
-                        match_points=nmatch,
+                        match_points=0,
+                        affine=None,
+                    )
+                )
+
+    if args.estimate_mode in ['model', 'both']:
+        if encoder is None or predictor is None:
+            raise RuntimeError("Model mode requires encoder and predictor.")
+
+        reporter.update(current_step="Model Estimation")
+        affine_map = solver.solve_affines_for_current_windows(
+            encoder=encoder,
+            predictor=predictor,
+            batch_size=args.model_batch_size,
+            enable_quadsplit=args.model_use_quadsplit,
+            min_window_size_for_quadsplit=args.model_min_window_size_for_quadsplit,
+        )
+
+        for sample in samples:
+            affine = affine_map.get(sample.sample_idx, None)
+            if affine is None:
+                results.append(
+                    WindowAffineResult(
+                        root=root,
+                        pair_i=i,
+                        pair_j=j,
+                        tie_idx=sample.tie_idx,
+                        sample_idx=sample.sample_idx,
+                        method='model',
+                        status='failed',
+                        error_pix=float('nan'),
+                        match_points=0,
                         affine=None,
                     )
                 )
@@ -523,70 +701,13 @@ def process_pair(
                     pair_j=j,
                     tie_idx=sample.tie_idx,
                     sample_idx=sample.sample_idx,
-                    method='baseline',
+                    method='model',
                     status=status,
                     error_pix=float(err),
-                    match_points=nmatch,
+                    match_points=0,
                     affine=affine,
                 )
             )
-
-    if args.estimate_mode in ['model', 'both']:
-        if encoder is None or predictor is None:
-            raise RuntimeError("Model mode requires encoder and predictor.")
-
-        reporter.update(current_step="Model Estimation")
-        all_indices = list(range(len(samples)))
-        batches = [all_indices[s:s + args.model_batch_size] for s in range(0, len(all_indices), args.model_batch_size)]
-
-        for subset in batches:
-            affine_map = estimate_epba_for_subset(
-                solver=solver,
-                subset_indices=subset,
-                encoder=encoder,
-                predictor=predictor,
-                args=args,
-            )
-            for idx in subset:
-                sample = samples[idx]
-                affine = affine_map.get(idx, None)
-                if affine is None:
-                    results.append(
-                        WindowAffineResult(
-                            root=root,
-                            pair_i=i,
-                            pair_j=j,
-                            tie_idx=sample.tie_idx,
-                            sample_idx=sample.sample_idx,
-                            method='model',
-                            status='failed',
-                            error_pix=float('nan'),
-                            match_points=0,
-                            affine=None,
-                        )
-                    )
-                    continue
-
-                err = validate_tiepoint_error(image_a, image_b, sample.tie_idx, affine)
-                if err is None:
-                    err = float('nan')
-                    status = 'invalid'
-                else:
-                    status = 'ok'
-                results.append(
-                    WindowAffineResult(
-                        root=root,
-                        pair_i=i,
-                        pair_j=j,
-                        tie_idx=sample.tie_idx,
-                        sample_idx=sample.sample_idx,
-                        method='model',
-                        status=status,
-                        error_pix=float(err),
-                        match_points=0,
-                        affine=affine,
-                    )
-                )
 
     return results
 
@@ -719,7 +840,6 @@ def main(args):
                 image_ids = sorted(set(x for t in pairs_ids for x in t))
                 images = load_images(args, [metas[i] for i in image_ids], reporter)
                 images_by_id = {img.id: img for img in images}
-                reporter.log(f"pairs:{pairs_ids}")
                 for pidx, pair_id in enumerate(pairs_ids):
                     reporter.update(progress=f"{pidx + 1}/{total_pairs}", current_task=f"{os.path.basename(root).split('_')[0]} {pair_id[0]}=>{pair_id[1]}")
                     pair_results = process_pair(
