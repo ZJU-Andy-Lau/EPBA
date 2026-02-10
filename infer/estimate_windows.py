@@ -407,6 +407,8 @@ def main(args):
                     tie_idx=int(tie_indices[local_idx]),
                 )
                 pair_errors.append(err)
+                t_errors = np.array(pair_errors)
+                print(f"[Pair {pair_k}/{total_pairs}] [Window {global_window_idx}/{total_windows}] mean:{t_errors.mean():.4f}px median:{np.median(t_errors):.4f}px")
                 valid_windows += 1
 
         if len(pair_errors) == 0:
