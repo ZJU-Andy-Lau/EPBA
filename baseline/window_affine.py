@@ -225,6 +225,9 @@ def generate_samples_for_pair(
             brx = cx + half
             bry = cy + half
 
+            if attempts == 0:
+                reporter.log(f"{cx} \t {cy} \t {bounds}")
+
             if tlx < bounds[0] or brx > bounds[2] or tly < bounds[1] or bry > bounds[3]:
                 continue
 
