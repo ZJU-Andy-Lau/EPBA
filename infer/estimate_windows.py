@@ -277,6 +277,7 @@ def main(args):
     pair_reports = []
 
     for i, j in pair_ids:
+        print(f"Pair {i}---{j}")
         image_a = images[i]
         image_b = images[j]
         if image_a.tie_points is None or image_b.tie_points is None:
@@ -328,6 +329,7 @@ def main(args):
 
         pair_errors = []
         while pair.solver_ab.window_size >= args.min_window_size and len(pair.solver_ab.window_pairs) > 0:
+            print(f"======Level: {pair.solver_ab.window_size}m")
             affines, _ = pair.solver_ab.get_window_affines(encoder, predictor)
             level_errors = calc_window_errors(pair, affines, tie_indices)
             if level_errors.size > 0:
