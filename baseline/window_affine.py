@@ -29,6 +29,7 @@ from model.encoder import Encoder
 from model.predictor import Predictor
 from baseline.matchers import build_matcher
 from shared.rpc import project_linesamp
+from baseline.results_logger import ExperimentLogger
 
 
 @dataclass
@@ -880,12 +881,21 @@ def main(args):
 
             os.makedirs(args.output_path, exist_ok=True)
             out_path = os.path.join(args.output_path, "window_affine_results.csv")
-            with open(out_path, 'w', encoding='utf-8') as f:
-                f.write("root,pair_i,pair_j,tie_idx,sample_idx,method,status,error_pix,match_points\n")
-                for r in all_results:
-                    f.write(
-                        f"{r.root},{r.pair_i},{r.pair_j},{r.tie_idx},{r.sample_idx},{r.method},{r.status},{r.error_pix},{r.match_points}\n"
-                    )
+            logger = ExperimentLogger(out_path,["experiment_id","mean","median","<1","<3","<5"])
+            logger.append({
+                    "experiment_id": args.experiment_id,
+                    "mean": rep['mean'],
+                    "median":rep['median'],
+                    "<1":rep['<1pix_percent'],
+                    "<3":rep['<3pix_percent'],
+                    "<5":rep['<5pix_percent'],
+                })
+            # with open(out_path, 'w', encoding='utf-8') as f:
+            #     f.write("root,pair_i,pair_j,tie_idx,sample_idx,method,status,error_pix,match_points\n")
+            #     for r in all_results:
+            #         f.write(
+            #             f"{r.root},{r.pair_i},{r.pair_j},{r.tie_idx},{r.sample_idx},{r.method},{r.status},{r.error_pix},{r.match_points}\n"
+            #         )
 
     except Exception as e:
         if reporter is not None:
