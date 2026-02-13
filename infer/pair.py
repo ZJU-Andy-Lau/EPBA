@@ -450,7 +450,7 @@ class WindowPair():
         scores = torch.sqrt(confs_a * confs_b).mean()
         return scores.item()
 
-    def quadsplit(self,split_time = 1):
+    def quadsplit(self,split_time = 1,even_score = True):
         """
         Return:
         new_diags: np.ndarray (4,2,2)
@@ -479,11 +479,14 @@ class WindowPair():
         new_tlrc = np.stack([tlrs,tlcs],axis=-1).reshape(-1,2)
 
         scores = np.array([self._get_score(tlrc,tlrc + [r_size,c_size]) for tlrc in new_tlrc])
-        scores_rank = np.argsort(-scores)
-        weight = 1.0
-        for i in scores_rank:
-            scores[i] *= weight
-            weight *= 0.5
+        
+        if even_score:
+            scores_rank = np.argsort(-scores)
+            weight = 1.0
+            for i in scores_rank:
+                scores[i] *= weight
+                weight *= 0.5
+                
         return new_diags,scores
     
     def visualize(self,output_path:str):

@@ -198,7 +198,7 @@ def get_split_diags_and_scores(pair: Pair):
     new_diags = []
     new_scores = []
     for window_pair in solver.window_pairs:
-        diags_i, scores_i = window_pair.quadsplit(split_time=solver.configs['quad_split_times'])
+        diags_i, scores_i = window_pair.quadsplit(split_time=solver.configs['quad_split_times'],even_score=False)
         new_diags.append(diags_i)
         new_scores.append(scores_i)
         window_pair.clear()
