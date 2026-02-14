@@ -201,7 +201,7 @@ def main(args):
             encoder,predictor = load_models(args, reporter)
             image_ids = sorted(set(x for t in pairs_ids for x in t))
 
-            reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
+            # reporter.log(f"pair_ids:{pairs_ids} \t image_ids:{image_ids} \n")
 
             images = load_images(args,[metas[i] for i in image_ids], reporter)
             pairs = build_pairs(args,images, reporter, pairs_ids)
@@ -239,7 +239,7 @@ def main(args):
                 
                 torch.cuda.synchronize()
                 t = time.perf_counter()
-                reporter.log(f"-----pair time:{(t - last_time):.4f}s")
+                # reporter.log(f"-----pair time:{(t - last_time):.4f}s")
                 last_time = t
 
             reporter.log(f"model total time:{(last_time - start_time):.4f}s")
@@ -269,9 +269,6 @@ def main(args):
             image_ids = sorted(set(x for t in pairs_ids_all for x in t))
             images = load_images(args,[metas[i] for i in image_ids], reporter)
 
-            torch.cuda.synchronize()
-            t0 = time.perf_counter()
-
             solver = PBAAffineSolver(images,all_results,
                                     fixed_id=args.fixed_id,
                                     sample_points_num=args.sample_points_num,
@@ -279,15 +276,7 @@ def main(args):
                                     reporter=reporter,
                                     output_path=args.output_path)
             
-            torch.cuda.synchronize()
-            t1 = time.perf_counter()
-            reporter.log(f"solver init time:{(t1 - t0):.4f}s")
-
             Ms = solver.solve()
-
-            torch.cuda.synchronize()
-            t2 = time.perf_counter()
-            reporter.log(f"solver solve time:{(t2 - t1):.4f}s")
 
 
             for i,image in enumerate(images):
