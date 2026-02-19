@@ -331,11 +331,14 @@ class Solver():
         coords_src_flat = coords_src.reshape(-1,2) # B*1024,2
         coords_dst_flat = coords_dst.reshape(-1,2) # B*1024,2
 
+        _,inliers = cv2.estimateAffine2D(coords_src_flat,coords_dst_flat,ransacReprojThreshold=20.)
+        mask = inliers.ravel()
+
         scores_norm = scores / scores.mean()
 
         scores_norm = scores_norm.unsqueeze(-1).expand(-1,mat_size ** 2).reshape(-1) # B*1024
         
-        merged_affine = solve_weighted_affine(coords_src_flat,coords_dst_flat,scores_norm)
+        merged_affine = solve_weighted_affine(coords_src_flat[mask],coords_dst_flat[mask],scores_norm[mask])
 
         # vis_shift,vis_error = visualizer.validate_affine_solver(coords_src[:,[0,31,31*32,31*33]],coords_dst[:,[0,31,31*32,31*33]],merged_affine,min(coords_src.shape[0],8))
         # cv2.imwrite(os.path.join(self.configs['output_path'],f'vis_shift_{self.window_size}.png'),vis_shift)
