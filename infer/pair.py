@@ -331,7 +331,7 @@ class Solver():
         coords_src_flat = coords_src.reshape(-1,2) # B*1024,2
         coords_dst_flat = coords_dst.reshape(-1,2) # B*1024,2
 
-        _,inliers = cv2.estimateAffine2D(coords_src_flat,coords_dst_flat,ransacReprojThreshold=20.)
+        _,inliers = cv2.estimateAffine2D(coords_src_flat.cpu().numpy(),coords_dst_flat.cpu().numpy(),ransacReprojThreshold=20.)
         mask = inliers.ravel()
 
         scores_norm = scores / scores.mean()
