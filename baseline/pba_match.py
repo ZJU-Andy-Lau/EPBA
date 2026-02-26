@@ -86,6 +86,7 @@ def build_match_points(args, image_a: RSImage, image_b: RSImage, matcher, report
     if window_data is None:
         return None
     imgs_a, imgs_b, Hs_a, Hs_b = window_data
+    reporter.log(f"window num:{imgs_a.shape[0]}")
     all_pts_a_global = []
     all_pts_b_global = []
     match_times = []
