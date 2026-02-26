@@ -24,6 +24,7 @@ from infer.validate import compute_multiview_pair_errors
 from infer.pair import Pair
 from infer.rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
+from baseline.results_logger import ExperimentLogger
 
 def init_random_seed(args):
     seed = args.random_seed 
@@ -292,6 +293,18 @@ def main(args):
                 reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
                 reporter.log(f"< 3.0 pix: {report['<3pix_percent']:.2f} %")
                 reporter.log(f"< 5.0 pix: {report['<5pix_percent']:.2f} %")
+
+            if args.results_csv:
+                logger = ExperimentLogger(args.results_csv,["experiment_id","mean","median","<1","<3","<5","infer_time"])
+                logger.append({
+                        "experiment_id": args.experiment_id,
+                        "mean": report['mean'],
+                        "median":report['median'],
+                        "<1":report['<1pix_percent'],
+                        "<3":report['<3pix_percent'],
+                        "<5":report['<5pix_percent'],
+                        'infer_time':model_time,
+                    })
                 
             
     except Exception as e:
@@ -361,6 +374,8 @@ if __name__ == '__main__':
     #==============================输出相关设置=====================================
     
     parser.add_argument('--output_path', type=str, default='results')
+
+    parser.add_argument('--results_csv', type=str, default=None)
     
     #===============================================================================
 

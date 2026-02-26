@@ -242,7 +242,8 @@ def main(args):
                 # reporter.log(f"-----pair time:{(t - last_time):.4f}s")
                 last_time = t
 
-            reporter.log(f"model total time:{(last_time - start_time):.4f}s")
+            infer_time = last_time - start_time
+            reporter.log(f"model total time:{infer_time:.4f}s")
             
             # 任务完成，清理状态
             reporter.update(current_task="Finished", progress=f"{total_pairs}/{total_pairs}", level="-", current_step="Cleanup")
@@ -276,7 +277,12 @@ def main(args):
                                     reporter=reporter,
                                     output_path=args.output_path)
             
+            torch.cuda.synchronize()
+            start_time = time.perf_counter()
             Ms = solver.solve()
+            torch.cuda.synchronize()
+            end_time = time.perf_counter()
+            pba_time = end_time - start_time
 
 
             for i,image in enumerate(images):
@@ -309,11 +315,17 @@ def main(args):
                     vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
 
             if args.results_csv:
-                logger = ExperimentLogger(args.results_csv,["experiment_id","median_error"])
+                logger = ExperimentLogger(args.results_csv,["experiment_id","mean","median","<1","<3","<5","infer_time","pba_time"])
                 logger.append({
-                    "experiment_id": args.experiment_id,
-                    "median_error": report["median"],
-                })
+                        "experiment_id": args.experiment_id,
+                        "mean": report['mean'],
+                        "median":report['median'],
+                        "<1":report['<1pix_percent'],
+                        "<3":report['<3pix_percent'],
+                        "<5":report['<5pix_percent'],
+                        'infer_time':infer_time,
+                        'pba_time':pba_time
+                    })
             
     except Exception as e:
         error_msg = traceback.format_exc()
