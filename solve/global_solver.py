@@ -193,7 +193,10 @@ def sample_points_in_overlap(corners_a, corners_b, K, shrink=0.9, seed=None, max
         c = sqrt_r1 * r2
         pt = a * tri[0] + b * tri[1] + c * tri[2]
         pts.append(pt)
-    return np.asarray(pts, dtype=float)
+    pts = np.asarray(pts, dtype=float)
+    if pts.ndim == 1:
+        pts = pts[None]
+    return pts
 
 
 @dataclass
