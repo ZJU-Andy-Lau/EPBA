@@ -349,9 +349,10 @@ def main(args):
                     "lt_5pix_percent": report["<5pix_percent"],
                 })
 
-            reporter.update(current_step="Visualizing")
-            for i, j in itertools.combinations(range(len(images)), 2):
-                vis_registration(image_a=images[i], image_b=images[j], output_path=args.output_path, device=args.device)
+            if args.vis:
+                reporter.update(current_step="Visualizing")
+                for i, j in itertools.combinations(range(len(images)), 2):
+                    vis_registration(image_a=images[i], image_b=images[j], output_path=args.output_path, device=args.device)
 
     except Exception as e:
         error_msg = traceback.format_exc()
@@ -400,6 +401,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_rpc', type=str2bool, default=False)
     parser.add_argument('--usgs_dem', type=str2bool, default=False)
     parser.add_argument('--results_csv', type=str, default=None)
+    parser.add_argument('--vis',type=str2bool,default=False)
 
     args = parser.parse_args()
 
