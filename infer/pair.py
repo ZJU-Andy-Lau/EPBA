@@ -377,6 +377,8 @@ class Solver():
                 self.reporter.update(level=f"{int(self.window_size)}m")
             self.reporter.log(f"level:{int(self.window_size)} \t window_num:{self.window_pairs_num}")
             self.solve_level_affine(encoder,predictor)
+            if self.window_size <= self.configs['min_window_size'] * 2:
+                break
             self.quadsplit_windows()
 
         return self.rpc_a.adjust_params
