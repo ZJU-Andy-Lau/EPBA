@@ -375,6 +375,7 @@ class Solver():
             # 更新层级信息
             if self.reporter:
                 self.reporter.update(level=f"{int(self.window_size)}m")
+            self.reporter.log(f"level:{int(self.window_size)} \t window_num:{self.window_pairs_num}")
             self.solve_level_affine(encoder,predictor)
             self.quadsplit_windows()
 
