@@ -165,6 +165,7 @@ def predict_affine_rae(encoder: Encoder, predictor: Predictor, img_a: np.ndarray
         merged_affine = solve_weighted_affine(coords_src_flat, coords_dst_flat, scores_norm)
         M_delta = merged_affine.detach().cpu().numpy()
         M_current = merge_affine_rc(M_current, M_delta)
+        print(f"window size:{window_size} \n M_delta:\n{M_delta} \n M_cur:\n{M_current}\n======================")
         window_size = window_size // 2
     return M_current
 
