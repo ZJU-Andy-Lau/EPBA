@@ -226,7 +226,7 @@ def main():
 
         error_rae = compute_transform_error(M_pred_rae_rc, M_gt_inv_rc, img_a.shape[0], img_a.shape[1])
 
-        print(f"{name}:{error_rae:.2f}")
+        print(f"{name}:{error_rae}")
 
         out_dir = os.path.join(args.output_dir, name)
         os.makedirs(out_dir, exist_ok=True)
