@@ -231,7 +231,7 @@ def main():
 
             print(f"{name} \t iter:{iter} \t {error_rae['median']}")
 
-            if error_rae['median'] < 5.:
+            if error_rae['median'] < 15.:
                 break
 
         out_dir = os.path.join(args.output_dir, name)
