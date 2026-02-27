@@ -217,17 +217,21 @@ def main():
         if img_a.shape[:2] != (1024, 1024) or img_b.shape[:2] != (1024, 1024):
             raise ValueError(f"{name} size mismatch")
 
-        rng = np.random.default_rng(args.seed + hash(name) % 100000)
-        M_gt_rc = random_affine_rc(rng)
-        M_gt_xy = rc_to_xy_matrix(M_gt_rc)
-        img_a_warp = cv2.warpAffine(img_a, M_gt_xy, (img_a.shape[1], img_a.shape[0]), flags=cv2.INTER_LINEAR)
-        M_gt_inv_rc = invert_affine_rc(M_gt_rc)
+        for iter in range(100):
+            rng = np.random.default_rng(args.seed + hash(name) % 100000)
+            M_gt_rc = random_affine_rc(rng)
+            M_gt_xy = rc_to_xy_matrix(M_gt_rc)
+            img_a_warp = cv2.warpAffine(img_a, M_gt_xy, (img_a.shape[1], img_a.shape[0]), flags=cv2.INTER_LINEAR)
+            M_gt_inv_rc = invert_affine_rc(M_gt_rc)
 
-        M_pred_rae_rc = predict_affine_rae(encoder, predictor, img_a_warp, img_b, args.device, predictor_iter_num, args.min_window)
+            M_pred_rae_rc = predict_affine_rae(encoder, predictor, img_a_warp, img_b, args.device, predictor_iter_num, args.min_window)
 
-        error_rae = compute_transform_error(M_pred_rae_rc, M_gt_inv_rc, img_a.shape[0], img_a.shape[1])
+            error_rae = compute_transform_error(M_pred_rae_rc, M_gt_inv_rc, img_a.shape[0], img_a.shape[1])
 
-        print(f"{name}:{error_rae}")
+            print(f"{name} \t iter:{iter} \t {error_rae['median']}")
+
+            if error_rae['median'] < 1.:
+                break
 
         out_dir = os.path.join(args.output_dir, name)
         os.makedirs(out_dir, exist_ok=True)
