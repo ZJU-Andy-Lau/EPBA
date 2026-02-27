@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import torch
 from tqdm import tqdm
+import time
 
 from shared.utils import load_model_state_dict, load_config
 from shared.visualize import make_checkerboard
@@ -165,7 +166,7 @@ def predict_affine_rae(encoder: Encoder, predictor: Predictor, img_a: np.ndarray
         merged_affine = solve_weighted_affine(coords_src_flat, coords_dst_flat, scores_norm)
         M_delta = merged_affine.detach().cpu().numpy()
         M_current = merge_affine_rc(M_current, M_delta)
-        print(f"window size:{window_size} \n M_delta:\n{M_delta} \n M_cur:\n{M_current}\n======================")
+        # print(f"window size:{window_size} \n M_delta:\n{M_delta} \n M_cur:\n{M_current}\n======================")
         window_size = window_size // 2
     return M_current
 
@@ -218,7 +219,7 @@ def main():
             raise ValueError(f"{name} size mismatch")
 
         for iter in range(100):
-            rng = np.random.default_rng(args.seed + hash(name) % 100000)
+            rng = np.random.default_rng(int(time.time()))
             M_gt_rc = random_affine_rc(rng)
             M_gt_xy = rc_to_xy_matrix(M_gt_rc)
             img_a_warp = cv2.warpAffine(img_a, M_gt_xy, (img_a.shape[1], img_a.shape[0]), flags=cv2.INTER_LINEAR)
