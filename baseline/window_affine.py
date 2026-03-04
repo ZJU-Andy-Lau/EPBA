@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from shapely.geometry import Polygon, box
+from copy import deepcopy
 
 from shared.utils import str2bool, get_current_time, load_model_state_dict, load_config, project_mercator
 from infer.utils import is_overlap, find_intersection, get_report_dict, partition_pairs, apply_H
@@ -30,6 +31,7 @@ from model.predictor import Predictor
 from baseline.matchers import build_matcher
 from shared.rpc import project_linesamp
 from baseline.results_logger import ExperimentLogger
+from infer.validate import compute_pair_tiepoint_error
 
 
 @dataclass
@@ -499,41 +501,19 @@ def validate_tiepoint_error(
     tie_idx: int,
     affine: np.ndarray,
 ) -> Optional[float]:
-    if image_a.tie_points is None or image_b.tie_points is None:
-        return None
-    if tie_idx >= len(image_a.tie_points) or tie_idx >= len(image_b.tie_points):
-        return None
-
-    line_a, samp_a = image_a.tie_points[tie_idx]
-    line_b, samp_b = image_b.tie_points[tie_idx]
-
-    if line_a < 0 or line_a >= image_a.H or samp_a < 0 or samp_a >= image_a.W:
-        return None
-    if line_b < 0 or line_b >= image_b.H or samp_b < 0 or samp_b >= image_b.W:
-        return None
-
-    height_a = float(image_a.dem[line_a, samp_a])
-    if not np.isfinite(height_a):
-        return None
-
-    src = np.array([line_a, samp_a, 1.0], dtype=np.float64)
-    dst_a = affine.astype(np.float64) @ src
-
-    lat_a, lon_a = image_a.rpc.RPC_PHOTO2OBJ(
-        np.array([dst_a[1]], dtype=np.float64),
-        np.array([dst_a[0]], dtype=np.float64),
-        np.array([height_a], dtype=np.float64),
-        'numpy',
+    rpc_a_adj = deepcopy(image_a.rpc)
+    rpc_a_adj.Clear_Adjust()
+    rpc_a_adj.Update_Adjust(affine)
+    return compute_pair_tiepoint_error(
+        image_a=image_a,
+        image_b=image_b,
+        tie_idx=tie_idx,
+        rpc_a_override=rpc_a_adj,
+        rpc_b_override=image_b.rpc,
+        height_fusion="median",
+        lm_max_nfev=50,
+        reduction="mean",
     )
-    samp_b_proj, line_b_proj = image_b.rpc.RPC_OBJ2PHOTO(
-        lat_a,
-        lon_a,
-        np.array([height_a], dtype=np.float64),
-        'numpy',
-    )
-    pred = np.array([line_b_proj[0], samp_b_proj[0]], dtype=np.float64)
-    tgt = np.array([line_b, samp_b], dtype=np.float64)
-    return float(np.linalg.norm(pred - tgt))
 
 
 def process_pair(

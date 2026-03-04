@@ -16,10 +16,10 @@ from shapely.geometry import Polygon, Point, box
 from model.encoder import Encoder
 from model.predictor import Predictor
 from shared.utils import str2bool, get_current_time, load_model_state_dict, load_config, project_mercator
-from shared.rpc import project_linesamp
 from infer.utils import is_overlap
 from infer.rs_image import RSImage, RSImageMeta
 from infer.pair import Pair
+from infer.validate import compute_pair_tiepoint_error
 
 
 def init_random_seed(seed: int):
@@ -280,24 +280,22 @@ def calc_initial_window_error(
     affine: np.ndarray,
     tie_idx: int,
 ) -> float:
-    line_a = float(image_a.tie_points[tie_idx, 0])
-    samp_a = float(image_a.tie_points[tie_idx, 1])
-    line_b = float(image_b.tie_points[tie_idx, 0])
-    samp_b = float(image_b.tie_points[tie_idx, 1])
-    h = float(image_a.tie_points_heights[tie_idx])
-
-    line_gt, samp_gt = project_linesamp(
-        image_b.rpc,
-        image_a.rpc,
-        np.array([line_b], dtype=np.float64),
-        np.array([samp_b], dtype=np.float64),
-        np.array([h], dtype=np.float64),
-        output_type='numpy',
+    rpc_a_adj = deepcopy(image_a.rpc)
+    rpc_a_adj.Clear_Adjust()
+    rpc_a_adj.Update_Adjust(affine)
+    err = compute_pair_tiepoint_error(
+        image_a=image_a,
+        image_b=image_b,
+        tie_idx=tie_idx,
+        rpc_a_override=rpc_a_adj,
+        rpc_b_override=image_b.rpc,
+        height_fusion="median",
+        lm_max_nfev=50,
+        reduction="mean",
     )
-
-    src = np.array([line_a, samp_a, 1.0], dtype=np.float64)
-    pred = affine @ src
-    return float(np.sqrt((pred[0] - line_gt[0]) ** 2 + (pred[1] - samp_gt[0]) ** 2))
+    if err is None:
+        return float('nan')
+    return float(err)
 
 
 def summarize_errors(errors: np.ndarray) -> Dict[str, float]:
