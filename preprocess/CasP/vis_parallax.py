@@ -179,7 +179,7 @@ def main():
     parser.add_argument("--window_size", type=int, default=50, help="Sliding window size K (stride is also K)")
     parser.add_argument("--alpha", type=float, default=0.4, help="Opacity of the parallax overlay (0.0 to 1.0)")
     parser.add_argument("--left",type=float,default=2.)
-    parser.add_argument("--right",type=float,default=8.)
+    parser.add_argument("--right",type=float,default=10.)
     
     args = parser.parse_args()
     
