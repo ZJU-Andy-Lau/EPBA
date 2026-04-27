@@ -24,7 +24,7 @@ from infer.validate import compute_multiview_pair_errors
 from infer.pair import Pair
 from infer.rs_image import RSImage,RSImageMeta,vis_registration
 from infer.monitor import StatusMonitor, StatusReporter # 新增导入
-from baseline.results_logger import ExperimentLogger
+from shared.results_logger import ExperimentLogger
 
 def init_random_seed(args):
     seed = args.random_seed 
