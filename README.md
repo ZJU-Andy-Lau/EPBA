@@ -356,9 +356,7 @@ torchrun --nproc_per_node=4 infer/main_ref.py \
 - `--max_window_size / --min_window_size / --max_window_num`
 - `--min_cover_area_ratio / --quad_split_times`
 - `--predictor_iter_num`
-- `--match`
 - `--output_path / --experiment_id / --results_csv / --output_rpc`
-- `--usgs_dem`：切换 DEM 文件名到 `dem_usgs.npy`
 
 EPA 会为每景待平差影像搜索重叠参考影像，估计多个仿射后融合更新 RPC。
 
