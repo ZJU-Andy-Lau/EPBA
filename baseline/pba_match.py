@@ -316,6 +316,8 @@ def main(args):
             reporter.log(f"Total tie points checked: {report['count']}")
             reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
             reporter.log(f"Median Error: {report['median']:.4f} pix")
+            reporter.log(f"P90 Error:    {report['p90']:.4f} pix")
+            reporter.log(f"P95 Error:    {report['p95']:.4f} pix")
             reporter.log(f"Max Error:    {report['max']:.4f} pix")
             reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
             reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
@@ -357,6 +359,8 @@ def main(args):
                     "pba_time": pba_time,
                     "mean_error": report["mean"],
                     "median_error": report["median"],
+                    "p90_error": report["p90"],
+                    "p95_error": report["p95"],
                     "rmse": report["rmse"],
                     "max_error": report["max"],
                     "lt_1pix_percent": report["<1pix_percent"],
