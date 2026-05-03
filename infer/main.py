@@ -303,6 +303,8 @@ def main(args):
             reporter.log(f"Total tie points checked: {report['count']}")
             reporter.log(f"Mean Error:   {report['mean']:.4f} pix")
             reporter.log(f"Median Error: {report['median']:.4f} pix")
+            reporter.log(f"P90 Error:    {report['p90']:.4f} pix")
+            reporter.log(f"P95 Error:    {report['p95']:.4f} pix")
             reporter.log(f"Max Error:    {report['max']:.4f} pix")
             reporter.log(f"RMSE:         {report['rmse']:.4f} pix")
             reporter.log(f"< 1.0 pix: {report['<1pix_percent']:.2f} %")
@@ -315,11 +317,13 @@ def main(args):
                     vis_registration(image_a=images[i],image_b=images[j],output_path=args.output_path,device=args.device)
 
             if args.results_csv:
-                logger = ExperimentLogger(args.results_csv,["experiment_id","mean","median","<1","<3","<5","infer_time","pba_time"])
+                logger = ExperimentLogger(args.results_csv,["experiment_id","mean","median","p90","p95","<1","<3","<5","infer_time","pba_time"])
                 logger.append({
                         "experiment_id": args.experiment_id,
                         "mean": report['mean'],
                         "median":report['median'],
+                        "p90":report['p90'],
+                        "p95":report['p95'],
                         "<1":report['<1pix_percent'],
                         "<3":report['<3pix_percent'],
                         "<5":report['<5pix_percent'],

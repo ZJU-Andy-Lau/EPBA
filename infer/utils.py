@@ -574,10 +574,28 @@ def haversine_distance(coords1: np.ndarray, coords2: np.ndarray) -> np.ndarray:
     return distance
 
 def get_report_dict(all_distances:np.ndarray):
+    all_distances = np.asarray(all_distances, dtype=np.float64).reshape(-1)
+    valid_mask = np.isfinite(all_distances)
+    all_distances = all_distances[valid_mask]
     total_points = len(all_distances)
+    if total_points == 0:
+        return {
+            'mean': 0.0,
+            'median': 0.0,
+            'p90': 0.0,
+            'p95': 0.0,
+            'max': 0.0,
+            'rmse': 0.0,
+            'count': 0,
+            '<1pix_percent': 0.0,
+            '<3pix_percent': 0.0,
+            '<5pix_percent': 0.0,
+        }
     report = {
         'mean': float(np.mean(all_distances)),
         'median': float(np.median(all_distances)),
+        'p90': float(np.percentile(all_distances, 90)),
+        'p95': float(np.percentile(all_distances, 95)),
         'max': float(np.max(all_distances)),
         'rmse': float(np.sqrt(np.mean(all_distances**2))),
         'count': total_points,

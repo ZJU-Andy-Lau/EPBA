@@ -25,6 +25,8 @@ class ExperimentLogger:
                 "pba_time",
                 "mean_error",
                 "median_error",
+                "p90_error",
+                "p95_error",
                 "rmse",
                 "max_error",
                 "lt_1pix_percent",
