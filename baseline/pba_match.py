@@ -193,6 +193,9 @@ def main(args):
     reporter = StatusReporter(rank, world_size, experiment_id_clean, monitor)
 
     matcher = build_matcher(args)
+    reporter.log(f"FM filtering: method={args.fm_method}, thresh={args.fm_ransac_thresh}, conf={args.fm_confidence}, max_iters={args.fm_max_iters}")
+    pba_loss_name = "huber" if args.pba_irls_huber else "none"
+    reporter.log(f"PBA robust loss: {pba_loss_name}, huber_delta={args.pba_huber_delta}, huber_min_weight={args.pba_huber_min_weight}")
 
     try:
         init_random_seed(args.random_seed)
@@ -281,7 +284,10 @@ def main(args):
                 fixed_id=args.fixed_id,
                 device=args.device,
                 reporter=reporter,
-                output_path=args.output_path
+                output_path=args.output_path,
+                robust_loss="huber" if args.pba_irls_huber else "none",
+                huber_delta=args.pba_huber_delta,
+                huber_min_weight=args.pba_huber_min_weight,
             )
 
             torch.cuda.synchronize()
@@ -320,8 +326,10 @@ def main(args):
                 matcher_config = {
                     "matcher": args.matcher,
                     "sift_ratio_thresh": args.sift_ratio_thresh,
+                    "fm_method": args.fm_method,
                     "fm_ransac_thresh": args.fm_ransac_thresh,
                     "fm_confidence": args.fm_confidence,
+                    "fm_max_iters": args.fm_max_iters,
                     "loftr_weight_path": args.loftr_weight_path,
                     "superpoint_weight_path": args.superpoint_weight_path,
                     "superglue_weight_path": args.superglue_weight_path,
@@ -335,6 +343,13 @@ def main(args):
                     "experiment_id": args.experiment_id,
                     "dataset_root": args.root,
                     "matcher": args.matcher,
+                    "fm_method": args.fm_method,
+                    "fm_ransac_thresh": args.fm_ransac_thresh,
+                    "fm_confidence": args.fm_confidence,
+                    "fm_max_iters": args.fm_max_iters,
+                    "pba_irls_huber": args.pba_irls_huber,
+                    "pba_huber_delta": args.pba_huber_delta,
+                    "pba_huber_min_weight": args.pba_huber_min_weight,
                     # "matcher_config": matcher_config,
                     "num_pairs": len(all_results),
                     "match_points_total": total_match_points,
@@ -387,13 +402,18 @@ if __name__ == '__main__':
     parser.add_argument('--crop_size', type=int, default=640)
 
     parser.add_argument('--sift_ratio_thresh', type=float, default=0.75)
+    parser.add_argument('--fm_method', type=str, default='ransac', choices=['ransac', 'magsac'])
     parser.add_argument('--fm_ransac_thresh', type=float, default=3.0)
     parser.add_argument('--fm_confidence', type=float, default=0.99)
+    parser.add_argument('--fm_max_iters', type=int, default=10000)
     parser.add_argument('--min_match_points', type=int, default=30)
     parser.add_argument('--max_match_points', type=int, default=2000)
 
     parser.add_argument('--fixed_id', type=int, default=None)
     parser.add_argument('--solver_max_iter', type=int, default=15)
+    parser.add_argument('--pba_irls_huber', type=str2bool, default=False)
+    parser.add_argument('--pba_huber_delta', type=float, default=3.0)
+    parser.add_argument('--pba_huber_min_weight', type=float, default=1e-3)
 
     parser.add_argument('--output_path', type=str, default='results')
     parser.add_argument('--experiment_id', type=str, default=None)

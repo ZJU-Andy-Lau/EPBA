@@ -214,11 +214,19 @@ class PBAAffineSolver:
         sample_points_num: int = 256,
         device: str = "cuda",
         reporter: StatusReporter = None,
-        output_path = None
+        output_path = None,
+        robust_loss: str = "none",
+        huber_delta: float = 3.0,
+        huber_min_weight: float = 1e-3,
     ):
         self.fixed_id = fixed_id
         self.device = device
         self.reporter = reporter
+        self.robust_loss = (robust_loss or "none").lower()
+        if self.robust_loss not in {"none", "huber"}:
+            raise ValueError(f"Unsupported robust_loss: {robust_loss}. Expected one of: none, huber")
+        self.huber_delta = float(huber_delta)
+        self.huber_min_weight = float(huber_min_weight)
         if not output_path is None:
             self.output_path = os.path.join(output_path,'pba_solver_output')
             os.makedirs(self.output_path,exist_ok=True)
@@ -412,6 +420,17 @@ class PBAAffineSolver:
         r_all = np.concatenate(res, axis=0)
         return float(np.sqrt(np.mean(r_all ** 2)))
 
+
+    def _compute_tie_weights(self, residual_4d: np.ndarray) -> np.ndarray:
+        n = residual_4d.shape[0]
+        if self.robust_loss == "none":
+            return np.ones((n,), dtype=np.float64)
+        rms = np.sqrt(np.mean(np.square(residual_4d), axis=1))
+        w = np.ones_like(rms, dtype=np.float64)
+        mask = rms > self.huber_delta
+        if np.any(mask):
+            w[mask] = self.huber_delta / np.maximum(rms[mask], 1e-12)
+        return np.clip(w, self.huber_min_weight, 1.0)
     def _add_block(self, blocks: Dict[Tuple[int, int], np.ndarray], a: int, b: int, value: np.ndarray):
         key = (a, b)
         if key in blocks:
@@ -464,6 +483,7 @@ class PBAAffineSolver:
             b = np.zeros((n_params,), dtype=np.float64)
             sum_sq = 0.0
             count = 0
+            iter_weights = []
 
             for d in self.ties:
                 i = int(d["i"])
@@ -477,6 +497,10 @@ class PBAAffineSolver:
                 point_xy = self._point_base_xy_batch(i, pts_i, h, A_i)
                 r0, Ji, Jj, Jx = self._jacobian_point_batch(i, j, pts_i, pts_j, point_xy, h, A_i, A_j)
                 l = -r0
+                tie_weights = self._compute_tie_weights(r0)
+                iter_weights.append(tie_weights)
+                w_col = tie_weights[:, None]
+                w_mat = tie_weights[:, None, None]
                 sum_sq += float(np.sum(r0 ** 2))
                 count += int(r0.size)
 
@@ -493,12 +517,12 @@ class PBAAffineSolver:
                     continue
 
                 Js = np.concatenate(Js_blocks, axis=2)
-                H_ss = np.einsum('nki,nkj->nij', Js, Js)
-                H_sx = np.einsum('nki,nkj->nij', Js, Jx)
-                H_xs = np.einsum('nki,nkj->nij', Jx, Js)
-                H_xx = np.einsum('nki,nkj->nij', Jx, Jx)
-                b_s = np.einsum('nki,nk->ni', Js, l)
-                b_x = np.einsum('nki,nk->ni', Jx, l)
+                H_ss = np.einsum('nki,nkj->nij', Js, Js) * w_mat
+                H_sx = np.einsum('nki,nkj->nij', Js, Jx) * w_mat
+                H_xs = np.einsum('nki,nkj->nij', Jx, Js) * w_mat
+                H_xx = np.einsum('nki,nkj->nij', Jx, Jx) * w_mat
+                b_s = np.einsum('nki,nk->ni', Js, l * w_col)
+                b_x = np.einsum('nki,nk->ni', Jx, l * w_col)
 
                 H_xx = H_xx + np.eye(2, dtype=np.float64)[None, :, :] * 1e-12
                 H_xx_inv = np.linalg.inv(H_xx)
@@ -520,7 +544,14 @@ class PBAAffineSolver:
 
             if verbose:
                 if self.reporter:
-                    self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={count}, params={n_params}")
+                    if self.robust_loss == "huber":
+                        all_w = np.concatenate(iter_weights) if iter_weights else np.ones((1,), dtype=np.float64)
+                        mean_w = float(np.mean(all_w))
+                        min_w = float(np.min(all_w))
+                        down_ratio = float(np.mean(all_w < 1.0))
+                        self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={count}, params={n_params}, w_mean={mean_w:.4f}, w_min={min_w:.4f}, w_down={down_ratio:.2%}")
+                    else:
+                        self.reporter.log(f"[iter {it:02d}] RMS = {rms0:.6f} px, residual_dim={count}, params={n_params}")
 
             if prev is not None and abs(prev - rms0) < tol:
                 return torch.from_numpy(A)
