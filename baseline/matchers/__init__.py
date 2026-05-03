@@ -7,16 +7,20 @@ def build_matcher(args) -> BaseMatcher:
         from .sift import SIFTMatcher
         return SIFTMatcher(
             ratio_thresh=args.sift_ratio_thresh,
-            fm_ransac_thresh=args.fm_ransac_thresh,
-            fm_confidence=args.fm_confidence,
+            fm_ransac_thresh=getattr(args, "fm_ransac_thresh", 3.0),
+            fm_confidence=getattr(args, "fm_confidence", 0.99),
+            fm_method=getattr(args, "fm_method", "ransac"),
+            fm_max_iters=getattr(args, "fm_max_iters", 10000),
             device=args.device,
         )
     if matcher == "loftr":
         from .loftr import LoFTRMatcher
         return LoFTRMatcher(
             weight_path=args.loftr_weight_path,
-            fm_ransac_thresh=args.fm_ransac_thresh,
-            fm_confidence=args.fm_confidence,
+            fm_ransac_thresh=getattr(args, "fm_ransac_thresh", 3.0),
+            fm_confidence=getattr(args, "fm_confidence", 0.99),
+            fm_method=getattr(args, "fm_method", "ransac"),
+            fm_max_iters=getattr(args, "fm_max_iters", 10000),
             device=args.device,
         )
     if matcher == "superglue":

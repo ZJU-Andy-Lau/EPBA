@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from .base import BaseMatcher, MatchResult
+from .fundamental import filter_matches_by_fundamental
 
 
 class LoFTRMatcher(BaseMatcher):
@@ -15,6 +16,8 @@ class LoFTRMatcher(BaseMatcher):
         weight_path: Optional[str] = None,
         fm_ransac_thresh: float = 3.0,
         fm_confidence: float = 0.99,
+        fm_method: str = "ransac",
+        fm_max_iters: int = 10000,
         device: str = "cpu",
     ):
         super().__init__(device=device)
@@ -24,6 +27,8 @@ class LoFTRMatcher(BaseMatcher):
 
         self.fm_ransac_thresh = fm_ransac_thresh
         self.fm_confidence = fm_confidence
+        self.fm_method = fm_method
+        self.fm_max_iters = fm_max_iters
         if weight_path is not None:
             if not weight_path:
                 raise ValueError("LoFTR weight path is empty")
@@ -48,16 +53,16 @@ class LoFTRMatcher(BaseMatcher):
         correspondences = self.model(batch)
         mkpts0 = correspondences["keypoints0"].detach().cpu().numpy()
         mkpts1 = correspondences["keypoints1"].detach().cpu().numpy()
-        if len(mkpts0) < 4:
-            return MatchResult(np.empty((0, 2)), np.empty((0, 2)), match_time=time.perf_counter() - start)
-        M, mask = cv2.findFundamentalMat(
-            mkpts0, mkpts1, cv2.FM_RANSAC, self.fm_ransac_thresh, self.fm_confidence
+        mkpts0, mkpts1 = filter_matches_by_fundamental(
+            mkpts0,
+            mkpts1,
+            fm_method=self.fm_method,
+            fm_ransac_thresh=self.fm_ransac_thresh,
+            fm_confidence=self.fm_confidence,
+            fm_max_iters=self.fm_max_iters,
         )
-        if M is None:
-            return MatchResult(np.empty((0, 2)), np.empty((0, 2)), match_time=time.perf_counter() - start)
-        mask = mask.ravel().astype(bool)
         return MatchResult(
-            mkpts0[mask],
-            mkpts1[mask],
+            mkpts0,
+            mkpts1,
             match_time=time.perf_counter() - start,
         )
