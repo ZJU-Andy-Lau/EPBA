@@ -91,7 +91,16 @@ def load_data(args):
 def load_models(args):
     pprint("Loading Models")
     
-    encoder = Encoder(dino_weight_path = args.dino_weight_path,embed_dim=256,ctx_dim=128)
+    encoder = Encoder(
+        dino_weight_path=args.dino_weight_path,
+        embed_dim=256,
+        ctx_dim=128,
+        backbone=args.backbone,
+        resnet_weight_path=args.resnet_weight_path,
+        resnet_weights=args.resnet_weights,
+        resnet_layers=args.resnet_layers,
+        freeze_backbone=args.freeze_backbone,
+    )
     ctx_decoder = ContextDecoder(ctx_dim=128)
     
     adapter_optimizer = optim.AdamW(params = list(encoder.adapter.parameters()) + list(ctx_decoder.parameters()),lr = args.lr_encoder_max) # 同时优化adapter和ctx_decoder
@@ -346,6 +355,11 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_num',type=int,default=None)
     parser.add_argument('--dataset_select',type=str,default=None)
     parser.add_argument('--dino_weight_path',type=str,default=None)
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--resnet_weight_path', type=str, default=None)
+    parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
+    parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--freeze_backbone', type=str2bool, default=True)
     parser.add_argument('--adapter_path',type=str,default=None)
     parser.add_argument('--decoder_path',type=str,default=None)
     parser.add_argument('--model_save_path',type=str,default=f'./weights/{get_current_time()}')
@@ -378,6 +392,5 @@ if __name__ == '__main__':
         pprint(f"{k}:{v}")
     pprint("===================================================================")
     main(args)
-
 
 

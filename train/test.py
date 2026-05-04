@@ -13,7 +13,7 @@ from torchvision import transforms
 from load_data import generate_affine_matrices,xy2rc_mat
 from model.encoder import Encoder
 from model.gru import GRUBlock
-from shared.utils import get_current_time,load_model_state_dict,load_config
+from shared.utils import get_current_time,load_model_state_dict,load_config,str2bool
 import shared.visualize as visualizer
 from solve.solve_windows import WindowSolver
 
@@ -89,7 +89,12 @@ def load_models(args):
 
     encoder = Encoder(dino_weight_path=args.dino_weight_path,
                       embed_dim=model_configs['encoder']['embed_dim'],
-                      ctx_dim=model_configs['encoder']['ctx_dim'])
+                      ctx_dim=model_configs['encoder']['ctx_dim'],
+                      backbone=args.backbone,
+                      resnet_weight_path=args.resnet_weight_path,
+                      resnet_weights=args.resnet_weights,
+                      resnet_layers=args.resnet_layers,
+                      freeze_backbone=args.freeze_backbone)
     
     encoder.load_adapter(args.adapter_path)
     
@@ -247,6 +252,11 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_num',type=int,default=10)
     parser.add_argument('--dataset_select',type=str,default=None)
     parser.add_argument('--dino_weight_path',type=str,default=None)
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--resnet_weight_path', type=str, default=None)
+    parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
+    parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--freeze_backbone', type=str2bool, default=True)
     parser.add_argument('--adapter_path',type=str,default=None)
     parser.add_argument('--gru_path',type=str,default=None)
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')

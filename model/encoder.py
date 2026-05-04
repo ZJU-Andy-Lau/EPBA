@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple
+from torchvision.models import resnet50, ResNet50_Weights
 
 # --------------------------------------------------------
 # 1. RoPE 实现 (严格 2D)
@@ -308,35 +309,107 @@ class Adapter(nn.Module):
 # --------------------------------------------------------
 # 5. Siamese Encoder (主入口)
 # --------------------------------------------------------
+class DINOv3BackboneWrapper(nn.Module):
+    def __init__(self, dino_weight_path, layers=None):
+        super().__init__()
+        self.layers = layers if layers is not None else [5, 11, 17, 23]
+        self.backbone = torch.hub.load('./dinov3', 'dinov3_vitl16', source='local', weights=dino_weight_path)
+        self.backbone.eval()
+        self.backbone.requires_grad_(False)
+        self.output_dim = 1024 * len(self.layers)
+
+    def forward(self, x):
+        B, _, H, W = x.shape
+        feat_multilayers = self.backbone.get_intermediate_layers(x=x, n=self.layers)
+        feat_backbone = torch.cat(feat_multilayers, dim=-1)
+        feat_backbone = feat_backbone.reshape(B, H // 16, W // 16, -1).permute(0, 3, 1, 2)
+        return feat_backbone
+
+
+class ResNet50BackboneWrapper(nn.Module):
+    _valid_layers = ("layer1", "layer2", "layer3", "layer4")
+    _layer_dims = {"layer1": 256, "layer2": 512, "layer3": 1024, "layer4": 2048}
+
+    def __init__(self, resnet_weight_path=None, resnet_weights="IMAGENET1K_V2", resnet_layers=None):
+        super().__init__()
+        self.resnet_layers = resnet_layers if resnet_layers is not None else ["layer1", "layer2", "layer3"]
+        for layer in self.resnet_layers:
+            if layer not in self._valid_layers:
+                raise ValueError(f"Invalid resnet layer '{layer}'. Valid options: {self._valid_layers}")
+
+        if resnet_weight_path:
+            model = resnet50(weights=None)
+            state_dict = torch.load(resnet_weight_path, map_location="cpu")
+            model.load_state_dict(state_dict, strict=True)
+        else:
+            weights = ResNet50_Weights[resnet_weights] if isinstance(resnet_weights, str) else resnet_weights
+            model = resnet50(weights=weights)
+
+        self.stem = nn.Sequential(model.conv1, model.bn1, model.relu, model.maxpool)
+        self.layer1 = model.layer1
+        self.layer2 = model.layer2
+        self.layer3 = model.layer3
+        self.layer4 = model.layer4
+        self.output_dim = sum(self._layer_dims[k] for k in self.resnet_layers)
+
+    def forward(self, x):
+        x = self.stem(x)
+        feats = {}
+        x = self.layer1(x); feats["layer1"] = x
+        x = self.layer2(x); feats["layer2"] = x
+        x = self.layer3(x); feats["layer3"] = x
+        x = self.layer4(x); feats["layer4"] = x
+
+        target_h = x.shape[-2] * 2
+        target_w = x.shape[-1] * 2
+        aligned = []
+        for name in self.resnet_layers:
+            f = feats[name]
+            if f.shape[-2:] != (target_h, target_w):
+                f = F.interpolate(f, size=(target_h, target_w), mode="bilinear", align_corners=False)
+            aligned.append(f)
+        return torch.cat(aligned, dim=1)
+
+
 class Encoder(nn.Module):
-    def __init__(self, dino_weight_path, embed_dim=256, ctx_dim=128, layers=[5, 11, 17, 23],use_adapter = True, use_conf = True, verbose=1):
+    def __init__(self, dino_weight_path=None, embed_dim=256, ctx_dim=128, layers=[5, 11, 17, 23],
+                 use_adapter=True, use_conf=True, verbose=1, backbone="dinov3",
+                 resnet_weight_path=None, resnet_weights="IMAGENET1K_V2", resnet_layers="layer1,layer2,layer3",
+                 freeze_backbone=True):
         super().__init__()
         self.verbose = verbose
         self.layers = layers
         self.embed_dim = embed_dim
         self.ctx_dim = ctx_dim
 
-        # 加载 DINOv3
-        self.backbone = torch.hub.load('./dinov3', 'dinov3_vitl16', source='local', weights=dino_weight_path)
-        self.backbone.eval()
-        self.backbone.requires_grad_(False)
+        self.backbone_name = backbone.lower()
+        if isinstance(resnet_layers, str):
+            resnet_layers = [i.strip() for i in resnet_layers.split(",") if i.strip()]
 
-        # 输入通道数 = DINO每层通道 * 层数
-        input_channels = 1024 * len(layers) 
+        if self.backbone_name == "dinov3":
+            self.backbone = DINOv3BackboneWrapper(dino_weight_path=dino_weight_path, layers=layers)
+        elif self.backbone_name == "resnet50":
+            self.backbone = ResNet50BackboneWrapper(
+                resnet_weight_path=resnet_weight_path,
+                resnet_weights=resnet_weights,
+                resnet_layers=resnet_layers,
+            )
+        else:
+            raise ValueError(f"Unsupported backbone '{backbone}'. Use 'dinov3' or 'resnet50'.")
+
+        self.freeze_backbone = freeze_backbone
+        if self.freeze_backbone:
+            self.backbone.requires_grad_(False)
+            self.backbone.eval()
+
+        input_channels = self.backbone.output_dim
         self.adapter = Adapter(input_dim=input_channels, embed_dim=embed_dim, ctx_dim=ctx_dim, use_adapter=use_adapter,use_conf=use_conf)
 
         self.use_adapter = use_adapter
         self.use_conf = use_conf
 
-    def _extract_dino_features(self, x):
-        """
-        提取多层特征并拼接
-        """
-        B, _, H, W = x.shape
-        feat_multilayers = self.backbone.get_intermediate_layers(x=x, n=self.layers)
-        feat_backbone = torch.cat(feat_multilayers, dim=-1)
-        feat_backbone = feat_backbone.reshape(B, H // 16, W // 16, -1).permute(0, 3, 1, 2)
-        return feat_backbone
+    def _extract_backbone_features(self, x):
+        return self.backbone(x)
 
     def forward(self, img0, img1):
         """
@@ -345,7 +418,7 @@ class Encoder(nn.Module):
         # 1. 批量提取 Backbone 特征 (Batching for efficiency)
         # 拼接成 [2B, C, H, W] 进 DINO，比跑两次快
         imgs = torch.cat([img0, img1], dim=0)
-        feats_all = self._extract_dino_features(imgs)
+        feats_all = self._extract_backbone_features(imgs)
         
         # 拆分
         feat0, feat1 = feats_all.chunk(2, dim=0)
@@ -357,9 +430,11 @@ class Encoder(nn.Module):
         return (m0, c0, conf0), (m1, c1, conf1)
     
     def unfreeze_backbone(self, layers: List[int] = []):
+        if self.backbone_name != "dinov3":
+            raise RuntimeError("unfreeze_backbone currently only supports dinov3 backbone.")
         parameters = []
         for layer in layers:
-            block = self.backbone.blocks[layer]
+            block = self.backbone.backbone.blocks[layer]
             block.requires_grad_(True)
             parameters.extend(list(block.parameters()))
             if self.verbose > 0:
@@ -367,7 +442,16 @@ class Encoder(nn.Module):
         return parameters
     
     def load_adapter(self, adapter_path: str):
-        self.adapter.load_state_dict({k.replace("module.", ""): v for k, v in torch.load(adapter_path, map_location='cpu').items()}, strict=False)
+        state_dict = {k.replace("module.", ""): v for k, v in torch.load(adapter_path, map_location='cpu').items()}
+        try:
+            self.adapter.load_state_dict(state_dict, strict=True)
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"Failed to load adapter checkpoint '{adapter_path}'. "
+                f"Current backbone='{self.backbone_name}' expects adapter input_dim={self.backbone.output_dim}. "
+                f"Checkpoint is likely incompatible with current backbone/input_dim (e.g., DINO adapter vs ResNet adapter). "
+                f"Please train a dedicated adapter for the selected backbone. Original error: {e}"
+            ) from e
     
     def save_adapter(self, output_path: str):
         state_dict = {k: v.detach().cpu() for k, v in self.adapter.state_dict().items()}
@@ -376,3 +460,9 @@ class Encoder(nn.Module):
     def save_backbone(self, output_path: str):
         state_dict = {k: v.detach().cpu() for k, v in self.backbone.state_dict().items()}
         torch.save(state_dict, output_path)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self.freeze_backbone:
+            self.backbone.eval()
+        return self

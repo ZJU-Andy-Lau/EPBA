@@ -59,6 +59,11 @@ def load_encoder(args):
         ctx_dim=model_configs['encoder']['ctx_dim'],
         use_adapter=args.use_adapter,
         use_conf=args.use_conf,
+        backbone=args.backbone,
+        resnet_weight_path=args.resnet_weight_path,
+        resnet_weights=args.resnet_weights,
+        resnet_layers=args.resnet_layers,
+        freeze_backbone=args.freeze_backbone,
     )
     encoder.load_adapter(args.adapter_path)
     if torch.cuda.is_available():
@@ -367,6 +372,11 @@ if __name__ == '__main__':
     parser.add_argument('--conf_alpha', type=float, default=0.7)
 
     parser.add_argument('--dino_path', type=str, default='weights')
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--resnet_weight_path', type=str, default=None)
+    parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
+    parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--freeze_backbone', type=str2bool, default=True)
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
     parser.add_argument('--use_adapter', type=str2bool, default=True)
