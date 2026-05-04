@@ -126,7 +126,12 @@ def load_models(args, reporter):
                       embed_dim=model_configs['encoder']['embed_dim'],
                       ctx_dim=model_configs['encoder']['ctx_dim'],
                       use_adapter=args.use_adapter,
-                      use_conf=args.use_conf)
+                      use_conf=args.use_conf,
+                      backbone=args.backbone,
+                      resnet_weight_path=args.resnet_weight_path,
+                      resnet_weights=args.resnet_weights,
+                      resnet_layers=args.resnet_layers,
+                      freeze_backbone=args.freeze_backbone)
     
     encoder.load_adapter(args.adapter_path)
     
@@ -358,6 +363,11 @@ if __name__ == '__main__':
     #==============================模型相关设置=====================================
 
     parser.add_argument('--dino_path', type=str, default='weights')
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--resnet_weight_path', type=str, default=None)
+    parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
+    parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--freeze_backbone', type=str2bool, default=True)
 
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
 
