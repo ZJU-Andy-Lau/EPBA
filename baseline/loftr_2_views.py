@@ -16,6 +16,7 @@ import cv2
 import torch
 from torchvision.transforms import v2
 
+from shared.normalization import get_normalization_coefs
 from shared.utils import str2bool, get_current_time, load_config
 from infer.utils import find_intersection, find_squares, apply_H
 from infer.rs_image import RSImage, RSImageMeta
@@ -63,6 +64,13 @@ def load_encoder(args):
         resnet_weight_path=args.resnet_weight_path,
         resnet_weights=args.resnet_weights,
         resnet_layers=args.resnet_layers,
+        satmae_weight_path=args.satmae_weight_path,
+        satmae_layers=args.satmae_layers,
+        satmae_img_size=args.satmae_img_size,
+        satmae_patch_size=args.satmae_patch_size,
+        satmae_model=args.satmae_model,
+        satmae_ckpt_key=args.satmae_ckpt_key,
+        satmae_apply_norm=args.satmae_apply_norm,
         freeze_backbone=args.freeze_backbone,
     )
     encoder.load_adapter(args.adapter_path)
@@ -74,9 +82,10 @@ def load_encoder(args):
 
 
 def extract_conf_maps(encoder: Encoder, img_a: np.ndarray, img_b: np.ndarray, device: str):
+    norm_coefs = get_normalization_coefs(getattr(encoder, "backbone_name", "dinov3"), "auto")
     transform = v2.Compose([
         v2.ToDtype(torch.float32, scale=True),
-        v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+        v2.Normalize(mean=norm_coefs["mean"], std=norm_coefs["std"])
     ])
     input_a = torch.from_numpy(img_a).permute(2, 0, 1).contiguous().unsqueeze(0).to(device, non_blocking=True)
     input_b = torch.from_numpy(img_b).permute(2, 0, 1).contiguous().unsqueeze(0).to(device, non_blocking=True)
@@ -372,10 +381,17 @@ if __name__ == '__main__':
     parser.add_argument('--conf_alpha', type=float, default=0.7)
 
     parser.add_argument('--dino_path', type=str, default='weights')
-    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50', 'satmae'])
     parser.add_argument('--resnet_weight_path', type=str, default=None)
     parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
     parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--satmae_weight_path', type=str, default=None)
+    parser.add_argument('--satmae_layers', type=str, default='5,11,17,23')
+    parser.add_argument('--satmae_img_size', type=int, default=512)
+    parser.add_argument('--satmae_patch_size', type=int, default=16)
+    parser.add_argument('--satmae_model', type=str, default='vit_large_patch16')
+    parser.add_argument('--satmae_ckpt_key', type=str, default=None)
+    parser.add_argument('--satmae_apply_norm', type=str2bool, default=True)
     parser.add_argument('--freeze_backbone', type=str2bool, default=True)
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
