@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple
 from torchvision.models import resnet50, ResNet50_Weights
+from model.backbones.satmae import SatMAEBackboneWrapper, parse_satmae_layers
 
 # --------------------------------------------------------
 # 1. RoPE 实现 (严格 2D)
@@ -375,7 +376,9 @@ class Encoder(nn.Module):
     def __init__(self, dino_weight_path=None, embed_dim=256, ctx_dim=128, layers=[5, 11, 17, 23],
                  use_adapter=True, use_conf=True, verbose=1, backbone="dinov3",
                  resnet_weight_path=None, resnet_weights="IMAGENET1K_V2", resnet_layers="layer1,layer2,layer3",
-                 freeze_backbone=True):
+                 satmae_weight_path=None, satmae_layers="5,11,17,23", satmae_img_size=512,
+                 satmae_patch_size=16, satmae_model="vit_large_patch16", satmae_ckpt_key=None,
+                 satmae_apply_norm=True, freeze_backbone=True):
         super().__init__()
         self.verbose = verbose
         self.layers = layers
@@ -394,8 +397,19 @@ class Encoder(nn.Module):
                 resnet_weights=resnet_weights,
                 resnet_layers=resnet_layers,
             )
+        elif self.backbone_name == "satmae":
+            self.backbone = SatMAEBackboneWrapper(
+                weight_path=satmae_weight_path,
+                layers=parse_satmae_layers(satmae_layers),
+                img_size=satmae_img_size,
+                patch_size=satmae_patch_size,
+                model_name=satmae_model,
+                ckpt_key=satmae_ckpt_key,
+                apply_norm=satmae_apply_norm,
+                verbose=verbose,
+            )
         else:
-            raise ValueError(f"Unsupported backbone '{backbone}'. Use 'dinov3' or 'resnet50'.")
+            raise ValueError(f"Unsupported backbone '{backbone}'. Use 'dinov3', 'resnet50', or 'satmae'.")
 
         self.freeze_backbone = freeze_backbone
         if self.freeze_backbone:
@@ -409,6 +423,9 @@ class Encoder(nn.Module):
         self.use_conf = use_conf
 
     def _extract_backbone_features(self, x):
+        if self.freeze_backbone:
+            with torch.no_grad():
+                return self.backbone(x)
         return self.backbone(x)
 
     def forward(self, img0, img1):
@@ -442,7 +459,25 @@ class Encoder(nn.Module):
         return parameters
     
     def load_adapter(self, adapter_path: str):
-        state_dict = {k.replace("module.", ""): v for k, v in torch.load(adapter_path, map_location='cpu').items()}
+        checkpoint = torch.load(adapter_path, map_location='cpu')
+        if isinstance(checkpoint, dict) and "adapter" in checkpoint:
+            metadata = checkpoint.get("metadata", {})
+            ckpt_backbone = metadata.get("backbone_name")
+            ckpt_output_dim = metadata.get("backbone_output_dim")
+            if ckpt_backbone is not None and ckpt_backbone != self.backbone_name:
+                raise RuntimeError(
+                    f"Adapter checkpoint backbone mismatch: checkpoint backbone='{ckpt_backbone}', "
+                    f"current backbone='{self.backbone_name}'. Train/load an adapter for the selected backbone."
+                )
+            if ckpt_output_dim is not None and int(ckpt_output_dim) != int(self.backbone.output_dim):
+                raise RuntimeError(
+                    f"Adapter checkpoint backbone_output_dim mismatch: checkpoint={ckpt_output_dim}, "
+                    f"current={self.backbone.output_dim}."
+                )
+            raw_state = checkpoint["adapter"]
+        else:
+            raw_state = checkpoint
+        state_dict = {k.replace("module.", ""): v for k, v in raw_state.items()}
         try:
             self.adapter.load_state_dict(state_dict, strict=True)
         except RuntimeError as e:
@@ -455,7 +490,13 @@ class Encoder(nn.Module):
     
     def save_adapter(self, output_path: str):
         state_dict = {k: v.detach().cpu() for k, v in self.adapter.state_dict().items()}
-        torch.save(state_dict, output_path)
+        torch.save({
+            "adapter": state_dict,
+            "metadata": {
+                "backbone_name": self.backbone_name,
+                "backbone_output_dim": int(self.backbone.output_dim),
+            },
+        }, output_path)
 
     def save_backbone(self, output_path: str):
         state_dict = {k: v.detach().cpu() for k, v in self.backbone.state_dict().items()}

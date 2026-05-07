@@ -65,6 +65,18 @@ def load_models(args):
         ctx_dim=model_configs['encoder']['ctx_dim'],
         use_adapter=args.use_adapter,
         use_conf=args.use_conf,
+        backbone=getattr(args, 'backbone', 'dinov3'),
+        resnet_weight_path=getattr(args, 'resnet_weight_path', None),
+        resnet_weights=getattr(args, 'resnet_weights', 'IMAGENET1K_V2'),
+        resnet_layers=getattr(args, 'resnet_layers', 'layer1,layer2,layer3'),
+        satmae_weight_path=getattr(args, 'satmae_weight_path', None),
+        satmae_layers=getattr(args, 'satmae_layers', '5,11,17,23'),
+        satmae_img_size=getattr(args, 'satmae_img_size', 512),
+        satmae_patch_size=getattr(args, 'satmae_patch_size', 16),
+        satmae_model=getattr(args, 'satmae_model', 'vit_large_patch16'),
+        satmae_ckpt_key=getattr(args, 'satmae_ckpt_key', None),
+        satmae_apply_norm=getattr(args, 'satmae_apply_norm', True),
+        freeze_backbone=getattr(args, 'freeze_backbone', True),
     )
     encoder.load_adapter(args.adapter_path)
     predictor = Predictor(
@@ -464,6 +476,17 @@ if __name__ == '__main__':
     parser.add_argument('--select_imgs', type=str, default='-1')
 
     parser.add_argument('--dino_path', type=str, default='weights')
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50', 'satmae'])
+    parser.add_argument('--resnet_weight_path', type=str, default=None)
+    parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
+    parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--satmae_weight_path', type=str, default=None)
+    parser.add_argument('--satmae_layers', type=str, default='5,11,17,23')
+    parser.add_argument('--satmae_img_size', type=int, default=512)
+    parser.add_argument('--satmae_patch_size', type=int, default=16)
+    parser.add_argument('--satmae_model', type=str, default='vit_large_patch16')
+    parser.add_argument('--satmae_ckpt_key', type=str, default=None)
+    parser.add_argument('--satmae_apply_norm', type=str2bool, default=True)
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')
     parser.add_argument('--predictor_path', type=str, default='weights/predictor.pth')
     parser.add_argument('--model_config_path', type=str, default='configs/model_config.yaml')
