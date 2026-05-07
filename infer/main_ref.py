@@ -127,6 +127,13 @@ def load_models(args, reporter):
                       resnet_weight_path=args.resnet_weight_path,
                       resnet_weights=args.resnet_weights,
                       resnet_layers=args.resnet_layers,
+                      satmae_weight_path=args.satmae_weight_path,
+                      satmae_layers=args.satmae_layers,
+                      satmae_img_size=args.satmae_img_size,
+                      satmae_patch_size=args.satmae_patch_size,
+                      satmae_model=args.satmae_model,
+                      satmae_ckpt_key=args.satmae_ckpt_key,
+                      satmae_apply_norm=args.satmae_apply_norm,
                       freeze_backbone=args.freeze_backbone)
     
     encoder.load_adapter(args.adapter_path)
@@ -347,10 +354,17 @@ if __name__ == '__main__':
     #==============================模型相关设置=====================================
 
     parser.add_argument('--dino_path', type=str, default='weights')
-    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50', 'satmae'])
     parser.add_argument('--resnet_weight_path', type=str, default=None)
     parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
     parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--satmae_weight_path', type=str, default=None)
+    parser.add_argument('--satmae_layers', type=str, default='5,11,17,23')
+    parser.add_argument('--satmae_img_size', type=int, default=512)
+    parser.add_argument('--satmae_patch_size', type=int, default=16)
+    parser.add_argument('--satmae_model', type=str, default='vit_large_patch16')
+    parser.add_argument('--satmae_ckpt_key', type=str, default=None)
+    parser.add_argument('--satmae_apply_norm', type=str2bool, default=True)
     parser.add_argument('--freeze_backbone', type=str2bool, default=True)
 
     parser.add_argument('--adapter_path', type=str, default='weights/adapter.pth')

@@ -35,6 +35,7 @@ from model.predictor import Predictor
 from model.ctx_decoder import ContextDecoder
 from criterion.train_loss import Loss
 from scheduler import MultiStageOneCycleLR
+from shared.normalization import get_normalization_coefs
 from shared.utils import str2bool,feats_pca,vis_conf,get_current_time,check_grad,load_model_state_dict
 import shared.visualize as visualizer # 引入新的可视化模块
 from solve.solve_windows import WindowSolver
@@ -74,10 +75,7 @@ def load_data(args):
                            batch_size = args.batch_size,
                            downsample = 16,
                            input_size = 512,
-                           norm_coefs={
-                                'mean':(0.485, 0.456, 0.406),
-                                'std':(0.229, 0.224, 0.225)
-                           },
+                           norm_coefs=get_normalization_coefs(args.backbone, args.normalization),
                            mode='train')
     # sampler = ImageSampler(dataset,shuffle=True)
     sampler = DistributedSampler(dataset, shuffle=True)
@@ -98,6 +96,13 @@ def load_models(args):
         resnet_weight_path=args.resnet_weight_path,
         resnet_weights=args.resnet_weights,
         resnet_layers=args.resnet_layers,
+        satmae_weight_path=args.satmae_weight_path,
+        satmae_layers=args.satmae_layers,
+        satmae_img_size=args.satmae_img_size,
+        satmae_patch_size=args.satmae_patch_size,
+        satmae_model=args.satmae_model,
+        satmae_ckpt_key=args.satmae_ckpt_key,
+        satmae_apply_norm=args.satmae_apply_norm,
         freeze_backbone=args.freeze_backbone,
     )
     predictor = Predictor(corr_levels=2,corr_radius=4,context_dim=128,hidden_dim=128,use_mtf=args.use_mtf)
@@ -490,10 +495,18 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_num',type=int,default=None)
     parser.add_argument('--dataset_select',type=str,default=None)
     parser.add_argument('--dino_weight_path',type=str,default=None)
-    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50'])
+    parser.add_argument('--backbone', type=str, default='dinov3', choices=['dinov3', 'resnet50', 'satmae'])
     parser.add_argument('--resnet_weight_path', type=str, default=None)
     parser.add_argument('--resnet_weights', type=str, default='IMAGENET1K_V2')
     parser.add_argument('--resnet_layers', type=str, default='layer1,layer2,layer3')
+    parser.add_argument('--satmae_weight_path', type=str, default=None)
+    parser.add_argument('--satmae_layers', type=str, default='5,11,17,23')
+    parser.add_argument('--satmae_img_size', type=int, default=512)
+    parser.add_argument('--satmae_patch_size', type=int, default=16)
+    parser.add_argument('--satmae_model', type=str, default='vit_large_patch16')
+    parser.add_argument('--satmae_ckpt_key', type=str, default=None)
+    parser.add_argument('--satmae_apply_norm', type=str2bool, default=True)
+    parser.add_argument('--normalization', type=str, default='auto', choices=['auto', 'imagenet', 'satmae_fmow_rgb', 'satmae', 'fmow_rgb'])
     parser.add_argument('--freeze_backbone', type=str2bool, default=True)
     parser.add_argument('--adapter_path',type=str,default=None)
     parser.add_argument('--predictor_path',type=str,default=None)
